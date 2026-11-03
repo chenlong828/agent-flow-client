@@ -1,0 +1,23 @@
+{
+  "name": "agent-flow-client",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "AgentFlow 执行面客户端：在本地工作区执行工作流节点。",
+  "bin": {
+    "agent-flow-client": "./src/cli.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "start": "bun run src/cli.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  }
+}

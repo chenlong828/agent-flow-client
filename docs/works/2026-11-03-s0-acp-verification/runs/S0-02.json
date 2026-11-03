@@ -1,0 +1,142 @@
+{
+  "scenario": "S0-02",
+  "verdict": "通过",
+  "at": "2026-11-03T08:26:13.926Z",
+  "steps": [
+    {
+      "name": "目录可读",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "目录含 alpha/.dsh",
+      "ok": true,
+      "detail": "alpha,beta,dup,flat-skill"
+    },
+    {
+      "name": "目录含 beta/.agents",
+      "ok": true,
+      "detail": "alpha,beta,dup,flat-skill"
+    },
+    {
+      "name": "目录含 flat-skill",
+      "ok": true,
+      "detail": "alpha,beta,dup,flat-skill"
+    },
+    {
+      "name": "目录不含 nested-skill",
+      "ok": true,
+      "detail": "alpha,beta,dup,flat-skill"
+    },
+    {
+      "name": "目录不含 bad-skill",
+      "ok": true,
+      "detail": "alpha,beta,dup,flat-skill"
+    },
+    {
+      "name": "目录含 dup（去重后一条）",
+      "ok": true,
+      "detail": "alpha,beta,dup,flat-skill"
+    },
+    {
+      "name": "加载 alpha 得到 ALPHA-TOKEN",
+      "ok": true,
+      "detail": "ALPHA-TOKEN\nBETA-TOKEN\nFLAT-TOKEN\nDSH-DUP-TOKEN"
+    },
+    {
+      "name": "加载 beta 得到 BETA-TOKEN",
+      "ok": true,
+      "detail": "ALPHA-TOKEN\nBETA-TOKEN\nFLAT-TOKEN\nDSH-DUP-TOKEN"
+    },
+    {
+      "name": "加载 flat 得到 FLAT-TOKEN",
+      "ok": true,
+      "detail": "ALPHA-TOKEN\nBETA-TOKEN\nFLAT-TOKEN\nDSH-DUP-TOKEN"
+    },
+    {
+      "name": "dup 使用 .dsh 版本",
+      "ok": true,
+      "detail": "ALPHA-TOKEN\nBETA-TOKEN\nFLAT-TOKEN\nDSH-DUP-TOKEN"
+    },
+    {
+      "name": "发生 skill 工具调用",
+      "ok": true,
+      "detail": "[{\"toolCallId\":\"call_00_BscR7dpwtAJGW8e0J9T60403\",\"title\":\"skill\",\"kind\":\"other\",\"status\":\"completed\"},{\"toolCallId\":\"call_00_tnlx0zWVRRrgrwtH4D5G2930\",\"title\":\"skill\",\"kind\":\"other\",\"status\":\"completed\"},{\"toolCallId\":\"call_00_ET_VkkTNOwxzmwyqE7PfAHG7148\",\"title\":\"skill\",\"kind\":\"other\",\"status\":\"completed\"},{\"toolCallId\":\"call_00_ET_7CNrccWwbBuRXv0MJ8Wc4427\",\"title\":\"skill\",\"kind\":\"other\",\"status\":\"completed\"}]"
+    }
+  ],
+  "catalog": {
+    "file": "/tmp/dsh-s0/home-final2/sessions/--private-tmp-dsh-s0-ws-final2-s0-02--/c00efc84-c524-48df-97c3-d2695dc24c8f/session.v4.jsonl.zstd",
+    "error": null,
+    "entries": [
+      {
+        "name": "alpha",
+        "description": "Skill alpha; outputs ALPHA-TOKEN."
+      },
+      {
+        "name": "beta",
+        "description": "Skill beta; outputs BETA-TOKEN."
+      },
+      {
+        "name": "dup",
+        "description": "Duplicate in project .dsh; outputs DSH-DUP-TOKEN."
+      },
+      {
+        "name": "flat-skill",
+        "description": "Flat skill; outputs FLAT-TOKEN."
+      }
+    ],
+    "names": [
+      "alpha",
+      "beta",
+      "dup",
+      "flat-skill"
+    ],
+    "catalogs": 1
+  },
+  "process": {
+    "stdoutLines": 25,
+    "badLines": 0,
+    "badLineSamples": [],
+    "stderrTail": "[llm-deepseek-api-key] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n[llm-deepseek-account] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n",
+    "updateKinds": [
+      "agent_thought_chunk",
+      "agent_message_chunk",
+      "usage_update",
+      "tool_call",
+      "tool_call_update"
+    ],
+    "permissions": [],
+    "toolCalls": [
+      {
+        "toolCallId": "call_00_BscR7dpwtAJGW8e0J9T60403",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_tnlx0zWVRRrgrwtH4D5G2930",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_ET_VkkTNOwxzmwyqE7PfAHG7148",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_ET_7CNrccWwbBuRXv0MJ8Wc4427",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      }
+    ],
+    "exit": {
+      "code": 0,
+      "signal": null
+    },
+    "durationMs": 7751
+  },
+  "durationMs": 7753
+}

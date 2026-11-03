@@ -1,0 +1,66 @@
+{
+  "scenario": "S0-09",
+  "verdict": "通过",
+  "at": "2026-11-03T08:27:17.677Z",
+  "steps": [
+    {
+      "name": "A 只看到 A token",
+      "ok": true,
+      "detail": "I'll load the skill first.CONCURRENT-A-TOKEN"
+    },
+    {
+      "name": "B 只看到 B token",
+      "ok": true,
+      "detail": "I'll load the skill first.CONCURRENT-B-TOKEN"
+    },
+    {
+      "name": "关闭 A 不影响 B",
+      "ok": true,
+      "detail": "OK"
+    },
+    {
+      "name": "A 目录描述为 A",
+      "ok": true,
+      "detail": "[{\"name\":\"concurrency-skill\",\"description\":\"Token A workspace.\"}]"
+    },
+    {
+      "name": "B 目录描述为 B",
+      "ok": true,
+      "detail": "[{\"name\":\"concurrency-skill\",\"description\":\"Token B workspace.\"}]"
+    }
+  ],
+  "process": {
+    "stdoutLines": 23,
+    "badLines": 0,
+    "badLineSamples": [],
+    "stderrTail": "[llm-deepseek-api-key] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n[llm-deepseek-account] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n",
+    "updateKinds": [
+      "agent_message_chunk",
+      "usage_update",
+      "tool_call",
+      "tool_call_update",
+      "agent_thought_chunk"
+    ],
+    "permissions": [],
+    "toolCalls": [
+      {
+        "toolCallId": "call_00_ET_U0dn93bBfXIo4coZw6xv8074",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_ET_04BO9rpeRGDfnvyYaowz3047",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      }
+    ],
+    "exit": {
+      "code": 0,
+      "signal": null
+    },
+    "durationMs": 4057
+  },
+  "durationMs": 4058
+}

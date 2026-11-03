@@ -1,0 +1,80 @@
+{
+  "scenario": "S0-12",
+  "verdict": "通过",
+  "at": "2026-11-03T08:27:34.227Z",
+  "steps": [
+    {
+      "name": "精确文本可提取",
+      "ok": true,
+      "detail": "RESULT-TOKEN-123"
+    },
+    {
+      "name": "stopReason 可用",
+      "ok": true,
+      "detail": "end_turn"
+    },
+    {
+      "name": "usage 已记录（可为 null）",
+      "ok": true,
+      "detail": "null"
+    },
+    {
+      "name": "update 流包含文本块",
+      "ok": true,
+      "detail": "[\"agent_message_chunk\",\"usage_update\"]"
+    },
+    {
+      "name": "长输出末尾完整（含 LINE-60）",
+      "ok": true,
+      "detail": "\nLINE-41\nLINE-42\nLINE-43\nLINE-44\nLINE-45\nLINE-46\nLINE-47\nLINE-48\nLINE-49\nLINE-50\nLINE-51\nLINE-52\nLINE-53\nLINE-54\nLINE-55\nLINE-56\nLINE-57\nLINE-58\nLINE-59\nLINE-60"
+    },
+    {
+      "name": "长输出包含 60 行",
+      "ok": true,
+      "detail": "60"
+    },
+    {
+      "name": "未知 config option 返回 JSON-RPC 错误",
+      "ok": true,
+      "detail": "-32602: Invalid params: unknown session config option: nonexistent-option"
+    },
+    {
+      "name": "无凭据时返回可读 JSON-RPC 错误",
+      "ok": true,
+      "detail": "-32603: Internal error: turn failed: llm-deepseek: no API key for provider route \"deepseek-official\"; store DEEPSEEK_API_KEY through the credentials service (the web Models page writes it), or export "
+    }
+  ],
+  "observed": {
+    "exact": {
+      "text": "RESULT-TOKEN-123",
+      "stopReason": "end_turn",
+      "usage": null
+    },
+    "long": {
+      "length": 470,
+      "tail": "\nLINE-46\nLINE-47\nLINE-48\nLINE-49\nLINE-50\nLINE-51\nLINE-52\nLINE-53\nLINE-54\nLINE-55\nLINE-56\nLINE-57\nLINE-58\nLINE-59\nLINE-60",
+      "stopReason": "end_turn"
+    },
+    "configError": "-32602: Invalid params: unknown session config option: nonexistent-option",
+    "modelError": "-32603: Internal error: turn failed: llm-deepseek: no API key for provider route \"deepseek-official\"; store DEEPSEEK_API_KEY through the credentials service (the web Models page writes it), or export DEEPSEEK_API_KEY in the launching environment"
+  },
+  "process": {
+    "stdoutLines": 11,
+    "badLines": 0,
+    "badLineSamples": [],
+    "stderrTail": "[llm-deepseek-api-key] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n[llm-deepseek-account] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n",
+    "updateKinds": [
+      "agent_message_chunk",
+      "usage_update",
+      "agent_thought_chunk"
+    ],
+    "permissions": [],
+    "toolCalls": [],
+    "exit": {
+      "code": 0,
+      "signal": null
+    },
+    "durationMs": 4863
+  },
+  "durationMs": 4864
+}

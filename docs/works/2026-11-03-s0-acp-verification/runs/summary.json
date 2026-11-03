@@ -1,0 +1,89 @@
+{
+  "at": "2026-11-03T08:27:34.227Z",
+  "summary": [
+    {
+      "id": "S0-01",
+      "verdict": "通过",
+      "okSteps": 7,
+      "totalSteps": 7,
+      "durationMs": 1848
+    },
+    {
+      "id": "S0-02",
+      "verdict": "通过",
+      "okSteps": 12,
+      "totalSteps": 12,
+      "durationMs": 7753
+    },
+    {
+      "id": "S0-05",
+      "verdict": "通过",
+      "okSteps": 8,
+      "totalSteps": 8,
+      "durationMs": 6142
+    },
+    {
+      "id": "S0-03",
+      "verdict": "通过",
+      "okSteps": 4,
+      "totalSteps": 4,
+      "durationMs": 19383
+    },
+    {
+      "id": "S0-04",
+      "verdict": "通过",
+      "okSteps": 7,
+      "totalSteps": 7,
+      "durationMs": 8175
+    },
+    {
+      "id": "S0-06",
+      "verdict": "通过",
+      "okSteps": 5,
+      "totalSteps": 5,
+      "durationMs": 13199
+    },
+    {
+      "id": "S0-07",
+      "verdict": "通过",
+      "okSteps": 10,
+      "totalSteps": 10,
+      "durationMs": 7976
+    },
+    {
+      "id": "S0-08",
+      "verdict": "通过",
+      "okSteps": 4,
+      "totalSteps": 4,
+      "durationMs": 4813
+    },
+    {
+      "id": "S0-09",
+      "verdict": "通过",
+      "okSteps": 5,
+      "totalSteps": 5,
+      "durationMs": 4058
+    },
+    {
+      "id": "S0-10",
+      "verdict": "通过",
+      "okSteps": 5,
+      "totalSteps": 5,
+      "durationMs": 4793
+    },
+    {
+      "id": "S0-11",
+      "verdict": "失败",
+      "okSteps": 5,
+      "totalSteps": 6,
+      "durationMs": 6890
+    },
+    {
+      "id": "S0-12",
+      "verdict": "通过",
+      "okSteps": 8,
+      "totalSteps": 8,
+      "durationMs": 4864
+    }
+  ]
+}

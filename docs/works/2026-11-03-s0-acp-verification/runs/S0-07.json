@@ -1,0 +1,96 @@
+{
+  "scenario": "S0-07",
+  "verdict": "通过",
+  "at": "2026-11-03T08:27:08.804Z",
+  "steps": [
+    {
+      "name": "第 1 个 session 正常",
+      "ok": true,
+      "detail": "{\"i\":1,\"stopReason\":\"end_turn\",\"text\":\"OK\"}"
+    },
+    {
+      "name": "第 2 个 session 正常",
+      "ok": true,
+      "detail": "{\"i\":2,\"stopReason\":\"end_turn\",\"text\":\"OK\"}"
+    },
+    {
+      "name": "第 3 个 session 正常",
+      "ok": true,
+      "detail": "{\"i\":3,\"stopReason\":\"end_turn\",\"text\":\"OK\"}"
+    },
+    {
+      "name": "close-before-prompt 成功",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "close-before-prompt 后新 session 可用",
+      "ok": true,
+      "detail": "OK"
+    },
+    {
+      "name": "close 两次有定义结果",
+      "ok": true,
+      "detail": "第二次 close 错误: -32602: Invalid params: unknown session: 7ae7c537-2b38-4662-ae45-db9bc5a822d5"
+    },
+    {
+      "name": "close 两次后进程存活",
+      "ok": true,
+      "detail": "null"
+    },
+    {
+      "name": "cancel 后 close 正常",
+      "ok": true,
+      "detail": "{\"stopReason\":\"cancelled\"}"
+    },
+    {
+      "name": "结束前新 session 可用",
+      "ok": true,
+      "detail": "OK"
+    },
+    {
+      "name": "进程退出码 0",
+      "ok": true,
+      "detail": "{\"code\":0,\"signal\":null}"
+    }
+  ],
+  "notes": [
+    {
+      "i": 1,
+      "stopReason": "end_turn",
+      "text": "OK"
+    },
+    {
+      "i": 2,
+      "stopReason": "end_turn",
+      "text": "OK"
+    },
+    {
+      "i": 3,
+      "stopReason": "end_turn",
+      "text": "OK"
+    },
+    {
+      "cancelled": "cancelled"
+    }
+  ],
+  "process": {
+    "stdoutLines": 39,
+    "badLines": 0,
+    "badLineSamples": [],
+    "stderrTail": "[llm-deepseek-api-key] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n[llm-deepseek-account] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n",
+    "updateKinds": [
+      "agent_message_chunk",
+      "usage_update",
+      "agent_thought_chunk"
+    ],
+    "permissions": [],
+    "toolCalls": [],
+    "exit": {
+      "code": 0,
+      "signal": null
+    },
+    "durationMs": 7975
+  },
+  "durationMs": 7976
+}

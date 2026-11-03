@@ -1,0 +1,68 @@
+{
+  "scenario": "S0-10",
+  "verdict": "通过",
+  "at": "2026-11-03T08:27:22.471Z",
+  "steps": [
+    {
+      "name": ".git 根：子目录 cwd 看到根技能",
+      "ok": true,
+      "detail": "root-skill"
+    },
+    {
+      "name": "无 .git：根技能不可见",
+      "ok": true,
+      "detail": "sub-skill"
+    },
+    {
+      "name": "无 .git：cwd 技能可见",
+      "ok": true,
+      "detail": "sub-skill"
+    },
+    {
+      "name": "worktree（.git 文件）行为已记录",
+      "ok": true,
+      "detail": "{\"names\":[\"wt-skill\"],\"gitIsFile\":true}"
+    },
+    {
+      "name": "空格/Unicode 路径下技能可见",
+      "ok": true,
+      "detail": "unicode-skill"
+    }
+  ],
+  "cases": {
+    "gitRoot": [
+      "root-skill"
+    ],
+    "noGitRoot": [
+      "sub-skill"
+    ],
+    "worktree": {
+      "names": [
+        "wt-skill"
+      ],
+      "gitIsFile": true
+    },
+    "unicode": [
+      "unicode-skill"
+    ]
+  },
+  "process": {
+    "stdoutLines": 23,
+    "badLines": 0,
+    "badLineSamples": [],
+    "stderrTail": "[llm-deepseek-api-key] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n[llm-deepseek-account] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n",
+    "updateKinds": [
+      "agent_message_chunk",
+      "usage_update",
+      "agent_thought_chunk"
+    ],
+    "permissions": [],
+    "toolCalls": [],
+    "exit": {
+      "code": 0,
+      "signal": null
+    },
+    "durationMs": 4792
+  },
+  "durationMs": 4793
+}

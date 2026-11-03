@@ -1,0 +1,67 @@
+{
+  "scenario": "S0-01",
+  "verdict": "通过",
+  "at": "2026-11-03T08:26:06.171Z",
+  "steps": [
+    {
+      "name": "initialize protocolVersion=1",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "session/new 返回 sessionId",
+      "ok": true,
+      "detail": "97fee717-6226-46e4-9cbd-449899ac256e"
+    },
+    {
+      "name": "stopReason=end_turn",
+      "ok": true,
+      "detail": "end_turn"
+    },
+    {
+      "name": "assistant 文本含 OK",
+      "ok": true,
+      "detail": "OK"
+    },
+    {
+      "name": "stdout 无非协议行",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "session/close 成功",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "进程退出码 0",
+      "ok": true,
+      "detail": "{\"code\":0,\"signal\":null}"
+    }
+  ],
+  "catalog": {
+    "file": "/tmp/dsh-s0/home-final2/sessions/--private-tmp-dsh-s0-ws-final2-s0-01--/97fee717-6226-46e4-9cbd-449899ac256e/session.v4.jsonl.zstd",
+    "error": null,
+    "entries": [],
+    "names": [],
+    "catalogs": 0
+  },
+  "process": {
+    "stdoutLines": 6,
+    "badLines": 0,
+    "badLineSamples": [],
+    "stderrTail": "[llm-deepseek-api-key] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n[llm-deepseek-account] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n",
+    "updateKinds": [
+      "agent_message_chunk",
+      "usage_update"
+    ],
+    "permissions": [],
+    "toolCalls": [],
+    "exit": {
+      "code": 0,
+      "signal": null
+    },
+    "durationMs": 1846
+  },
+  "durationMs": 1848
+}

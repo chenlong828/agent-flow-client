@@ -1,0 +1,117 @@
+{
+  "scenario": "S0-11",
+  "verdict": "失败",
+  "at": "2026-11-03T08:27:29.308Z",
+  "steps": [
+    {
+      "name": "bash 已启动并写出 pid",
+      "ok": true,
+      "detail": "91076"
+    },
+    {
+      "name": "dsh 进程已被 kill",
+      "ok": true,
+      "detail": "{\"code\":null,\"signal\":\"SIGKILL\"}"
+    },
+    {
+      "name": "无孤儿 bash（kill -0 判定）",
+      "ok": false,
+      "detail": "pid=91076 alive=true"
+    },
+    {
+      "name": "重启后 session/list 返回有定义结果",
+      "ok": true,
+      "detail": "{\"sessions\":[{\"sessionId\":\"4c11d520-ecf4-439a-9583-02695ee8a79d\",\"cwd\":\"/private/tmp/dsh-s0/ws-final2/s0-11\"}]}"
+    },
+    {
+      "name": "重启后新 session 可用",
+      "ok": true,
+      "detail": "OK"
+    },
+    {
+      "name": "崩溃会话的 lock 文件状态已记录",
+      "ok": true,
+      "detail": "lockExists=true"
+    }
+  ],
+  "crash": {
+    "pid": 91076,
+    "orphanAlive": true,
+    "lockExists": true,
+    "crashedSession": "4c11d520-ecf4-439a-9583-02695ee8a79d",
+    "listed": {
+      "sessions": [
+        {
+          "sessionId": "4c11d520-ecf4-439a-9583-02695ee8a79d",
+          "cwd": "/private/tmp/dsh-s0/ws-final2/s0-11"
+        }
+      ]
+    }
+  },
+  "process": {
+    "stdoutLines": 15,
+    "badLines": 0,
+    "badLineSamples": [],
+    "stderrTail": "[llm-deepseek-api-key] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n[llm-deepseek-account] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n",
+    "updateKinds": [
+      "agent_message_chunk",
+      "usage_update",
+      "tool_call",
+      "tool_call_update",
+      "agent_thought_chunk"
+    ],
+    "permissions": [
+      {
+        "sessionId": "4c11d520-ecf4-439a-9583-02695ee8a79d",
+        "title": null,
+        "kind": null,
+        "options": [
+          "allow_once",
+          "reject_once"
+        ],
+        "decision": "allow"
+      }
+    ],
+    "toolCalls": [
+      {
+        "toolCallId": "call_00_ET_p6MATzFc3Ave6uSj2okn4183",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_qYI3Y6yynxzg43reUSRN4364",
+        "title": "bash",
+        "kind": "other",
+        "status": "failed"
+      },
+      {
+        "toolCallId": "call_00_bd30FuOMxQQNdUwjLAil9178",
+        "title": "bash",
+        "kind": "other",
+        "status": "in_progress"
+      }
+    ],
+    "exit": {
+      "code": null,
+      "signal": "SIGKILL"
+    },
+    "durationMs": 6835
+  },
+  "restart": {
+    "stdoutLines": 8,
+    "badLines": 0,
+    "badLineSamples": [],
+    "stderrTail": "[llm-deepseek-api-key] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n[llm-deepseek-account] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n",
+    "updateKinds": [
+      "agent_thought_chunk",
+      "agent_message_chunk",
+      "usage_update"
+    ],
+    "permissions": [],
+    "toolCalls": [],
+    "exit": null,
+    "durationMs": 1882
+  },
+  "durationMs": 6890
+}

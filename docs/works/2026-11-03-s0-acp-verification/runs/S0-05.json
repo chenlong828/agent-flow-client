@@ -1,0 +1,137 @@
+{
+  "scenario": "S0-05",
+  "verdict": "通过",
+  "at": "2026-11-03T08:26:20.069Z",
+  "steps": [
+    {
+      "name": "默认 profile 含 proj-dsh",
+      "ok": true,
+      "detail": "proj-agent,proj-dsh,user-agents,user-dsh"
+    },
+    {
+      "name": "默认 profile 含 proj-agent",
+      "ok": true,
+      "detail": "proj-agent,proj-dsh,user-agents,user-dsh"
+    },
+    {
+      "name": "默认 profile 含 user-dsh",
+      "ok": true,
+      "detail": "proj-agent,proj-dsh,user-agents,user-dsh"
+    },
+    {
+      "name": "默认 profile 含 user-agents",
+      "ok": true,
+      "detail": "proj-agent,proj-dsh,user-agents,user-dsh"
+    },
+    {
+      "name": "受控 profile 含 proj-dsh",
+      "ok": true,
+      "detail": "proj-dsh"
+    },
+    {
+      "name": "受控 profile 不含 proj-agent",
+      "ok": true,
+      "detail": "proj-dsh"
+    },
+    {
+      "name": "受控 profile 不含 user-dsh",
+      "ok": true,
+      "detail": "proj-dsh"
+    },
+    {
+      "name": "受控 profile 不含 user-agents",
+      "ok": true,
+      "detail": "proj-dsh"
+    }
+  ],
+  "defaultCatalog": {
+    "file": "/tmp/dsh-s0/home-final2/sessions/--private-tmp-dsh-s0-ws-final2-s0-05--/e8ec89ae-280d-4d5f-9002-7aa305000b84/session.v4.jsonl.zstd",
+    "error": null,
+    "entries": [
+      {
+        "name": "proj-agent",
+        "description": "Project .agents skill."
+      },
+      {
+        "name": "proj-dsh",
+        "description": "Project .dsh skill."
+      },
+      {
+        "name": "user-agents",
+        "description": "User agents home skill."
+      },
+      {
+        "name": "user-dsh",
+        "description": "User DSH home skill."
+      }
+    ],
+    "names": [
+      "proj-agent",
+      "proj-dsh",
+      "user-agents",
+      "user-dsh"
+    ],
+    "catalogs": 1
+  },
+  "patchedCatalog": {
+    "file": "/tmp/dsh-s0/home-final2/sessions/--private-tmp-dsh-s0-ws-final2-s0-05--/c3b194ae-1ef7-47b2-9b5b-d2da94cf77fe/session.v4.jsonl.zstd",
+    "error": null,
+    "entries": [
+      {
+        "name": "proj-dsh",
+        "description": "Project .dsh skill."
+      }
+    ],
+    "names": [
+      "proj-dsh"
+    ],
+    "catalogs": 1
+  },
+  "process": {
+    "default": {
+      "stdoutLines": 6,
+      "badLines": 0,
+      "badLineSamples": [],
+      "stderrTail": "[llm-deepseek-api-key] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n[llm-deepseek-account] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n",
+      "updateKinds": [
+        "agent_message_chunk",
+        "usage_update"
+      ],
+      "permissions": [],
+      "toolCalls": [],
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "durationMs": 6140
+    },
+    "patched": {
+      "stdoutLines": 11,
+      "badLines": 0,
+      "badLineSamples": [],
+      "stderrTail": "[llm-deepseek-api-key] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n[llm-deepseek-account] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n",
+      "updateKinds": [
+        "agent_thought_chunk",
+        "usage_update",
+        "tool_call",
+        "tool_call_update",
+        "agent_message_chunk"
+      ],
+      "permissions": [],
+      "toolCalls": [
+        {
+          "toolCallId": "call_00_ngO1DeW7gQ9YC6j1iQ5U4729",
+          "title": "skill",
+          "kind": "other",
+          "status": "completed"
+        }
+      ],
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "durationMs": 6140
+    }
+  },
+  "durationMs": 6142
+}

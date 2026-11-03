@@ -1,0 +1,193 @@
+{
+  "scenario": "S0-03",
+  "verdict": "通过",
+  "at": "2026-11-03T08:26:39.453Z",
+  "steps": [
+    {
+      "name": "对照组（先写后建）可见",
+      "ok": true,
+      "detail": "{\"label\":\"control-write-before\",\"delayMs\":0,\"writeBefore\":true,\"visible\":true,\"tokenSeen\":true,\"catalogNames\":[\"s0-alpha\"],\"text\":\"I'll load the skill first.S0-ALPHA-A\"}"
+    },
+    {
+      "name": "立即写后 prompt 至少一次可见",
+      "ok": true,
+      "detail": "3/3"
+    },
+    {
+      "name": "500ms 内可见",
+      "ok": true,
+      "detail": "[{\"label\":\"delay-50\",\"delayMs\":50,\"writeBefore\":false,\"visible\":true,\"tokenSeen\":true,\"catalogNames\":[\"s0-alpha\"],\"text\":\"S0-ALPHA-A\"},{\"label\":\"delay-200\",\"delayMs\":200,\"writeBefore\":false,\"visible\":true,\"tokenSeen\":true,\"catalogNames\":[\"s0-alpha\"],\"text\":\"S0-ALPHA-A\"},{\"label\":\"delay-500\",\"delayMs\":500,\"writeBefore\":false,\"visible\":true,\"tokenSeen\":true,\"catalogNames\":[\"s0-alpha\"],\"text\":\"S0-ALPHA-A\"}]"
+    },
+    {
+      "name": "同 session 替换后看到新 token",
+      "ok": true,
+      "detail": "{\"label\":\"same-session-replace\",\"before\":\"S0-ALPHA-A\",\"after\":\"S0-ALPHA-B\",\"beforeSeen\":true,\"afterSeen\":true,\"catalogDescription\":\"Outputs S0-ALPHA-B.\",\"catalogNames\":[\"s0-alpha\"]}"
+    }
+  ],
+  "rows": [
+    {
+      "label": "immediate-1",
+      "delayMs": 0,
+      "writeBefore": false,
+      "visible": true,
+      "tokenSeen": true,
+      "catalogNames": [
+        "s0-alpha"
+      ],
+      "text": "S0-ALPHA-A"
+    },
+    {
+      "label": "immediate-2",
+      "delayMs": 0,
+      "writeBefore": false,
+      "visible": true,
+      "tokenSeen": true,
+      "catalogNames": [
+        "s0-alpha"
+      ],
+      "text": "I'll load the skill first.S0-ALPHA-A"
+    },
+    {
+      "label": "immediate-3",
+      "delayMs": 0,
+      "writeBefore": false,
+      "visible": true,
+      "tokenSeen": true,
+      "catalogNames": [
+        "s0-alpha"
+      ],
+      "text": "S0-ALPHA-A"
+    },
+    {
+      "label": "delay-50",
+      "delayMs": 50,
+      "writeBefore": false,
+      "visible": true,
+      "tokenSeen": true,
+      "catalogNames": [
+        "s0-alpha"
+      ],
+      "text": "S0-ALPHA-A"
+    },
+    {
+      "label": "delay-200",
+      "delayMs": 200,
+      "writeBefore": false,
+      "visible": true,
+      "tokenSeen": true,
+      "catalogNames": [
+        "s0-alpha"
+      ],
+      "text": "S0-ALPHA-A"
+    },
+    {
+      "label": "delay-500",
+      "delayMs": 500,
+      "writeBefore": false,
+      "visible": true,
+      "tokenSeen": true,
+      "catalogNames": [
+        "s0-alpha"
+      ],
+      "text": "S0-ALPHA-A"
+    },
+    {
+      "label": "control-write-before",
+      "delayMs": 0,
+      "writeBefore": true,
+      "visible": true,
+      "tokenSeen": true,
+      "catalogNames": [
+        "s0-alpha"
+      ],
+      "text": "I'll load the skill first.S0-ALPHA-A"
+    },
+    {
+      "label": "same-session-replace",
+      "before": "S0-ALPHA-A",
+      "after": "S0-ALPHA-B",
+      "beforeSeen": true,
+      "afterSeen": true,
+      "catalogDescription": "Outputs S0-ALPHA-B.",
+      "catalogNames": [
+        "s0-alpha"
+      ]
+    }
+  ],
+  "process": {
+    "stdoutLines": 76,
+    "badLines": 0,
+    "badLineSamples": [],
+    "stderrTail": "[llm-deepseek-api-key] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n[llm-deepseek-account] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n",
+    "updateKinds": [
+      "usage_update",
+      "tool_call",
+      "tool_call_update",
+      "agent_message_chunk",
+      "agent_thought_chunk"
+    ],
+    "permissions": [],
+    "toolCalls": [
+      {
+        "toolCallId": "call_00_ET_BMN7U6ypkOrjeyr2WBah9530",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_ET_UVGny09cbIYdeK9L2wVy1812",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_ET_XO3dVU2k9Pm5EzMkwjMG4941",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_G3b3YxaGhPyKFTUVYhQu8846",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_ET_Wng3NgQWRNtxV2CRuk4b4067",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_ET_jvtV0CCyaGUFrYD0EOAm9201",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_ET_f8J03yfKIvCfsvxgwW5J5347",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_ET_XSEhDXQKXE04Fo0ipmN35830",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_K6gcX3qRt2oNRIF3kiS12140",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      }
+    ],
+    "exit": {
+      "code": 0,
+      "signal": null
+    },
+    "durationMs": 19383
+  },
+  "durationMs": 19383
+}

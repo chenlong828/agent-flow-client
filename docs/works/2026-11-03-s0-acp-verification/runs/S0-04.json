@@ -1,0 +1,87 @@
+{
+  "scenario": "S0-04",
+  "verdict": "通过",
+  "at": "2026-11-03T08:26:47.629Z",
+  "steps": [
+    {
+      "name": "会话 A 得到 A-TOKEN",
+      "ok": true,
+      "detail": "A-TOKEN"
+    },
+    {
+      "name": "会话 B 得到 B-TOKEN",
+      "ok": true,
+      "detail": "I'll load the skill first.B-TOKEN"
+    },
+    {
+      "name": "会话 B 不残留 A-TOKEN",
+      "ok": true,
+      "detail": "I'll load the skill first.B-TOKEN"
+    },
+    {
+      "name": "会话 B 目录描述为 B",
+      "ok": true,
+      "detail": "[{\"name\":\"s0-beta\",\"description\":\"Outputs B-TOKEN.\"}]"
+    },
+    {
+      "name": "会话 C 回到 A-TOKEN",
+      "ok": true,
+      "detail": "A-TOKEN"
+    },
+    {
+      "name": "进程未重启（同一 pid）",
+      "ok": true,
+      "detail": "90871"
+    },
+    {
+      "name": "进程正常退出",
+      "ok": true,
+      "detail": "{\"code\":0,\"signal\":null}"
+    }
+  ],
+  "process": {
+    "stdoutLines": 29,
+    "badLines": 0,
+    "badLineSamples": [],
+    "stderrTail": "[llm-deepseek-api-key] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n[llm-deepseek-account] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n",
+    "updateKinds": [
+      "agent_thought_chunk",
+      "usage_update",
+      "tool_call",
+      "tool_call_update",
+      "agent_message_chunk"
+    ],
+    "permissions": [],
+    "toolCalls": [
+      {
+        "toolCallId": "call_00_4K7Ly0KZ15nzO4NekrK28491",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_ET_Ck2buxl6vKq5bBDJdL9m7473",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "toolCallId": "call_00_Z5JjC50uJbpOyzLcInps8044",
+        "title": "skill",
+        "kind": "other",
+        "status": "completed"
+      }
+    ],
+    "exit": {
+      "code": 0,
+      "signal": null
+    },
+    "durationMs": 8174
+  },
+  "sessions": [
+    "d7e95aad-59e6-4919-ba42-663309874b51",
+    "43ee1b2e-c251-4202-8f6a-555d95fcf390",
+    "04afeee7-ff50-4b9f-859a-81ea09646b96"
+  ],
+  "durationMs": 8175
+}
