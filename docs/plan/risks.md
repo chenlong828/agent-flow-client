@@ -2,7 +2,7 @@
 layer: plan
 module: global
 status: current
-updated: 2026-11-04
+updated: 2026-11-05
 ---
 
 # 风险
@@ -15,6 +15,8 @@ updated: 2026-11-04
 | 远程 prompt/脚本的执行信任 | 调度器可影响本机执行 | 凭据、审计、用户授权、必要白名单 |
 | 本地产物不可见 | 调度器无法直接审计产物 | 依赖节点结果与评审节点；后续再评估 |
 | 技能刷新竞态 | 并发 session 看到错误组合 | 调度器保证同一容器并发节点同技能集；client 按 digest 幂等安装，违约显式失败（D9） |
+| fence 后立即重派 | 旧 DSH 进程尚未停止，新 attempt 已写入同一容器，产物/技能互相污染 | `SCH-02` 只在旧租约过期或旧 run 上报终态后重派；`SCH-19` 同实例单活跃 attempt；旧 run 收到 `run_superseded` 立即取消活跃 |
+| 旧控制事件重放到新 run | 重启后旧 `cancel`/`shutdown` 杀掉新 attempt | 控制事件按 `(clientId, runId)` 队列；新 run 丢弃旧 run 未 ack 事件；事件按 `issuedAt` 只作用于旧于它的 attempt |
 | DSH/平台差异 | 脚本、路径、进程行为不一致 | 先 macOS/Linux；Windows 后补 |
 | 开发环境的 DSH 构建落后源码 | 插件静默缺失（实测 7 个 bundle 跳过），能力与生产不一致 | 固定发行版与版本 pin；`doctor` 检查加载结果；不用源码 checkout 的陈旧 `lib/` 做验收。S0 验证前已重建 checkout（install + build:lib） |
 | 崩溃后工具子进程变孤儿 | 重启后残留 sleep/脚本进程，可能占端口、写文件或泄漏资源 | client 取消/关闭/崩溃统一按进程组/作业树强杀，重启前清理；S0-11 实测 dsh 被 SIGKILL 后 bash 子进程仍存活 |

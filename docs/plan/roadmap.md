@@ -2,7 +2,7 @@
 layer: plan
 module: global
 status: current
-updated: 2026-11-04
+updated: 2026-11-05
 ---
 
 # 路线图
@@ -36,7 +36,7 @@ updated: 2026-11-04
 
 ## 进行中工序
 
-- `docs/works/2026-11-04-scheduler-contract-proposal/`：调度器契约提案（P1，待双侧评审）；S1 前需裁决提案 §15 的 Q1/Q2/Q3/Q5/Q6/Q7。
+- `docs/works/2026-11-04-scheduler-contract-proposal/`：调度器契约提案（P1，调度器评审「有条件通过」；v0.2 已修 RB-01～RB-04，待复核）；S1 前需裁决 §15 的 Q1/Q2/Q3/Q5/Q6/Q7，M1 冻结前需清 Q13～Q16。
 - 组件规格已出，等待 P1 确认；确认后立项 S0 本地执行闭环（`docs/works/<日期>-s0-local-loop/`），按 `SCN-0002` / `SCN-0001` 的 S0 用例拆任务。
 
 ACP 预研、S0 P0 验证、会话记录调研均已收口；概念设计已确认、冻结并归档。S0 以冻结稿的不变量与 S0 用例为输入（`docs/history/works/2026-11-03-client-concept-design/`），并按 `SCN-0002`/`SCN-0001`/`REQ-0002` 收敛；「配置校验与 `doctor`」「取消立即强杀 + 进程组回收」「崩溃清理 + 等重派 + 已产生结果重报」「一实例一 home + 只展示本实例 session」已写入组件规格，S0 按规格实现。
