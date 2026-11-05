@@ -2,7 +2,7 @@
 layer: works
 module: global
 status: active
-updated: 2026-11-04
+updated: 2026-11-05
 ---
 
 # 工序 Brief：调度器契约提案（client 消费端）
@@ -13,6 +13,7 @@ updated: 2026-11-04
 ## 1. 背景
 
 - client 侧 9 个组件规格已建，状态均为 `planned`；`CMP-executor` §3.4 定义了 `SchedulerPort` 的 6 个方法，但只到端口签名，HTTP 端点、字段、状态码、错误码与调度器侧责任尚未冻结。
+- client 的运行形态是 CLI `serve` 启动的常驻后台执行进程；`run` 是单次模式。本工序只约束 `serve` 的跨进程契约。
 - 上游 `agent-flow-orchaster` 目前只有面向人的 `/api/v1` REST 面，没有面向执行客户端的租约/长轮询端点；`docs/works/2026-11-03-client-boundary/boundary-design.md` 明确要求「契约先行，两侧分别开发；字段级契约另立接口设计」。
 - 若直接按端口名实现，双方会在「租约续谁、claim 怎么唤醒、重跑换不换 attemptId、迟到结果算不算错误、技能包从哪下载」这些语义上各自补洞，最后只能靠联调对齐。本工序先把这些洞显式化。
 
@@ -51,7 +52,7 @@ updated: 2026-11-04
 | T3 | 设计 | 写调度器责任（`SCH-*`）与客户端承诺（`CLT-*`），逐条给违反后果 | 双侧职责 | 完成 | T2 产出、`architecture.md` §6 不变量、`REQ-0002` R-01…R-10 |
 | T4 | 设计 | 映射到执行器承接：端口方法、状态机迁移、journal 落点、重试与退出码 | `CMP-executor`、`CMP-cli`、`CMP-gateway` | 完成 | T2/T3 产出、`CMP-executor` §2.2–§2.7、`CMP-cli` §2.4 |
 | T5 | 核对 | 与现行文档逐条 diff，标出提案变更/待裁决/不改；核对与上游 REST 约定的冲突 | 文档一致性 | 完成 | T2/T3/T4 产出、`docs/design/**`、上游 `http-gateway/spec.md` |
-| T6 | 交付 | 汇总待裁决问题与推荐默认值，交调度器侧评审 | 双侧评审 | 待评审 | T5 产出、`plan/open-questions.md` |
+| T6 | 交付 | 汇总待裁决问题与推荐默认值，交调度器侧评审 | 双侧评审 | 完成（调度器评审：有条件通过；v0.2 待复核） | T5 产出、`plan/open-questions.md` |
 
 ## 6. 领取的开放问题
 
@@ -61,8 +62,8 @@ updated: 2026-11-04
 | OQ-010 | 租约 TTL 与心跳超时 | 提案拆成「客户端租约」与「尝试租约」两条，默认 90s / 120s |
 | OQ-011 | 容量单位（实例数 or session 数） | 提案 §11 给三个候选，推荐 S1 先按「实例数 + 同实例串行」 |
 | OQ-012 | 崩溃后重派是否复用 attemptId | 提案建议「重跑必须新 attemptId」，同 attemptId 只做传输重放 |
-| OQ-013 | 取消/超时是否带部分输出 | 提案维持不带；`NodeResult.message` 只在成功时有内容 |
-| OQ-016…020 | 本工序新识别：迟到结果表达、assignments、技能包通道、claim 长轮询、认证与 fencing | 提案 §15 给推荐默认值，并登记到 `plan/open-questions.md` |
+| OQ-013 | 取消/超时是否带部分输出 | 提案维持不带；`NodeResult.message` 有输出就填，空串仅表示确实没有输出（`RD-04`） |
+| OQ-016…021 | 本工序新识别：迟到结果表达、assignments、技能包通道、claim 长轮询、认证与 fencing、结果保留窗口 | 提案 §15 给推荐默认值，并登记到 `plan/open-questions.md` |
 
 ## 7. 环境与边界
 
@@ -76,6 +77,7 @@ updated: 2026-11-04
 
 ## 8. 产出
 
-- `proposal.md`：契约提案正文（本工序主产物）。
+- `proposal.md`：契约提案正文（本工序主产物，v0.2）。
 - `result.md`：验收对照、结论落点与未决项。
-- `docs/README.md` 工序导航与 `docs/plan/open-questions.md` 的 OQ-016…020 登记。
+- `review.md`：调度器评审结论与 client 四档裁决（P1 评审记录）。
+- `docs/README.md` 工序导航与 `docs/plan/open-questions.md` 的 OQ-016…021 登记。

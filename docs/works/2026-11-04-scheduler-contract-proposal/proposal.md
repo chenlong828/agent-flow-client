@@ -2,16 +2,18 @@
 layer: works
 module: global
 status: active
-updated: 2026-11-04
+updated: 2026-11-05
 ---
 
-# 调度器契约提案：执行面客户端的接口依赖（v0.1）
+# 调度器契约提案：执行面客户端的接口依赖（v0.2）
 
 > **权威在调度器侧。** 本稿是 client 消费端的需求提案，不是冻结契约；端点路径、字段名、状态码都可以谈，但 §7 的调度器责任、§8 的客户端承诺与 §6 的枚举闭集是 client 实现要依赖的语义，改动需要双侧确认。
 >
 > 上游依据：`../../../../agent-flow-orchaster/docs/works/2026-11-03-client-boundary/boundary-design.md`、同目录 `client-work.md`、`../../../../agent-flow-orchaster/docs/design/components/http-gateway/spec.md`；本仓库 `docs/design/architecture.md` §3/§4/§9、`CMP-executor` §3.4、`CMP-gateway`、`CMP-cli`、`CMP-assets`、`CMP-result`。
 >
 > 现状：9 个组件均为 `planned`，代码未落地；本稿把「端口签名」推进到「字段级 HTTP 契约 + 双侧责任 + 执行器承接」，供 M1 冻结。
+>
+> **评审状态（2026-11-05）**：调度器侧裁决「有条件通过」。RB-01～RB-04 四条 Blocker 已在本版修订；RD-01～RD-05 已按评审建议拍板。逐条处置见 [`review.md`](review.md)，评审原文见 `../../../../agent-flow-orchaster/docs/works/2026-11-05-scheduler-contract-review/review.md`。
 
 ## 1. 一句话结论
 
@@ -21,6 +23,8 @@ updated: 2026-11-04
 
 client 不读调度器数据库、不执行编排、不接受调度器主动连接；所有交互由 client 出站。其余能力（工作流定义、节点选择、评审、分支、fan-out 拆分、产物、会话全文、日志）都不在契约面内。
 
+client 的运行形态是：由 CLI `serve` 子命令启动的**常驻后台执行进程**，CLI 只是启动/管理入口；`run` 仍是一次性模式。它常驻但只出站：不监听端口、不提供本地 HTTP/IPC，也不因为常驻就变成可被调度器寻址的服务。
+
 ## 2. 一页结论
 
 ### 2.1 契约面总表
@@ -29,7 +33,7 @@ client 不读调度器数据库、不执行编排、不接受调度器主动连�
 |---|---|---|---|---|---|---|
 | `C-01` | 注册 | `POST /api/v1/executor/register` | `register` | `CMP-cli` | 启动/重连；热 | `(clientId, runId)` |
 | `C-02` | 心跳 + 控制事件 | `POST /api/v1/executor/heartbeat` | `heartbeat` | `CMP-cli` | 30s 长轮询；热 | `ackSeq` 累计确认 |
-| `C-03` | 领取 | `POST /api/v1/executor/claim` | `claim` | `CMP-cli` | 有空容量时；热 | `attemptId` |
+| `C-03` | 领取 | `POST /api/v1/executor/claim` | `claim` | `CMP-cli` | 有空容量时；热 | `claimRequestId` |
 | `C-04` | 会话绑定 + 技能集 | `POST /api/v1/executor/attempts/{attemptId}/session` | `bindSession` | `CMP-executor` | 每 attempt 一次；冷 | `(attemptId, sessionId)` |
 | `C-05` | 技能包下载 | `GET /api/v1/executor/skill-packages/{packageId}/download` | 无（`CMP-assets` 直连） | `CMP-assets` | 每包一次；冷 | `packageId + digest` |
 | `C-06` | 尝试续租 | `POST /api/v1/executor/attempts/{attemptId}/lease` | `renew` | `CMP-cli` | TTL/3；热 | `attemptId` |
@@ -40,7 +44,7 @@ client 不读调度器数据库、不执行编排、不接受调度器主动连�
 | 身份 | 生命周期 | 谁生成 | 用途 |
 |---|---|---|---|
 | `clientId` | 长期 | 调度器发放（与凭据绑定） | 实例粘性、审计、attempt 归属 |
-| `runId` | 每次进程启动 | client | 区分重启/双跑；fencing 旧进程；不进 attempt 身份 |
+| `runId` | 每次常驻进程启动/重启 | client | 区分重启/双跑；fencing 旧进程；不进 attempt 身份 |
 | `attemptId` | 一次执行尝试 | 调度器 | 去重、幂等、结果归属；**重跑必须换新值** |
 
 > attempt 归属按 `(clientId, attemptId)` 判定，不按 `runId`。client 崩溃重启后换了 `runId`，仍可重报旧 attempt 的已结算结果（`SCH-11`）。
@@ -54,9 +58,11 @@ client 不读调度器数据库、不执行编排、不接受调度器主动连�
 
 两刀分开：心跳断了不等于 attempt 立刻失效；attempt 租约过期也不等客户端租约过期。客户端租约决定「还能不能领新活」，尝试租约决定「当前这活还算不算我的」。
 
-### 2.4 需要双侧裁决的 12 件事
+### 2.4 需要双侧裁决的 20 件事
 
-见 §15。阻塞 S1 的 6 件：容量与同实例并发（Q1）、重跑 attempt 身份（Q2）、迟到结果表达（Q3）、claim 是否长轮询（Q5）、技能包通道（Q6）、认证方式（Q7）。
+见 §15。首轮 12 项（Q1–Q12）已交调度器评审；评审新增 8 项（Q13–Q20），其中 Q13–Q16 对应四条 Blocker，M1 冻结前必须清零。
+
+阻塞 S1 的仍是 6 件：容量与同实例并发（Q1）、重跑 attempt 身份（Q2）、迟到结果表达（Q3）、claim 是否长轮询（Q5）、技能包通道（Q6）、认证方式（Q7）。阻塞 M1 冻结的是评审四条 Blocker：claim 幂等键（Q13）、重派许可（Q14）、控制事件重放作用域（Q15）、C-04 失败映射（Q16）。
 
 ## 3. 依赖总览：组件要调度器提供什么
 
@@ -134,8 +140,9 @@ X-Client-Run-Id: <runId>
 | 400 | `validation_error` | 字段缺失/类型错/未知字段/长度超限 | `invalid_request` | 否 |
 | 401 | `unauthorized` | 凭据缺失/失效 | `unauthorized` | 否（退出 3） |
 | 403 | `forbidden` | 无权访问该 attempt/package | `unauthorized`（details 保留 `forbidden`） | 否（退出 3） |
-| 404 | `attempt_not_found` / `package_not_found` | attempt/包不存在 | `invalid_request`（details 保留 404） | 否 |
-| 410 | `package_gone` | 包已失效/下架 | `invalid_request`（details 保留 410） | 否 |
+| 404 | `attempt_not_found` | attempt 不存在 | `stale_attempt` | 否 |
+| 404 | `package_not_found` | 包不存在 | `asset`（`C-05` 直连；details 保留 404） | 否 |
+| 410 | `package_gone` | 包已失效/下架 | `asset`（`C-05` 直连；details 保留 410） | 否 |
 | 409 | `stale_attempt` | attempt 已绑定/已终态/已重派 | `stale_attempt` | 否 |
 | 409 | `invalid_session` | session 不属于本 attempt/client，或已关闭 | `invalid_session`（新增） | 否 |
 | 409 | `lease_expired` | 尝试租约已过期 | `lease_expired` | 否 |
@@ -151,12 +158,12 @@ X-Client-Run-Id: <runId>
 
 ### 4.5 幂等与重试
 
-- `claim` / `bindSession` / `reportResult` / `renew` 均以 `attemptId` 为幂等键；同一键重复请求不产生第二次执行、不改变已接受结果。
+- `bindSession` / `reportResult` / `renew` 以 `attemptId` 为幂等键；`claim` 以 client 生成的 `claimRequestId` 为幂等键（见 `C-03`）；同一键重复请求不产生第二次执行、不改变已接受结果。
+- `claim` 的响应丢失后，client 用同一 `claimRequestId` 重试；服务端在租约窗口内必须返回**同一个** attempt，而不是新租一个。租约过期后可重新排队。
 - 传输重试只改变传输结果，不改变业务语义；client 只在「请求未得到确定响应」时重试。
 - 收到确定错误（4xx）不重试，除 `429` 按 `Retry-After` 退避。
 - `reportResult` 重复提交：服务端返回首次结果的 `ack`，`disposition = "duplicate"`；client 不再重复上报。
-- `claim` 重复提交：同一 attempt 不得同时租给两个 client/run；同一 client 的重复调用由 client 单飞去重。
-- 本契约面不使用上游面向人的 `If-Match` / `revision` 并发控制：没有资源版本语义；并发由 `attemptId` 幂等 + 租约承担。
+- 本契约面不使用上游面向人的 `If-Match` / `revision` 并发控制：没有资源版本语义；并发由 `claimRequestId`/`attemptId` 幂等 + 租约承担。
 
 ### 4.6 长轮询
 
@@ -242,12 +249,13 @@ X-Client-Run-Id: <runId>
 
 1. 幂等键 `(clientId, runId)`；同键重复注册刷新客户端租约，返回当前 `assignmentsVersion` 与 `limits`。
 2. 同一 `clientId` 出现新 `runId`：新 run 生效，旧 run 之后的 `heartbeat`/`claim`/`renew` 返回 `409 run_superseded`；旧 run 已 `settled` 的结果仍可按 `clientId + attemptId` 重报（`SCH-11`）。旧 run 再次 `register` 也返回 `409 run_superseded`。
-3. `assignments` 是**可选**快照：client 有则用于重启后校验容器；没有则从 journal 恢复，不阻塞领取。变更通过 `assignmentsVersion` 递增，心跳响应在版本变化时带回（§5.2）。实例从快照消失不触发删除容器——清理只由 `shutdown.cleanup`、实例释放或操作者触发。
-4. `assignments[].workspacePath` 必须是绝对路径、已预置、位于任何 git 仓库之外、实例内稳定（`SCH-04`）；client 只校验，不创建/不 clone。`state` 取 `active`（有活跃/待执行 attempt）或 `waiting`（已准备、空闲）。
-5. `compatibility = "deprecated"` 时带 `sunsetAt`；`426` 表示不兼容。
-6. `limits` 在 register 下发，运行期视为不变；变更需重新注册（client 重启或重连）。
-7. 认证失败 `401`/`403`、版本失败 `426`：终止，退出 3；`409 run_superseded`：停止领取、取消活跃（`reason=superseded`），按 Q12 收口；`429`/`5xx`：退避重试；持续不可达达到阈值退出 6。
-8. 传输层重连**不重新 `register`**：同一 `runId` 的 `heartbeat`/`claim` 直接重试；只有新进程（新 `runId`）或调度器显式要求时才重新注册。
+3. **fence 不等于停止执行**：新 run 生效后，旧 run 的活跃 attempt 仍由旧 run 自行收口（`cancelled(superseded)`）；调度器在收到该终态、或旧 attempt 租约过期之前，不得为同一实例重派（`SCH-02`/`SCH-19`，`RB-02`）。
+4. `assignments` 是**可选**快照：client 有则用于重启后校验容器；没有则从 journal 恢复，不阻塞领取。变更通过 `assignmentsVersion` 递增，心跳响应在版本变化时带回（§5.2）。实例从快照消失不触发删除容器——清理只由 `shutdown.cleanup`、实例释放或操作者触发。
+5. `assignments[].workspacePath` 必须是绝对路径、已预置、位于任何 git 仓库之外、实例内稳定（`SCH-04`）；client 只校验，不创建/不 clone。`state` 取 `active`（有活跃/待执行 attempt）或 `waiting`（已准备、空闲）。
+6. `compatibility = "deprecated"` 时带 `sunsetAt`；`426` 表示不兼容。
+7. `limits` 在 register 下发，运行期视为不变；变更需重新注册（client 重启或重连）。`register.capacity.maxInstances` 只是初始声明，运行期容量以最近一次心跳的 `state.capacity` 为准（`H-03`）。
+8. 认证失败 `401`/`403`、版本失败 `426`：终止，退出 3；`409 run_superseded`：停止领取、取消活跃（`reason=superseded`），按 Q18 退出 7；`429`/`5xx`：退避重试；持续不可达达到阈值退出 6。
+9. 传输层重连**不重新 `register`**：同一 `runId` 的 `heartbeat`/`claim` 直接重试；只有新进程（新 `runId`）或调度器显式要求时才重新注册。
 
 **错误**：`400`、`401`、`403`、`409 run_superseded`、`426`、`429`、`500`、`503`。
 
@@ -308,6 +316,7 @@ X-Client-Run-Id: <runId>
 - `assignmentsVersion` 与 client 上报值不同时，响应额外带 `assignments` 快照（结构同 `C-01`）；相同则省略。client 以最新快照替换本地视图，不阻塞执行。
 - `state.activeAttempts[].phase` 取尝试生命周期值：`claimed` / `bound` / `ready` / `running` / `settled` / `reported`；只用于观测。
 - `state.pausedInstances` 列出本 client 当前暂停的实例；暂停由控制事件驱动、权威在调度器，这里只用于观测。
+- **事件作用域**：控制事件只作用于 `claimedAt < event.issuedAt` 的 attempt；对 `issuedAt` 之后领取的 attempt、以及本地未知的实例，只 ack + 审计记 stale，不执行动作（`RB-03`）。
 
 **控制事件闭集**：
 
@@ -323,17 +332,18 @@ X-Client-Run-Id: <runId>
 
 **序号与确认**：
 
-1. 服务端按 client 维护单调 `seq`；同一批事件按 `seq` 升序、连续；`control.seq` 是本批最大序号；空批 `seq = ackSeq`。
-2. 至少一次投递；client 重连后带 `ackSeq`，服务端从 `ackSeq + 1` 补发；client 按 `seq` 幂等应用。
-3. client 在下一跳心跳带「已处理的最大连续 `seq`」作为 `ackSeq`；有空洞时不得越过空洞确认，服务端应重发。
-4. 未知事件类型：ack + 记录，不崩溃；已结算/已释放实例的事件：只 ack（审计记 stale）。
+1. 服务端按 `(clientId, runId)` 维护单调 `seq`；同一批事件按 `seq` 升序、连续；`control.seq` 是本批最大序号；空批 `seq = ackSeq`。
+2. 至少一次投递；同一 `runId` 重连后带 `ackSeq`，服务端从 `ackSeq + 1` 补发；client 按 `seq` 幂等应用。**新 `runId` 注册时，旧 run 的未 ack 事件由服务端丢弃，不向新 run 补发**（`RB-03`）。
+3. client 在下一跳心跳带「已处理的最大连续 `seq`」作为 `ackSeq`；有空洞时不得越过空洞确认，服务端应重发。`ackSeq` 只在当前 run 内有效，不要求跨崩溃持久化。
+4. 未知事件类型：ack + 记录，不崩溃；已结算/已释放实例的事件、以及被 `issuedAt` 作用域排除的事件：只 ack（审计记 stale）。
+5. `shutdown`（无 `instanceId`）只作用于当前 `runId`；旧 run 的 `shutdown` 不会在新 run 重放。
 
 **语义与不变量**：
 
 1. 请求到达即续客户端租约；断开/超时是离线信号，最终以租约过期裁决（`SCH-07`）。
 2. 心跳循环独立于执行；prompt 长等不得阻塞心跳。
 3. `state.activeAttempts` 是观测信息，不是权威；服务端不得据此推进状态。
-4. `401`/`403`/`426` 终止，退出 3；`409 run_superseded` 停止领取、取消活跃 attempt（`reason=superseded`），按 Q12 收口；`429`/`5xx`/超时：退避重连，不视为业务失败。
+4. `401`/`403`/`426` 终止，退出 3；`409 run_superseded` 停止领取、取消活跃 attempt（`reason=superseded`），退出码见 Q18（建议 7）；`429`/`5xx`/超时：退避重连，不视为业务失败。
 
 **错误**：`400`、`401`、`403`、`409 run_superseded`、`426`、`429`、`500`、`503`。
 
@@ -346,6 +356,7 @@ X-Client-Run-Id: <runId>
 
 ```json
 {
+  "claimRequestId": "<uuid-v7>",
   "capacity": { "availableInstances": 2 },
   "acceptLongPollMs": 20000
 }
@@ -362,6 +373,7 @@ X-Client-Run-Id: <runId>
   "workspacePath": "/abs/instance-a",
   "prompt": "……节点 prompt，输出契约在文本内……",
   "timeoutMs": 1800000,
+  "claimedAt": "2026-11-04T01:02:33Z",
   "lease": { "expiresAt": "2026-11-04T01:04:33Z", "ttlMs": 120000 }
 }
 ```
@@ -370,18 +382,21 @@ X-Client-Run-Id: <runId>
 
 **语义与不变量**：
 
-1. 只返回绑定本 `clientId` 的实例；同一实例同一时刻不得有两个 client 的活跃 attempt（`SCH-01`）。
-2. 同一 `attemptId` 同一时刻只租给一个 client/run；重复投递到同一 client 由单飞去重，不重复执行（`SCH-02`）。
-3. `workspacePath` 是准备阶段预置的容器根：绝对、存在、可写、位于任何 git 仓库之外、实例内稳定；client 不 clone/checkout/创建（`SCH-04`）。
-4. `prompt` 是 opaque 文本，输出契约在文本内；client 不解析业务字段；字节数不得超过 `limits.maxPromptBytes`，超限 client 拒绝执行并报 `scheduler` 失败（调度器违约）。
-5. `timeoutMs` 是 prompt 执行超时（毫秒，正整数）；client 以它为准，超时走 `timeout`，不等自然结算。
-6. `lease` 在响应时生效；client 在 TTL/3 时 `renew`（§5.6）。
-7. 无容量时不要调用；`availableInstances = 0` 时服务端可立即 `204`。
-8. 技能集不在 claim 返回；由 `C-04` 在 session 建立后返回（避免同一节点两处真相）。
+1. 只返回绑定本 `clientId` 的实例；同一实例同一时刻不得有两个 client 的活跃 attempt（`SCH-01`），同一实例同一时刻只允许一个未终结 attempt（`SCH-19`）。
+2. `claimRequestId` 由 `CMP-gateway` 为每次领取生成并持有，传输重试复用同一个值；`204` 或成功领取后的下一次领取用新值。`CMP-cli` 的 `claim(capacity)` 端口签名不变，id 不穿透到领域层。同一 `(clientId, claimRequestId)` 在租约窗口内重复请求返回**同一个** attempt，租约过期后才允许重新排队。`attemptId` 是响应值，不作为请求幂等键（`RB-01`）。
+3. 同一 `attemptId` 同一时刻只租给一个 client/run；重复投递到同一 client 由单飞去重，不重复执行（`SCH-02`）。
+4. `workspacePath` 是准备阶段预置的容器根：绝对、存在、可写、位于任何 git 仓库之外、实例内稳定；client 不 clone/checkout/创建（`SCH-04`）。
+5. `prompt` 是 opaque 文本，输出契约在文本内；client 不解析业务字段；字节数不得超过 `limits.maxPromptBytes`，超限 client 拒绝执行并报 `scheduler` 失败（调度器违约）。
+6. `timeoutMs` 是 prompt 执行超时（毫秒，正整数）；client 以它为准，超时走 `timeout`，不等自然结算。
+7. `claimedAt` 是服务端授予该 attempt 的时间，用于控制事件的 `issuedAt` 作用域判定（§5.2）；不是执行开始时间。
+8. `lease` 在响应时生效；client 在 TTL/3 时 `renew`（§5.6）。
+9. 无容量时不要调用；`availableInstances = 0` 时服务端可立即 `204`。
+10. 技能集不在 claim 返回；由 `C-04` 在 session 建立后返回（避免同一节点两处真相）。
+11. `claim` 与 `pause`/`shutdown` 竞态：响应到达时若该实例已被本地判为暂停/释放，或容器校验在 `bindSession` 之前失败，client **不建 session**，按 `cancelled(paused|shutdown)` 或 §9.1 的失败路径在租约内上报。不新增 release/nack 操作；「这条 attempt 不执行」一律用终态结果表达（`RD-02`）。
 
 **错误**：`400`、`401`、`403`、`409 run_superseded`、`426`、`429`、`500`、`503`。
 
-**client 失败处理**：`204` → 等心跳/短抖动后再领；`429`/`5xx`/超时 → 退避；`401`/`403`/`426` → 退出 3；`409 run_superseded` → 停止领取，按 Q12 收口。
+**client 失败处理**：`204` → 等心跳/短抖动后再领；`429`/`5xx`/超时 → 退避；`401`/`403`/`426` → 退出 3；`409 run_superseded` → 停止领取，按 Q18 退出 7。
 
 ### 5.4 `C-04` 会话绑定 + 技能集
 
@@ -416,8 +431,7 @@ X-Client-Run-Id: <runId>
         "etag": "\"sha256-<hex>\""
       }
     ]
-  },
-  "lease": { "expiresAt": "2026-11-04T01:04:33Z", "ttlMs": 120000 }
+  }
 }
 ```
 
@@ -433,20 +447,32 @@ X-Client-Run-Id: <runId>
 8. `cwd` 必须等于 claim 的 `workspacePath`；不一致 `400`，防止客户端串容器。
 9. `packages.length` 不得超过 `limits.maxSkillPackages`；超限按 `asset` 失败，不 prompt。
 
-**错误**：`400`、`401`、`403`、`404 attempt_not_found`、`409 stale_attempt`、`409 invalid_session`、`429`、`500`、`503`。
+**错误**：`400`、`401`、`403`、`404 attempt_not_found`、`409 stale_attempt`、`409 lease_expired`、`409 invalid_session`、`429`、`500`、`503`。
 
-**client 失败处理**：关闭该 session；结果 `failed`，`error.class = scheduler`（不可重试）或 `asset`（manifest 不合法）；不 prompt；已结算的上报走 `C-07`（可能是 `late_result`）。
+**client 失败处理（按错误码分档，`RB-04`）**：
+
+| 错误 | 收口 |
+|---|---|
+| `409 stale_attempt` / `409 lease_expired` / `404 attempt_not_found` | abort、关 session、杀进程组；`cancelled(superseded)` 或 `cancelled(lease_expired)`；不 prompt；仍尝试上报（可能 `late_result`） |
+| `409 invalid_session` | 关 session；`failed(scheduler)`；不 prompt；告警（契约/实现缺陷） |
+| `skillSet` 不合法 / 包超限 | 关 session；`failed(asset)`；不 prompt |
+| `400` / 其他 `5xx` | 关 session；`failed(scheduler)`；不 prompt |
+
+`bindSession` 不再返回 `lease`（`RD-05`）；租约只由 `claim` / `renew` 维护，单一来源。装技能期间按 TTL/3 调用 `C-06` 续租。
 
 ### 5.5 `C-05` 技能包下载
 
 **用途**：按 `C-04` 的 manifest 取技能包 zip；由 `CMP-assets` 直接调用，不经 `CMP-gateway`。
 **消费方**：`CMP-assets`；素材来自 `C-04`。
 
+**鉴权归属（`RD-01`）**：token 只有一个来源——组合根注入同一个 `AuthProvider` / `SchedulerEndpoint` 给 `CMP-gateway` 与 `CMP-assets`；`CMP-assets` 不 import `CMP-gateway`，跨 host 不带 `Authorization` 的策略作为共享 L0 值对象的一份实现。未来 Q7 的轮换只改这一处。
+
 请求：
 
 ```http
 GET /api/v1/executor/skill-packages/<packageId>/download
 Authorization: Bearer <client-token>
+X-Client-Run-Id: <runId>
 If-None-Match: "sha256-<hex>"
 ```
 
@@ -492,7 +518,7 @@ If-None-Match: "sha256-<hex>"
 2. `409 lease_expired`：已过期；client 立即 abort、关 session、杀进程组，结果 `cancelled(lease_expired)`，仍尝试上报（服务端多半回 `late_result`）。
 3. `409 stale_attempt`：attempt 已终态/已重派；abort 并以 `cancelled(superseded)` 收口，不再重试。
 4. `404 attempt_not_found`：视为契约/实现错误；abort 并以 `cancelled(superseded)` 收口，同时告警。
-5. `409 run_superseded`：本 run 已被新 run 顶掉；立即 abort 活跃 attempt（`reason=superseded`），按 Q12 收口，不再续租。
+5. `409 run_superseded`：本 run 已被新 run 顶掉；立即 abort 活跃 attempt（`reason=superseded`），按 Q18 退出 7，不再续租。
 6. 只对 `claimed`…`running` 的 attempt 调用；`settled` 之后停止续租。
 7. 续租失败但未过期：继续按 TTL/3 重试；到 `expiresAt` 仍失败才 abort。
 
@@ -586,12 +612,13 @@ If-None-Match: "sha256-<hex>"
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
 | `attemptId` | UUIDv7 | 是 | 一次执行尝试的幂等键 |
-| `attemptNo` | integer ≥1 | 否 | 同一节点第几次尝试；仅审计/观测，不参与去重 |
+| `attemptNo` | integer ≥1 | 否 | 同一节点在本实例内的第几次尝试，从 1 开始；仅审计/观测，不参与去重 |
 | `instanceId` | UUIDv7 | 是 | 工作流实例；决定容器与进程归属 |
 | `nodeId` | UUIDv7 | 是 | 节点定义 ID；client 不解释 |
 | `workspacePath` | string | 是 | 容器根绝对路径；预置，client 只校验 |
 | `prompt` | string | 是 | opaque 文本；输出契约在文本内 |
 | `timeoutMs` | integer >0 | 是 | prompt 执行超时；client 强制执行 |
+| `claimedAt` | ISO-8601 | 是 | 服务端授予该 attempt 的时间；控制事件作用域判定用 |
 | `lease` | `Lease` | 是 | 尝试租约 |
 
 ### 6.2 `NodeResult`（`C-07` 请求体）
@@ -601,7 +628,7 @@ If-None-Match: "sha256-<hex>"
 | `attemptId` | UUIDv7 | 是 | 与请求一致 |
 | `status` | enum | 是 | `succeeded` / `failed` / `cancelled` / `timeout` |
 | `sessionId` | string | 否 | session 建立后必填；建 session 前的失败可省略 |
-| `message` | string | 是 | 最终消息；失败/取消时为空串 |
+| `message` | string | 是 | 最终消息/失败现场；只要有输出就填，按 `maxResultBytes` 截断；空串仅表示确实没有输出（`RD-04`） |
 | `truncated` | boolean | 是 | 是否因大小上限被截断 |
 | `stopReason` | string \| null | 是 | ACP 停止原因；未知值原样保留；失败/取消为 `null` |
 | `usage` | object \| null | 是 | `{ inputTokens?, outputTokens? }`；未知省略字段，不写 0 |
@@ -647,6 +674,9 @@ type ControlBatch = {
   events: ControlEvent[]; // 按 seq 升序、连续
 };
 
+// issuedAt：服务端签发时间。事件只作用于 claimedAt < issuedAt 的 attempt；
+// shutdown 无 instanceId 时只作用于当前 runId。
+
 type Ack = {
   attemptId: string;
   disposition: "accepted" | "duplicate";
@@ -688,7 +718,7 @@ type CancelReason =
 
 ### 6.6 端口返回类型（对 `CMP-executor` §3.4 的补充）
 
-HTTP 契约要求 `register` / `heartbeat` / `bindSession` 的响应携带租约、限制、assignments 与心跳配置；现有端口返回 `void` / `ControlBatch` / `SkillSet` 承载不了这些信息。提案把这三个方法的返回类型改为：
+HTTP 契约要求 `register` / `heartbeat` 的响应携带租约、限制、assignments 与心跳配置，`bindSession` 携带技能集；现有端口返回 `void` / `ControlBatch` / `SkillSet` 承载不了这些信息。提案把这三个方法的返回类型改为：
 
 ```ts
 type Registration = {
@@ -712,7 +742,6 @@ type HeartbeatResult = {
 type SessionBinding = {
   serverTime: string;
   skillSet: SkillSet;
-  lease: Lease;
 };
 
 type Assignment = { instanceId: string; workspacePath: string; state: "active" | "waiting" };
@@ -726,21 +755,21 @@ type Limits = {
 };
 ```
 
-`claim` / `renew` / `reportResult` 的返回类型不变（`NodeRequest` 内含 `lease`；`renew` 返回 `Lease`；`reportResult` 返回 `Ack`）。这是端口契约的签名变更，按 P1 处理；M1 若坚持 `void`，CLI 只能另加读取限制/assignments 的端口方法，不推荐。
+`claim` / `renew` / `reportResult` 的返回类型不变（`NodeRequest` 内含 `lease`；`renew` 返回 `Lease`；`reportResult` 返回 `Ack`）。`bindSession` 不再返回 `lease`，租约唯一来源是 `claim` / `renew`（`Q20`）。这是端口契约的签名变更，按 P1 处理；M1 若坚持 `void`，CLI 只能另加读取限制/assignments 的端口方法，不推荐。
 
 ## 7. 调度器侧必须保证的语义（`SCH`）
 
 | ID | 责任 | 为什么 client 需要 | 违反后果 |
 |---|---|---|---|
 | `SCH-01` | **实例粘性**：一个实例同一时刻只绑定一个 client；解绑必须先显式结束旧绑定 | client 按实例独占容器/进程 | 两个 client 写同一容器；产物/技能互相污染 |
-| `SCH-02` | **单派发**：一个 attempt 同一时刻只租给一个 client/run；重派等旧租约过期或被 fence | client 单飞去重只覆盖进程内 | 同一节点两份产物 |
+| `SCH-02` | **单派发**：一个 attempt 同一时刻只租给一个 client/run；重派只在旧租约过期**或**旧 run 已上报该 attempt 终态之后；fence 只阻止旧 run 领新活，**不构成重派许可** | client 单飞去重只覆盖进程内；fence 后旧进程仍可能执行最长约 40s | 同一节点两份产物 |
 | `SCH-03` | **attempt 身份**：`attemptId` 全局唯一、不可复用；重跑必须新 `attemptId` | client 以 attemptId 去重、恢复、幂等上报 | 同 attemptId 被当成重复执行而拒绝执行，或旧结果覆盖新尝试 |
 | `SCH-04` | **容器预置**：`workspacePath` 绝对、存在、可写、实例内稳定、位于任何 git 仓库之外；跨实例不共享 | client 不 clone/checkout/创建容器 | 技能不可见（projectRoot 上浮）、路径越界、节点失败 |
 | `SCH-05` | **技能集确定性**：同一 attempt 的 `skillSet.digest` 稳定；同容器并发 attempt digest 一致；包可下载、digest 可校验、大小受限 | client 原子替换技能、按 digest 幂等、冲突即失败 | 模型看到错误技能组合；半套技能；交错覆盖 |
 | `SCH-06` | **两条租约**：客户端租约 TTL > 心跳长轮询；尝试租约可续、TTL 与节点类型匹配；以服务端时间为准 | client 判断「还能不能领」与「这活还是不是我的」 | 误判离线、误杀长任务、双跑 |
 | `SCH-07` | **心跳即续租**：收到 heartbeat 请求即续客户端租约；断连不等价于立即离线，以 TTL 裁决 | client 无法区分网络抖动与真离线 | 过早重派、实例抖动 |
-| `SCH-08` | **控制事件顺序**：per-client `seq` 单调、连续、至少一次、断连补发；空批 `seq=ackSeq` | client 按 `ackSeq` 累计确认、按 seq 幂等 | 丢取消、重复取消、乱序暂停 |
-| `SCH-09` | **幂等**：claim / bind / report / renew 按 attemptId 幂等；重复请求不产生第二次执行、不改变已接受结果 | client 会重试传输 | 重复执行、结果被覆盖 |
+| `SCH-08` | **控制事件顺序**：per-`(clientId, runId)` 的 `seq` 单调、连续、至少一次、同 run 断连补发；空批 `seq=ackSeq`；新 run 注册时丢弃旧 run 未 ack 事件 | client 按 `ackSeq` 累计确认、按 seq 幂等 | 丢取消、重复取消、乱序暂停；旧 cancel 打到新 attempt |
+| `SCH-09` | **幂等**：`claim` 按 `(clientId, claimRequestId)`、bind/report/renew 按 `attemptId` 幂等；重复请求不产生第二次执行、不改变已接受结果 | client 会重试传输；响应丢失后的 claim 重试不能多租一个 attempt | 重复执行、结果被覆盖、影子租约 |
 | `SCH-10` | **迟到结果**：已过期/已重派/已关闭的 attempt 上报返回 `409 late_result`，只入审计，不推进状态、不覆盖新 attempt | client 的 `settled` 结果可能在崩溃后才重报 | 旧结果覆盖新尝试，或结果丢失无审计 |
 | `SCH-11` | **崩溃恢复**：同一 `clientId` 可重报旧 attempt 的已结算结果；只要该 attempt 未被重派且未被调度器关闭，必须接受（即使 `runId` 变了）；已关闭/已重派走 `late_result` | client 重启后 `runId` 必变 | `settled` 结果永远上报不出去，R-02 失效 |
 | `SCH-12` | **结果约束**：接受 `truncated=true`；通过 `limits` 下发上限；超限 `413` 而非静默截断 | client 在本地截断 | 长输出节点永远失败，或结果被服务端悄悄改坏 |
@@ -749,7 +778,8 @@ type Limits = {
 | `SCH-15` | **认证与隔离**：token 绑定 `clientId`；401/403 区分；一个 client 不能读他人 attempt/package；TLS | client 只持自己的凭据 | 越权读结果/包；凭据泄漏 |
 | `SCH-16` | **限流与容量**：按上报容量派发、不超卖；429 带 `Retry-After`；限流不改变租约语义 | client 按容量决定领不领 | 超卖、OOM、任务堆积在单机 |
 | `SCH-17` | **时间与审计**：每个成功响应带 `serverTime`；回显 `requestId`；审计 `clientId/runId/instanceId/nodeId/attemptId/sessionId` | client 处理时钟偏差与排障 | 租约误判、无法对账 |
-| `SCH-18` | **推送通道唯一**：只用心跳长轮询；不主动连 client；不要求 client 开端口 | client 是纯出站进程 | 部署不可行、NAT/防火墙问题 |
+| `SCH-18` | **推送通道唯一**：只用心跳长轮询；不主动连 client；不要求 client 开端口 | client 是常驻但纯出站的进程；常驻不等于可寻址 | 部署不可行、NAT/防火墙问题 |
+| `SCH-19` | **同实例单活跃 attempt**：派发侧保证同一 `instanceId` 同一时刻只有一个未终结 attempt（Q1 选 A 时即串行） | 同一容器/技能根不能被两个 DSH 进程并行写；client 无法单方面拒绝已派发的 attempt | 产物与技能目录互相污染，不可逆 |
 
 ## 8. 客户端承诺（`CLT`）
 
@@ -774,10 +804,10 @@ type Limits = {
 
 | 操作 | 端口方法 | 调用组件 | 调用点 | 尝试状态迁移 | journal | 失败处理 |
 |---|---|---|---|---|---|---|
-| `C-01` | `register` | `CMP-cli` | 启动/重连 | 无 attempt | 无 | 401/403/426 退出 3；409 按 Q12；其余退避，持续退出 6 |
+| `C-01` | `register` | `CMP-cli` | 启动/重连 | 无 attempt | 无 | 401/403/426 退出 3；409 按 Q18 退出 7；其余退避，持续退出 6 |
 | `C-02` | `heartbeat` | `CMP-cli` 心跳任务 | 常驻 30s | 无迁移 | 无 | 退避重连；控制事件分派给 executor |
 | `C-03` | `claim` | `CMP-cli` 领取循环 | 有空容量 | `→ claimed` | `claimed` | `204` 等待；429/5xx 退避 |
-| `C-04` | `bindSession` | `CMP-executor` | `newSession` 后 | `claimed → bound` | `bound`（含 sessionId） | 关 session；`settled(failed)`，不 prompt |
+| `C-04` | `bindSession` | `CMP-executor` | `newSession` 后 | `claimed → bound` | `bound`（含 sessionId） | 关 session；按 §5.4 分档（stale→cancelled、invalid→failed）；不 prompt |
 | `C-05` | 无（`CMP-assets` 直连） | `CMP-executor` 编排 | `bindSession` 后 | `bound → ready`（安装成功） | `ready` | 原子回滚；`settled(failed)`，不 prompt |
 | `C-06` | `renew` | `CMP-cli` 租约任务 | TTL/3 | 无迁移 | 无 | 过期 → `cancelInstance`；`settled(cancelled)` |
 | `C-07` | `reportResult` | `CMP-executor` | `settled` 后 | `settled → reported → closed` | `settled` / `reported` / `closed` | 保留 `settled` 重试；`late_result` 只 ack |
@@ -800,8 +830,8 @@ claim ──▶ claimed ──newSession──▶ bindSession(C-04) ──▶ bo
                                               reported ──▶ closed
 ```
 
-- `C-03` 成功即 journal `claimed`；重复投递不新建状态机（`CLT-02`）。
-- `C-04` 失败：关 session，`settled(failed)`，`error.class = scheduler`；不 prompt。
+- `C-03` 成功即 journal `claimed`；同一 `claimRequestId` 的重复响应不新建状态机（`CLT-02`）。
+- `C-04` 失败按错误码分档：`stale_attempt`/`lease_expired`/`404` → 关 session、`settled(cancelled, superseded|lease_expired)`；`invalid_session`/`400`/`5xx` → `settled(failed, scheduler)`；manifest 不合法 → `settled(failed, asset)`；均不 prompt。
 - `C-06` 过期：`AbortSignal` → `runtime.cancel` → 关 session/杀进程组 → `settled(cancelled, reason=lease_expired)` → `C-07`（可能 late）→ `closed`。
 - `C-07` 是唯一让状态从 `settled` 前进到 `reported` 的路径；`run` 模式用本地输出代替，不注册调度器。
 - 控制事件 `cancel`/`pause`/`shutdown` 走 `cancelInstance`，不经过 `C-07` 的请求触发点；但仍产生 `settled(cancelled)` 并上报。
@@ -809,11 +839,12 @@ claim ──▶ claimed ──newSession──▶ bindSession(C-04) ──▶ bo
 ### 9.3 启动恢复与重报
 
 1. 清孤儿：`store.listOrphans` → `runtime.reapOrphan` → `store.clearOrphan`（client 不杀别人的进程）。
-2. `register`（新 `runId`）；调度器 fence 旧 run（`run_superseded`），但保留旧 attempt 的归属。
+2. `register`（新 `runId`）；调度器 fence 旧 run（`run_superseded`），但保留旧 attempt 的归属；旧 run 的活跃 attempt 未被旧 run 收口或租约过期前，调度器不得为同一实例重派（`SCH-02`/`SCH-19`）。
 3. `recover`：读 journal 非终态 attempt；`settled`/`reported` 且有结果的 → 用 **新 runId** 重报 `C-07`；`claimed`…`running` 无结果的 → 标记 `abandoned`，不上报。
 4. 重报成功的旧 attempt → `reported` → `closed`；失败的保留 `settled`，下次再试。
 5. 不自动重跑；等调度器用**新 attemptId**重派（`SCH-03`）。
 6. `assignments` 存在时，用其 `workspacePath` 校验容器；不存在时以 journal 为准，不阻塞领取。注意：无 `assignments` 时，`JournalPort` 需提供 `listInstances()` / `pendingAll()` 才能枚举待恢复 attempt；这是客户端内部端口变更（P2），不改变调度器接口。
+7. 控制事件队列按 `(clientId, runId)` 作用域：重启即新 run，旧 run 未 ack 事件由服务端丢弃，不补发；`ackSeq` 不要求跨崩溃持久化。旧 `cancel` 不会命中新 attempt（`issuedAt` 作用域，`RB-03`）。
 
 ### 9.4 容量与领取节奏
 
@@ -842,13 +873,14 @@ claim ──▶ claimed ──newSession──▶ bindSession(C-04) ──▶ bo
 | 同容器不同技能集 | 调度器违约（`SCH-05`） | `asset_skill_set_conflict`，不 prompt | `failed(asset)` |
 | 技能包 digest 不匹配 | — | 重试一次；仍失败 `checksum_mismatch`，不 prompt | `failed(asset)` |
 | prompt 中出现 cancel | 发 `cancel` | abort、关 session、杀进程组、上报 `cancelled(user_cancel)` | `closed` |
+| claim 到达时实例已被暂停/释放 | 可能刚发 `pause`/`shutdown` | 不建 session；`cancelled(paused|shutdown)`，租约内上报 | `closed` |
 | 暂停 | 发 `pause(instanceId)` | 停止该实例领取、取消活跃（`cancelled(paused)`） | `closed`；恢复后新 attempt |
 | 实例释放 | 发 `shutdown(instanceId, cleanup)` | 取消活跃、关进程、按策略清理、释放容量 | `closed` |
 | 整个 client 关闭 | 发 `shutdown()` | 停止领取、取消活跃、flush、退出 | 0（信号 130/143） |
 | 未知控制事件 | 未来新增类型 | ack + 记录，不崩溃 | 继续运行 |
 | 结果超过上限 | `413` | 应先截断；仍 413 记告警 | `closed` + 审计 |
 | 时钟偏差 | 响应带 `serverTime` | 用单调时钟计算剩余；±5s 容忍 | 继续运行 |
-| 双跑同一 `clientId` | 新 `runId` 生效，旧 run `409 run_superseded` | 旧 run 停止领取、取消活跃、退出（码待 Q12） | 待定 |
+| 双跑同一 `clientId` | 新 `runId` 生效，旧 run `409 run_superseded` | 旧 run 停止领取、取消活跃、上报 `cancelled(superseded)`，退出 7 | 7 |
 | 调度器 5xx/503 | 带 `Retry-After` | 退避重试；不重复执行 | 继续运行 |
 
 ## 11. 容量与同实例并发（待裁决）
@@ -868,7 +900,7 @@ claim ──▶ claimed ──newSession──▶ bindSession(C-04) ──▶ bo
 | B | 同一容器允许多个并发 session（同 digest） | `availableAttempts` / `availableSessions` | 需把 `cancelInstance` 细化为按 attempt 取消；`renew`/租约按 attempt 已支持；技能冲突判定成关键 |
 | C | fan-out 分支各自容器/进程 | `availableWorkspaces` | 与当前「共享容器」相冲突；`workspacePath` 变成每分支一个 |
 
-**推荐**：S1 采用 A，先把单节点/顺序节点跑通；B 留到 S2 fan-out 时再开，届时补 `cancelAttempt(attemptId)` 端口或把租约过期映射到实例取消的代价写清楚。若调度器在 S1 就会并发派发同一实例的多个节点，必须现在选 B/C，否则 client 只能串行，调度器会看到「有容量但领不走」的假死。
+**推荐**：S1 采用 A，先把单节点/顺序节点跑通；B 留到 S2 fan-out 时再开，届时补 `cancelAttempt(attemptId)` 端口或把租约过期映射到实例取消的代价写清楚。若调度器在 S1 就会并发派发同一实例的多个节点，必须现在选 B/C，否则 client 只能串行，调度器会看到「有容量但领不走」的假死。无论选哪个，派发侧都要守 `SCH-19`（同实例单活跃 attempt，A 方案下即串行）。
 
 ## 12. 版本、兼容与废弃
 
@@ -890,19 +922,21 @@ claim ──▶ claimed ──newSession──▶ bindSession(C-04) ──▶ bo
 
 | 文档/位置 | 现行 | 提案 | 类型 |
 |---|---|---|---|
-| `architecture.md` §3.1 | 5 个交互面（注册心跳/领取租约/绑定/上报/控制） | 增加 `C-05` 技能包下载；明确 `C-02` 是唯一推送通道；补 `runId`、`serverTime`、`limits` | 提案变更 |
+| `architecture.md` §3.1 | 5 个交互面（注册心跳/领取租约/绑定/上报/控制） | 增加 `C-05` 技能包下载；明确 `C-02` 是唯一推送通道；补 `runId`、`serverTime`、`limits`、`claimRequestId`、`SCH-19`；控制事件按 `(clientId, runId)` 作用域 | 提案变更 |
 | `architecture.md` §2 | 容量单位/同实例并发未定 | §11 三候选，S1 推荐 A | 待裁决 |
 | `architecture.md` §3.1 | 「字段级契约由 M1 冻结」 | 本稿即 M1 输入；字段名仍可改 | 不改原则 |
-| `CMP-executor` §3.4 `SchedulerPort` | `register`/`heartbeat`/`bindSession` 返回 `void`/`ControlBatch`/`SkillSet` | 返回类型扩展为 `Registration`/`HeartbeatResult`/`SessionBinding`（§6.6）；补 `renew` 的「尝试租约」语义、`register`/`heartbeat` 的载荷语义、`NodeRequest` 去 `skillSet` | 提案变更（P1） |
-| `CMP-executor` §3.5 `NodeRequest` | 含 `skillSet`（S0 内联/S1 引用），无 `lease`/`timeoutMs` | S1 技能集由 `C-04` 返回（`run` 本地文件仍可内联）；增加 `attemptNo` / `timeoutMs` / `lease` | 提案变更 |
+| `CMP-executor` §3.4 `SchedulerPort` | `register`/`heartbeat`/`bindSession` 返回 `void`/`ControlBatch`/`SkillSet` | 返回类型扩展为 `Registration`/`HeartbeatResult`/`SessionBinding`（§6.6）；`SessionBinding` 不含 `lease`；补 `renew` 的「尝试租约」语义、`register`/`heartbeat` 的载荷语义、`NodeRequest` 去 `skillSet` | 提案变更（P1） |
+| `CMP-executor` §3.5 `NodeRequest` | 含 `skillSet`（S0 内联/S1 引用），无 `claimedAt`/`lease`/`timeoutMs` | S1 技能集由 `C-04` 返回（`run` 本地文件仍可内联）；增加 `attemptNo` / `claimedAt` / `timeoutMs` / `lease` | 提案变更 |
 | `CMP-executor` §3.5 `JournalPort` | `pending(instanceId)` 需先知道实例 | 无 `assignments` 时需 `listInstances()` / `pendingAll()` 才能枚举恢复对象 | 提案变更（P2，客户端内部） |
 | `CMP-gateway` §3.3 | 错误表 9 项 | 新增 `invalid_session`、`run_superseded`；`forbidden`/404/413 映射说明；`late_result` 保持 409 | 提案变更 |
-| `CMP-gateway` §2.3 | `claim`/`reportResult` 幂等 | 补 `bindSession`/`renew` 幂等；补「attempt 归属按 clientId」 | 语义补充 |
+| `CMP-gateway` §2.3 | `claim`/`reportResult` 幂等 | `claim` 改用 `claimRequestId`；补 `bindSession`/`renew` 幂等；补「attempt 归属按 clientId」 | 语义补充 |
 | `CMP-gateway` §2.2 | 「重连即重新 `register`（如需）」 | 明确传输重连不重新 `register`；仅新 `runId` 或调度器显式要求时注册 | 语义补充 |
-| `CMP-cli` §2.4 | register/heartbeat/claim/renew 循环 | 补 `assignments`、`ackSeq` 空洞处理、claim 204/长轮询、`run_superseded` 收口 | 提案变更 |
-| `CMP-cli` §2.8 | 退出码表 | `run_superseded` 退出码待定（Q12）；其余不变 | 待裁决 |
-| `CMP-assets` §3 | 下载/校验/原子替换 | 补 `C-05` 的 304/413/跨 host 不带 token；`packageId` 不可变 | 语义补充 |
+| `CMP-gateway` §2.4 | 控制事件按 client 维护 `seq`/`ackSeq` | 改为按 `(clientId, runId)`；新 run 丢弃旧 run 未 ack 事件；`issuedAt` 作用域 | 提案变更（`RB-03`） |
+| `CMP-cli` §2.4 | register/heartbeat/claim/renew 循环 | 补 `claimRequestId`、`assignments`、`ackSeq` 空洞处理、claim 204/长轮询、`run_superseded` 收口、同实例串行（`SCH-19`） | 提案变更 |
+| `CMP-cli` §2.8 | 退出码表 | 新增 `7 run_superseded`（评审建议，Q18）；其余不变 | 提案变更 |
+| `CMP-assets` §3 | 下载/校验/原子替换；注入配置 | 补 `C-05` 的 304/跨 host 不带 token；`packageId` 不可变；与 gateway 共享组合根注入的 `AuthProvider`/`SchedulerEndpoint`，不 import gateway（`RD-01`） | 语义补充 |
 | `CMP-result` §2.2 | 错误映射表 | 新增 `invalid_session` → `scheduler`/false、`run_superseded` → `scheduler`/false；`cancel reason` 映射 | 提案变更 |
+| `CMP-result` §2.1 | `message` 失败/取消为空串 | 改为「有输出就填，空串仅表示确实没有输出」（`RD-04`） | 提案变更 |
 | `CMP-result` §2.1 | 取消/超时 `retryable=false` | `paused`/`lease_expired` 建议 `true` | 待裁决 |
 | `OQ-006/010/011/012/013` | 未决 | 本稿给默认值，见 §15；M1 关闭 | 待裁决 |
 
@@ -913,13 +947,15 @@ claim ──▶ claimed ──newSession──▶ bindSession(C-04) ──▶ bo
 按 `C-01`…`C-07` 实现内存桩，覆盖：
 
 - 注册/心跳/领取/绑定/下载/续租/上报的正常序；
-- 长轮询：有事件立即返回、无事件 30s 空批、断连补发、`ackSeq` 空洞；
-- 幂等：重复 claim、重复 bind、重复 report、迟到 report；
+- 长轮询：有事件立即返回、无事件 30s 空批、同 run 断连补发、`ackSeq` 空洞；
+- 幂等：同一 `claimRequestId` 重复 claim 只产生一个 attempt；重复 bind/report、迟到 report；
 - 租约：续租、过期、过期后上报；
-- 错误：400/401/403/404/409/413/426/429/500/503 的映射与退避；
-- 控制：cancel/pause/resume/shutdown（含实例级与整机）、未知 type、重复事件；
-- 技能：304、digest 不匹配、413、跨 host URL；
-- fencing：同 clientId 新 runId 顶掉旧 run；
+- 错误：400/401/403/404/409/413/426/429/500/503 的映射与退避；`C-04` 的 stale/lease_expired 收口；
+- 控制：cancel/pause/resume/shutdown（含实例级与整机）、未知 type、重复事件；新 run 不补发旧 run 事件；`issuedAt` 之后领取的 attempt 不被旧 cancel 命中；
+- 技能：304、digest 不匹配、跨 host URL；
+- 结果：`failed`/`timeout` 有输出时 `message` 非空；`truncated` 可解析；
+- fencing：同 clientId 新 runId 顶掉旧 run；旧 attempt 收口或租约过期前不重派（`SCH-19`）；
+- 绑定：`bindSession` 响应不带 `lease`；`C-04` 的 `stale_attempt`/`lease_expired` 映射为 cancelled；
 - 恢复：`settled` 未上报 → 重启 → 重报 accepted/late。
 
 ### 14.2 契约测试归属
@@ -957,9 +993,17 @@ claim ──▶ claimed ──newSession──▶ bindSession(C-04) ──▶ bo
 | Q9 | 结果大小上限 | 64/256/1024 KiB | 256 KiB；`limits` 下发 | S1 可先用默认 |
 | Q10 | `pause` 语义 | 节点边界等待 / 立即取消+重跑 | 立即取消，`reason=paused`，恢复后新 attempt | S1 可先用推荐 |
 | Q11 | 协议版本方案 | 日期+末位 / 语义化版本 | 日期+末位；兼容窗口 2 minor | S1 可先用默认 |
-| Q12 | `run_superseded` 退出码 | 2 / 新增码 / 6 | 暂用 2（重复进程=配置/用法），或新增专用码 | S1 可先用 2 |
+| Q12 | 旧 run 被顶掉后的收口 | 仅停领 / 停领+取消活跃 / 等自然结束 | 停领 + 取消活跃（`superseded`）；退出码见 Q18 | S1 |
+| Q13 | `claim` 幂等键（`RB-01`） | 加 `claimRequestId` / 维持现状 | 加 `claimRequestId`；同 `(clientId, claimRequestId)` 在租约窗内返回同一 attempt | M1 Blocker |
+| Q14 | 重派许可（`RB-02`） | 租约过期或旧 run 收口 / 租约过期或 fence | 前者；新增 `SCH-19` 同实例单活跃 attempt | M1 Blocker |
+| Q15 | 控制事件重放作用域（`RB-03`） | `issuedAt` 作用域 / 持久化 `ackSeq` | 前者为主：per-`(clientId, runId)` 队列 + `issuedAt`；新 run 丢弃旧 run 未 ack 事件 | M1 Blocker |
+| Q16 | `C-04` 失败映射（`RB-04`） | 按错误码分档 / 统一 `failed(scheduler)` | 按错误码分档 | M1 Blocker |
+| Q17 | `C-05` 鉴权归属（`RD-01`） | 共享凭据读取器 / gateway 代理下载 | 共享凭据读取器；assets 不 import gateway | M1 Decision |
+| Q18 | `run_superseded` 退出码（`RD-03`） | 7 / 0 / 2 | 新增 `7`；不复用 2（用法/配置） | S1 可先用 7 |
+| Q19 | `message` 语义（`RD-04`） | 有输出就填 / 维持空串 | 有输出就填；空串仅表示确实没有输出 | M1 Decision |
+| Q20 | `bindSession.lease`（`RD-05`） | 删除 / 取较晚者 | 删除；租约唯一来源 `claim`/`renew` | M1 Decision |
 
-> 阻塞 S1 的 6 项：Q1、Q2、Q3、Q5、Q6、Q7。其余可在 S1 实现中先用推荐默认值，M1 冻结时确认。
+> 阻塞 S1 的 6 项：Q1、Q2、Q3、Q5、Q6、Q7。阻塞 M1 冻结的 4 项：Q13、Q14、Q15、Q16（四条 Blocker 的修订已落稿，待调度器复核）。Q17–Q20 为 M1 决策项，不阻塞 S1。
 
 ## 16. 附录：端到端时序
 
@@ -995,3 +1039,18 @@ client（CLI/gateway）                             调度器
 - 产物上传、会话全文、日志回传；
 - 多机调度、跨 client 迁移、共享工作区；
 - `run` 本地模式（`LocalSchedulerAdapter`）的字段差异；本稿只约束 `serve` 的跨进程契约。
+
+### 17.1 已评估备选：client 入站 HTTP（否决）
+
+**结论**：S1/M1 不做；双方一致（client 侧评估 + 调度器评审 `review.md` §6），登记为已评估备选。
+
+**理由**：client 已是常驻后台服务，但常驻只说明进程生命周期，不提供稳定地址、身份或服务发现；它只把「心跳控制事件」半个操作变成直接调用，却引入新监听端口、第二套鉴权方向、endpoint 生命周期、服务发现与新的失败域；长任务仍需要 `202` + 状态查询 + 完成回调，契约面不降反增。净收益为负。
+
+**重开条件**（任一不满足则不重开）：
+
+1. client 具备稳定可寻址的地址与身份（当前已是 CLI 启动的常驻后台服务，但仍无稳定地址/身份/服务发现；**常驻本身不是充分条件**）；
+2. 平台提供 mTLS、服务发现与证书轮换；
+3. 调度器确需调用 client 的多种本地能力，而不只是执行节点；
+4. 执行以短任务/异步 job 为主，团队愿意维护双向契约与两套契约测试。
+
+若重开，另立 P1 的 `ExecutionIngress` 契约（`POST /attempts` → `202`、`GET /attempts/{id}`、`POST /attempts/{id}/cancel`），保留长轮询作为降级通道；不改造现有 `SchedulerPort`。
