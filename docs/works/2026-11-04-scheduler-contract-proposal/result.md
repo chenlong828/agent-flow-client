@@ -7,12 +7,12 @@ updated: 2026-11-06
 
 # 工序结果：调度器契约提案（client 消费端）
 
-> 状态：**v0.2 已按调度器评审修订，待调度器复核**。契约未冻结，`design/` 未改；冻结后另立 M1 工序。
+> 状态：**v0.3 已按调度器评审修订并补 ND-01/ND-02，待调度器复核**。契约未冻结，`design/` 未改；冻结后另立 M1 工序。
 
 ## 结论摘要
 
 - 调度器对 client 的接口面收敛为 **6 个控制面操作 + 1 个制品通道**：`register`、`heartbeat`（长轮询兼控制事件）、`claim`、`renew`、`bindSession`、`reportResult`，以及技能包下载。
-- client 侧需要调度器保证 **19 条**语义（`SCH-01`…`SCH-19`），client 承诺 12 条（`CLT-01`…`CLT-12`）；其中 6 条是 S1 的硬前提：实例粘性、单派发、attempt 身份、容器预置、技能集确定性、两条租约。
+- client 侧需要调度器保证 **20 条**语义（`SCH-01`…`SCH-20`），client 承诺 13 条（`CLT-01`…`CLT-13`）；其中 6 条是 S1 的硬前提：实例粘性、单派发、attempt 身份、容器预置、技能集确定性、两条租约。
 - 三个身份（`clientId` / `runId` / `attemptId`）与两条租约（客户端租约 / 尝试租约）是契约的骨架；attempt 归属按 `(clientId, attemptId)`，不按 `runId`，否则崩溃重启后的已结算结果永远报不上去。
 - 调度器侧评审结论为 **有条件通过**：四条 Blocker 已全部修订，五条 Decision now 已按建议拍板；逐条处置见 [`review.md`](review.md)，评审原文见 `../../../../agent-flow-orchaster/docs/works/2026-11-05-scheduler-contract-review/review.md`。
 - 评审新增 8 项裁决（Q13–Q20）；加上首轮 12 项，共 **20 项**。阻塞 S1 的仍是 Q1/Q2/Q3/Q5/Q6/Q7；阻塞 M1 冻结的是 Q13–Q16 四条 Blocker。
@@ -33,6 +33,8 @@ updated: 2026-11-06
 | `RD-03` `run_superseded` 退出码 | 新增 `7`，不复用 2 | §15 Q18、§5.1/§5.2/§5.3/§5.6、§10 |
 | `RD-04` `message` 语义 | 有输出就填，空串仅表示确实没有输出 | §6.2 |
 | `RD-05` `bindSession.lease` | 删除；租约唯一来源 `claim`/`renew` | §5.4、§6.6 |
+| `ND-01` `shutdown(instanceId, cleanup)` 副作用随旧事件丢失 | 新增 `cleanupPending[]`/`cleanupAcks[]` 与 `releaseId`；事件只做在线加速，状态跨 run 幂等补偿 | §5.1、§5.2、§7 `SCH-20`、§9.3 |
+| `ND-02` `SCH-19` 隐含 Q1=A | `SCH-19` 明写等价于 Q1 选 A；选 B 须改 `SCH-19` 并升 `protocolVersion` | §7、§11、§15 Q1 |
 
 ## 2. 验收对照
 
@@ -40,7 +42,7 @@ updated: 2026-11-06
 |---|---|---|
 | 7 个契约面的端点、字段、状态码、错误码、幂等键、超时/重试、调用时机 | `proposal.md` §2.1、§5.1–§5.7 | 完成 |
 | 每个契约面标明消费组件、端口方法、状态与失败收口 | `proposal.md` §3、§9.1 | 完成 |
-| 调度器责任 `SCH-*` 与客户端承诺 `CLT-*`，含违反后果 | `proposal.md` §7、§8 | 完成（`SCH-01`…`SCH-19`） |
+| 调度器责任 `SCH-*` 与客户端承诺 `CLT-*`，含违反后果 | `proposal.md` §7、§8 | 完成（`SCH-01`…`SCH-20`） |
 | 字段级值类型与枚举闭集 | `proposal.md` §6 | 完成 |
 | 失败与边界矩阵 | `proposal.md` §10 | 完成 |
 | 与现行文档的差异，逐条标类型 | `proposal.md` §13 | 完成 |
@@ -52,8 +54,8 @@ updated: 2026-11-06
 | 结论 | 当前落点 | 确认后去向 |
 |---|---|---|
 | 7 个契约面与字段级草案 | `proposal.md` §5–§6 | M1 冻结；字段进 `design/architecture.md` §3.1 或独立契约文档 |
-| 调度器责任 `SCH-01`…`SCH-19` | `proposal.md` §7 | 进 `architecture.md` §3.1/§10 与 `CMP-gateway` 规格 |
-| 客户端承诺 `CLT-01`…`CLT-12` | `proposal.md` §8 | 与 `architecture.md` §6 不变量对齐 |
+| 调度器责任 `SCH-01`…`SCH-20` | `proposal.md` §7 | 进 `architecture.md` §3.1/§10 与 `CMP-gateway` 规格 |
+| 客户端承诺 `CLT-01`…`CLT-13` | `proposal.md` §8 | 与 `architecture.md` §6 不变量对齐 |
 | 执行器承接与状态映射 | `proposal.md` §9 | 回填 `CMP-executor` §2.4/§3.4、`CMP-cli` §2.4、`CMP-gateway` §3 |
 | 与现行文档的差异 | `proposal.md` §13 | 按 P 级逐条改；契约变更按 P1/P2 走 |
 | 20 项待裁决 | `proposal.md` §15 | 调度器侧复核 Q13–Q16/Q18；关闭 `OQ-006/010/011/012/013` 与新增 OQ |
@@ -81,10 +83,12 @@ updated: 2026-11-06
 1. `RB-01`–`RB-04` 的修订是否满足冻结条件；
 2. `Q13`–`Q16`（Blocker 结论）与 `Q18`（退出码 7）是否确认；
 3. `SCH-19`（同实例单活跃 attempt）是否由调度器派发侧承担；
-4. client 控制面入站 HTTP 的否决与重开条件是否同意（§17.1）。
+4. client 控制面入站 HTTP 的否决与重开条件是否同意（§17.1）；
+5. `cleanupPending[]`/`cleanupAcks[]` 与 `SCH-20` 是否接受（`ND-01`）；
+6. `SCH-19` 明写“等价 Q1=A、选 B 需改条并升版本”是否接受（`ND-02`）。
 
 ## 6. 下一步
 
-1. 调度器侧复核本稿 v0.2；通过后 `review.md` 收口、本目录归档。
+1. 调度器侧复核本稿 v0.3；通过后 `review.md` 收口、本目录归档。
 2. 开 M1 冻结工序：把字段/错误码/枚举写进 `design/`，同步 `architecture.md`、`CMP-executor`、`CMP-gateway`、`CMP-cli`、`CMP-assets`、`CMP-result`。
 3. S1 实现顺序：桩调度器 → `CMP-gateway` 契约测试 → `CMP-cli` 循环（含 `claimRequestId`、`SCH-19`）→ `CMP-executor` 绑定/上报（含 C-04 分档）→ `CMP-assets` 下载。

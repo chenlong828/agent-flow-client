@@ -36,7 +36,7 @@ updated: 2026-11-06
 
 ## 进行中工序
 
-- `docs/works/2026-11-04-scheduler-contract-proposal/`：调度器契约提案（P1，调度器评审「有条件通过」；v0.2 已修 RB-01～RB-04，待复核）；S1 前需裁决 §15 的 Q1/Q2/Q3/Q5/Q6/Q7，M1 冻结前需清 Q13～Q16。
+- `docs/works/2026-11-04-scheduler-contract-proposal/`：调度器契约提案（P1，调度器评审「有条件通过」；v0.3 已修 RB-01～RB-04 并补 ND-01/ND-02，待复核）；S1 前需裁决 §15 的 Q1/Q2/Q3/Q5/Q6/Q7，M1 冻结前需清 Q13～Q16。
 - `docs/works/2026-11-06-observability-http/`：client 只读观测 HTTP 的 P1 设计稿（`/api/v1/observability`：当前/历史日志、SSE、DSH session 归档与 raw 下载）；不改变调度器控制契约，待确认端点/schema/安全口径后回填 `design/`。
 - 组件规格已出，等待 P1 确认；确认后立项 S0 本地执行闭环（`docs/works/<日期>-s0-local-loop/`），按 `SCN-0002` / `SCN-0001` 的 S0 用例拆任务。
 

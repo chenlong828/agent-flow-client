@@ -60,7 +60,7 @@ updated: 2026-11-06
 | OQ-005 | 日志保留多久 | 本工序给 `retentionDays` / `maxBytes` 默认，M1 确认 |
 | OQ-014 | 配置键清单与优先级 | 本工序新增 `[observability.http]`，待 M1 冻结 |
 | OQ-021 | 已上报未确认结果保留窗口 | 与观测保留分开：journal 是恢复真相，观测归档是查询副本 |
-| OQ-022 | 观测 HTTP 的绑定/鉴权/发现 | 本工序给默认：loopback + Bearer；scheduler 访问需显式 bind/token |
+| OQ-022 | 观测 HTTP 的绑定/鉴权/发现 | 本工序给默认：`0.0.0.0:17890`，CLI 可改；token 可选，空则不鉴权并告警 |
 
 ## 7. 环境与边界
 

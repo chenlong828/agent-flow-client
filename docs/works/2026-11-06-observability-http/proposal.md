@@ -41,8 +41,9 @@ GET /api/v1/observability/...
 | 实时日志 | SSE | 单向、简单、支持 `Last-Event-ID` 续传 |
 | 历史保留 | 实例清理前复制到 `stateRoot/observability` | 不依赖实例 home 存活；可设保留窗口 |
 | Session 粒度 | 规范化事件 + 原始文件下载 | 查询稳定；排障可拿 DSH 原文 |
-| 鉴权 | 静态 Bearer token；非 loopback 必须配置 token | 先做功能；TLS/mTLS/轮换后续 |
+| 鉴权 | 静态 Bearer token 可选；token 为空则不鉴权（受控网络） | 先做功能；TLS/mTLS/轮换后续 |
 | 发现 | v1 由调度器侧配置 base URL，不自动注册 | 不扩调度器契约；S2 再评估 |
+| 绑定 | 默认 `0.0.0.0:17890`，CLI 参数可改 | 调度器可直接访问；绑定所有接口不等于可路由，仍需网络可达 |
 
 ## 3. 端点
 
@@ -73,7 +74,7 @@ GET /api/v1/observability/...
 }
 ```
 
-鉴权与其它端点一致：token 为空时仅允许 loopback；非 loopback 必须 token。`health` 不返回路径、配置、凭据；`status` 取值 `ok` / `degraded`（日志写盘或归档失败）。
+鉴权与其它端点一致：token 非空时要求 Bearer；token 为空时不鉴权（受控网络）。`health` 不返回路径、配置、凭据；`status` 取值 `ok` / `degraded`（日志写盘或归档失败）。
 
 ### 3.2 `O-02` `GET /attempts`
 
@@ -362,21 +363,22 @@ max_event_bytes_per_attempt = 10485760
 
 [observability.http]
 enabled = true          # 仅 serve 生效；run 不启
-bind = "127.0.0.1"
+bind = "0.0.0.0"
 port = 17890
-token = ""              # 非 loopback 必须非空
+token = ""              # 空 = 不鉴权；仅用于受控网络
 max_streams = 20
 ```
 
-- `bind` 非 loopback 且 `token` 为空：启动失败，退出 2（`observability_token_required`）。
+- `bind` 默认 `0.0.0.0`，`port` 默认 `17890`；CLI 参数 `--observability-bind` / `--observability-port` / `--observability-token` 覆盖配置（`serve` 专用，`run` 不启）。
+- `token` 为空：不鉴权，启动日志与 `doctor` 记 `observability_insecure` 警告；仅用于受控网络。token 非空：所有请求要求 Bearer。
 - 绑定失败/端口占用：退出 4（`observability_bind_failed`）。
-- 调度器跨机访问：把 `bind` 设为可达地址，调度器侧配置 base URL + token；v1 不做自动发现。
+- 调度器跨机访问：`0.0.0.0` 只是监听所有接口，调度器仍需可达 IP/端口；v1 不做自动发现。
 
 ## 6. 鉴权与安全
 
-- 所有端点要求 `Authorization: Bearer <token>`；token 为空时仅允许 loopback（所有端点不再校验 token）；非 loopback 启动直接失败；常量时间比较；不记录 token。
-- 默认 `bind=127.0.0.1`；非 loopback 必须 token。TLS/mTLS/轮换/来源 IP 限制后续特性。
-- 原始 session 文件包含 system prompt、推理、工具 I/O，属敏感数据；只允许 token 访问，`Cache-Control: no-store`，访问写审计（requestId/attemptId/sessionId/remote）。
+- token 非空时：所有端点要求 `Authorization: Bearer <token>`；常量时间比较；不记录 token。
+- token 为空时：不鉴权；启动日志与 `doctor` 告警 `observability_insecure`。默认 `bind=0.0.0.0`，不要把无鉴权端口暴露到不可信网络；TLS/mTLS/轮换/来源 IP 限制后续特性。
+- 原始 session 文件包含 system prompt、推理、工具 I/O，属敏感数据；只通过本观测面访问；token 为空时仅限受控网络；`Cache-Control: no-store`，访问写审计（requestId/attemptId/sessionId/remote）。
 - 日志事件默认脱敏：键名匹配凭据；prompt/结果全文不写；`message` 截断。
 - 只读：不提供 POST/PUT/PATCH/DELETE；不提供文件系统路径参数；`sessionId`/`attemptId` 必须存在。
 - 响应头：`X-Content-Type-Options: nosniff`、`Cache-Control: no-store`；不做 CORS（调度器非浏览器）。
@@ -408,7 +410,7 @@ max_streams = 20
 | 场景 | 行为 |
 |---|---|
 | HTTP 端口被占 | `serve` 启动失败，退出 4；不影响 `run` |
-| token 为空且 bind 非 loopback | 启动失败，退出 2 |
+| token 为空 | 不鉴权启动，记 `observability_insecure` 警告；受控网络才允许 |
 | 日志写盘失败 | 主流程不受影响；HTTP 仍可读已有日志；健康状态 `degraded` |
 | session 归档失败 | 不删除实例 home；`archiveStatus=failed`；`raw` 返回 409/503；告警 |
 | 保留清理与查询并发 | 查询返回 410 或空；不返回半文件 |
@@ -426,7 +428,7 @@ max_streams = 20
 
 ## 10. 待确认
 
-1. `bind`/`port`/token 的默认值是否符合调度器部署（同机 or 跨机）。
+1. ~~`bind`/`port`/token 默认值~~ 已定：`0.0.0.0:17890`，CLI 可改；token 可选，空则不鉴权并告警。
 2. 调度器如何拿到 base URL/token：v1 静态配置，还是 `register` 上报 `observabilityUrl`？
 3. 历史范围：只保留本 client 的 attempt，还是按实例跨 client 合并？（当前：本 client）。
 4. 原始 session 下载是否需要二次授权/审计级别（v1 只 token）。

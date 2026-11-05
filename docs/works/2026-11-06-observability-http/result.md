@@ -14,14 +14,14 @@ updated: 2026-11-06
 - 当前日志用 SSE；历史步骤通过 attempt 列表 + 分页日志查询；DSH session 同时提供规范化事件与原始 `session.v4.jsonl.zstd` 下载。
 - session 清理前归档到 `<stateRoot>/observability/sessions/<sessionId>/`；归档失败不删实例 home。
 - 推荐扩展 `CMP-observability`（方案 A），新增 `ObservationStore` / `EventHub` / `ObservationHttpServer`；`CMP-runtime` 只负责写 session 归档。
-- v1 默认 `bind=127.0.0.1`；非 loopback 必须配置 Bearer token；TLS/mTLS/轮换后续特性。
+- v1 默认 `bind=0.0.0.0:17890`，可用 `serve --observability-bind/--observability-port` 覆盖；Bearer token 可选，为空时不鉴权并告警；TLS/mTLS/轮换后续特性。
 
 ## 2. 已定口径
 
 | 项 | 结论 |
 |---|---|
 | 路径 | `/api/v1/observability` |
-| 暴露 | 调度器/运维；v1 静态 base URL + token，不做自动发现 |
+| 暴露 | 调度器/运维；v1 静态 base URL + 可选 token，不做自动发现 |
 | 读写 | 只读 GET |
 | 实时 | SSE，支持 `Last-Event-ID` |
 | Session | 规范化事件 + 原始文件下载 |
@@ -30,7 +30,7 @@ updated: 2026-11-06
 
 ## 3. 未决
 
-1. 调度器与 client 是同机还是跨机；`bind` 默认值是否足够。
+1. ~~调度器与 client 同机/跨机；`bind` 默认值~~ 已定：默认 `0.0.0.0:17890`，CLI 可改；实际可达 IP/端口由部署配置。
 2. 调度器如何拿到 base URL/token：静态配置，还是 `register` 上报 `observabilityUrl`？
 3. 历史是否只查本 client，还是按实例跨 client 合并。
 4. 原始 session 下载是否要二次授权/审计级别。

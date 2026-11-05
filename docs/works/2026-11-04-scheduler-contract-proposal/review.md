@@ -9,7 +9,7 @@ updated: 2026-11-06
 
 > 评审对象：[`proposal.md`](proposal.md) v0.1（997 行）。
 > 评审原文：`../../../../agent-flow-orchaster/docs/works/2026-11-05-scheduler-contract-review/review.md`（2026-11-05，P1）。
-> 评审结论：**有条件通过**；条件是四条 Blocker、五条 Decision now 必须先收口。client 侧已逐条裁决并落到 v0.2；待调度器复核后转「通过」。
+> 评审结论：**有条件通过**；条件是四条 Blocker、五条 Decision now 必须先收口。client 侧已逐条裁决并落到 v0.3；待调度器复核后转「通过」。
 > 确认记录：调度器侧评审人见原文；client 侧裁决为本工序；最终确认待复核（P1 人工门未关闭）。
 
 ## 1. 总览
@@ -20,6 +20,7 @@ updated: 2026-11-06
 | Decision now（`RD-01`–`RD-05`） | 5 | 全部接受，按评审建议拍板 |
 | Hold（`H-01`–`H-07`） | 7 | 全部接受；`H-01` 转 `OQ-021`，其余落提案 |
 | 架构备选（client 控制面入站 HTTP） | 1 | 双方一致否决 S1/M1；只读观测 HTTP 另立 P1，不在本契约 |
+| 补充缺陷（`ND-01`–`ND-02`） | 2 | 全部接受；`ND-01` 新增 `SCH-20`，`ND-02` 明写 `SCH-19` 与 Q1=A 的等价关系 |
 
 未改动 `docs/design/`；本轮只改提案与工序文档，冻结仍走 M1。
 
@@ -29,7 +30,7 @@ updated: 2026-11-06
 |---|---|---|
 | `RB-01` `claim` 无幂等键 | 接受。`claim` 请求加 client 生成的 `claimRequestId`；同一 `(clientId, claimRequestId)` 在租约窗内返回同一 attempt；`attemptId` 只作为响应值，不再冒充请求幂等键 | §2.1、§4.5、§5.3、§7 `SCH-09`、§14.1 |
 | `RB-02` fence 不等于停止执行 | 接受。`SCH-02` 改为「旧租约过期或旧 run 已上报终态」才可重派；新增 `SCH-19` 同实例单活跃 attempt；`§5.1.3` 写明 fence 窗口；`§9.3` 同步恢复顺序 | §5.1、§7 `SCH-02`/`SCH-19`、§9.3、§11 |
-| `RB-03` 控制事件重放无作用域 | 接受。控制事件队列按 `(clientId, runId)`；新 run 注册时丢弃旧 run 未 ack 事件；`issuedAt` 只作用于 `claimedAt < issuedAt` 的 attempt；`ackSeq` 不要求跨崩溃持久化 | §2.2、§5.2、§6.1、§6.4、§9.3、§13 |
+| `RB-03` 控制事件重放无作用域 | 接受。控制事件队列按 `(clientId, runId)`；新 run 注册时丢弃旧 run 未 ack 事件；`shutdown(instanceId, cleanup)` 的副作用由 `cleanupPending` 补偿；`issuedAt` 只作用于 `claimedAt < issuedAt` 的 attempt；`ackSeq` 不要求跨崩溃持久化 | §2.2、§5.2、§6.1、§6.4、§9.3、§13 |
 | `RB-04` `C-04` 失败映射冲突 | 接受。`stale_attempt`/`lease_expired`/`404` → `cancelled(superseded|lease_expired)`；`invalid_session`/`400`/`5xx` → `failed(scheduler)`；manifest → `failed(asset)` | §5.4、§9.1、§10 |
 
 ## 3. Decision now 处置
@@ -74,10 +75,18 @@ updated: 2026-11-06
 
 > 只读观测 HTTP 已另立 P1（`docs/works/2026-11-06-observability-http/`），只提供日志/session 查询，不承接控制，故不推翻本节结论。
 
+## 6.1 补充缺陷（2026-11-06）
+
+| ID | 缺陷 | 处置 | 提案落点 |
+|---|---|---|---|
+| `ND-01` | `shutdown(instanceId, cleanup)` 的本地副作用跟着旧 run 未 ack 事件一起丢失；而实例从 assignments 快照消失又不触发删除容器，清理意图无补偿通道 | 接受。新增独立于 `assignments` 的 `cleanupPending[]` 幂等状态（`releaseId`/`instanceId`/`workspacePath?`/`cleanup`/`releasedAt`），`register` 与每次心跳返回；client 用 `cleanupAcks[]` 回执 `done`/`failed`，调度器只在 `done` 时清账。`shutdown` 事件带同一 `releaseId`，只做在线加速；事件丢失/新 run 丢弃时由状态补偿。新增 `SCH-20`，`shutdown(instanceId)` 的释放意图不再依赖事件跨 run 重放 | §5.1、§5.2、§6.6、§7 `SCH-13`/`SCH-20`、§8 `CLT-13`、§9.3、§10、§13、§14 |
+| `ND-02` | `SCH-19` 无条件「同实例单活跃 attempt」已等价于 Q1 选 A，但未写明；将来选 B 会变成修改已冻结的 SCH 条目 | 接受。`SCH-19` 明写「本条等价于 Q1 选 A；若选 B，改为同实例多 attempt 仅当技能集 digest 相同（`SCH-05`），且需升 `protocolVersion`」；Q1 推荐与 §11 同步这句话 | §7 `SCH-19`、§11、§15 Q1 |
+
 ## 7. 待复核
 
 1. 调度器侧复核 `RB-01`–`RB-04` 的修订是否满足冻结条件；
 2. 确认 `Q13`–`Q16`（Blocker 结论）与 `Q18`（退出码 7）；
-3. 复核通过后，`review.md` 可收口为「通过」，本工序 `result.md` 更新为最终结论；M1 冻结另立工序。
+3. 确认 `ND-01` 的 `cleanupPending`/`cleanupAcks`/`SCH-20` 与 `ND-02` 的 `SCH-19` 等价表述；
+4. 复核通过后，`review.md` 可收口为「通过」，本工序 `result.md` 更新为最终结论；M1 冻结另立工序。
 
 **决策与反对**：client 接受全部 Blocker/Decision now 修法，无反对意见；`RD-03` 的「退 0」备选未采纳（无法区分正常重跑与旧进程被顶掉，运维不可观测）。**开放**：调度器复核、`OQ-021` 结果保留窗口。**owner**：client 提案工序；调度器侧评审人。

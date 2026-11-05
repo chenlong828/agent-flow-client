@@ -45,7 +45,7 @@ docs/
 │   │   ├── brief.md
 │   │   ├── result.md
 │   │   └── probe/                          ← 空会话探针
-│   ├── 2026-11-04-scheduler-contract-proposal/ ← 调度器契约提案（评审有条件通过，v0.2 待复核）
+│   ├── 2026-11-04-scheduler-contract-proposal/ ← 调度器契约提案（评审有条件通过，v0.3 待复核）
 │   │   ├── brief.md
 │   │   ├── proposal.md                     ← 6 个控制面操作 + 技能包通道、SCH/CLT、裁决项
 │   │   ├── review.md                       ← 调度器评审结论 + client 四档裁决

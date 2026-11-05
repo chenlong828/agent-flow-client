@@ -28,5 +28,6 @@ updated: 2026-11-06
 | 共享 `DSH_HOME` 导致跨 profile 会话暴露 | ACP 会话（含 system prompt、推理、工具 I/O、审批）会出现在 web/desktop 的 `session/list`；home 首次初始化时还会被 workspace bootstrap 登记成工作区。反向 ACP 也能列出 desktop/web 会话，client 直接展示会把用户私人历史带给上层 | 一实例一 home，spawn 时显式传 `DSH_HOME`，绝不指向 `~/.dsh`；client 只展示/恢复本实例记录的 sessionId；不以 profile 名或 `session-` 前缀做隔离；实例回收删 home。详见 `docs/works/2026-11-03-acp-session-records/result.md` |
 | client 不自动重跑，依赖调度器重派 | 崩溃/重启后节点停摆或延迟到下次重派；调度器不重派时实例卡住 | 已在 `SCN-0001`/`REQ-0002` 锁定“等重派”；调度器侧需定义崩溃识别与重派策略（OQ-012）；client 记录未收口 attempt 供排障 |
 | 取消立即强杀丢失最终输出 | 模型已产生的部分输出来不及回传，结果只能报 `cancelled` | 取消以收敛为先；journal 保留已收事件供本地排障；若 prompt 已结算则按实际结果上报（`REQ-0002` R-03） |
-| 观测 HTTP 暴露原始 DSH session | 原始文件含 system prompt、推理、工具 I/O；误暴露或无限保留会泄漏/撑爆磁盘 | 默认 loopback；非 loopback 强制 Bearer token；raw 响应 `no-store` 并审计；`retentionDays`/`maxBytes` 清理；归档失败不删实例 home，先重试再清理 |
+| 释放/清理意图随旧 run 事件丢失 | 容器/工作区永久留存，调度器误以为已释放，容量与磁盘泄漏 | `cleanupPending[]` 跨 run 幂等保留到 `cleanupAcks`；`shutdown` 事件只做在线加速；`SCH-20` 明确事件可丢、状态不可丢 |
+| 观测 HTTP 暴露原始 DSH session | 原始文件含 system prompt、推理、工具 I/O；误暴露或无限保留会泄漏/撑爆磁盘 | 默认 `0.0.0.0` 且 token 可空，必须限定受控网络；token 非空时强制 Bearer；raw 响应 `no-store` 并审计；`retentionDays`/`maxBytes` 清理；归档失败不删实例 home，先重试再清理 |
 | 配置错误被静默回退 | 非法 `.config`、空值或不可写目录回退默认，操作员以为配置生效，节点用错 home | `SCN-0002` 校验失败即退出 2，不回退默认；`doctor` 输出生效值与来源；启动日志记录来源 |
