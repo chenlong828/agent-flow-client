@@ -2,7 +2,7 @@
 layer: plan
 module: global
 status: current
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 
 # 开放问题
@@ -30,3 +30,4 @@ updated: 2026-11-05
 | OQ-019 | `claim` 是否长轮询？空闲客户端的轮询形态？ | 领取延迟、服务端连接数与空转 | 提案推荐 `claim` 长轮询 20s，`204` 可带 `Retry-After`；见提案 §4.6/§15 Q5。 |
 | OQ-020 | 客户端认证方式与轮换；`run_superseded` 的退出码？ | 安全、双跑 fencing 与 CLI 契约 | 提案推荐 Bearer + TLS、轮换下一版；`run_superseded` 按评审建议新增退出码 7（不复用 2），待 M1 确认；见提案 §4.2/§15 Q7、Q18。 |
 | OQ-021 | 「已上报但服务端未确认」的结果在 journal 保留多久？ | 磁盘占用、凭据吊销后的滞留与可重报窗口 | 评审 `H-01` 提出；属 client 内部存储策略，不改调度器契约。S1 先按「attempt 未重派且未关闭即可重报」实现，M1 前定保留窗口/上限与清理策略。 |
+| OQ-022 | 只读观测 HTTP 的绑定地址、端口、token 与调度器发现方式？ | 调度器能否访问、原始 session 暴露面、部署方式 | P1 设计稿：默认 `127.0.0.1:17890` + Bearer token；非 loopback 必须 token；v1 调度器侧静态配置 base URL，不自动发现。待确认同机/跨机与是否在 `register` 上报 `observabilityUrl`。见 `docs/works/2026-11-06-observability-http/proposal.md`。 |

@@ -2,7 +2,7 @@
 layer: works
 module: global
 status: active
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 
 # 调度器评审记录与 client 裁决
@@ -19,7 +19,7 @@ updated: 2026-11-05
 | Blocker（`RB-01`–`RB-04`） | 4 | 全部接受，已在提案修订；待调度器复核 |
 | Decision now（`RD-01`–`RD-05`） | 5 | 全部接受，按评审建议拍板 |
 | Hold（`H-01`–`H-07`） | 7 | 全部接受；`H-01` 转 `OQ-021`，其余落提案 |
-| 架构备选（client 入站 HTTP） | 1 | 双方一致否决 S1/M1；登记在提案 §17.1 |
+| 架构备选（client 控制面入站 HTTP） | 1 | 双方一致否决 S1/M1；只读观测 HTTP 另立 P1，不在本契约 |
 
 未改动 `docs/design/`；本轮只改提案与工序文档，冻结仍走 M1。
 
@@ -66,11 +66,13 @@ updated: 2026-11-05
 | `H-06` `attemptNo` 语义 | 接受：同一节点在本实例内的第几次尝试，从 1 开始，仅审计 |
 | `H-07` 404 映射 | 接受：`attempt_not_found` → `stale_attempt`；`package_not_found`/`gone` → `asset` |
 
-## 6. client 入站 HTTP
+## 6. client 控制面入站 HTTP
 
 **结论**：不在 S1/M1 做，登记为已评估备选。client 已经是 CLI `serve` 启动的常驻后台服务，但**常驻不等于可被调度器寻址**：仍缺稳定地址、身份、mTLS/服务发现。加入站 HTTP 只改变心跳控制事件的半个操作，却引入新监听、第二套鉴权方向、endpoint 生命周期与新失败域；长任务仍需 `202` + 状态查询 + 完成回调，净收益为负。
 
 **重开条件**：client 具备稳定可寻址地址与身份（常驻已满足，但仍缺地址/身份/发现）；平台提供 mTLS/服务发现；调度器确需调用多种本地能力；执行以短任务/异步 job 为主且团队愿维护双向契约。若重开，另立 P1 `ExecutionIngress`，不改造 `SchedulerPort`。详见提案 §17.1。
+
+> 只读观测 HTTP 已另立 P1（`docs/works/2026-11-06-observability-http/`），只提供日志/session 查询，不承接控制，故不推翻本节结论。
 
 ## 7. 待复核
 

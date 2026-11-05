@@ -2,7 +2,7 @@
 layer: works
 module: global
 status: active
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 
 # 调度器契约提案：执行面客户端的接口依赖（v0.2）
@@ -21,9 +21,9 @@ updated: 2026-11-05
 
 `register`、`heartbeat`（长轮询，兼控制事件）、`claim`、`renew`、`bindSession`、`reportResult`，以及技能包下载。
 
-client 不读调度器数据库、不执行编排、不接受调度器主动连接；所有交互由 client 出站。其余能力（工作流定义、节点选择、评审、分支、fan-out 拆分、产物、会话全文、日志）都不在契约面内。
+client 不读调度器数据库、不执行编排、不接受调度器主动连接**控制面**；控制交互全部由 client 出站。只读观测 HTTP 是独立面（见 `docs/works/2026-11-06-observability-http/`），不参与 claim/cancel/租约，也不改变本契约。其余能力（工作流定义、节点选择、评审、分支、fan-out 拆分、产物、会话全文、日志上传）都不在调度器契约面内。
 
-client 的运行形态是：由 CLI `serve` 子命令启动的**常驻后台执行进程**，CLI 只是启动/管理入口；`run` 仍是一次性模式。它常驻但只出站：不监听端口、不提供本地 HTTP/IPC，也不因为常驻就变成可被调度器寻址的服务。
+client 的运行形态是：由 CLI `serve` 子命令启动的**常驻后台执行进程**，CLI 只是启动/管理入口；`run` 仍是一次性模式。它的控制面只出站：不监听控制端口、不提供本地控制 HTTP/IPC，也不因为常驻就变成可被调度器寻址的控制面服务。只读观测 HTTP 是独立面，见 `docs/works/2026-11-06-observability-http/`。
 
 ## 2. 一页结论
 
@@ -778,7 +778,7 @@ type Limits = {
 | `SCH-15` | **认证与隔离**：token 绑定 `clientId`；401/403 区分；一个 client 不能读他人 attempt/package；TLS | client 只持自己的凭据 | 越权读结果/包；凭据泄漏 |
 | `SCH-16` | **限流与容量**：按上报容量派发、不超卖；429 带 `Retry-After`；限流不改变租约语义 | client 按容量决定领不领 | 超卖、OOM、任务堆积在单机 |
 | `SCH-17` | **时间与审计**：每个成功响应带 `serverTime`；回显 `requestId`；审计 `clientId/runId/instanceId/nodeId/attemptId/sessionId` | client 处理时钟偏差与排障 | 租约误判、无法对账 |
-| `SCH-18` | **推送通道唯一**：只用心跳长轮询；不主动连 client；不要求 client 开端口 | client 是常驻但纯出站的进程；常驻不等于可寻址 | 部署不可行、NAT/防火墙问题 |
+| `SCH-18` | **控制面推送通道唯一**：只用心跳长轮询；不主动连 client 控制面；不要求 client 开控制端口 | client 常驻但控制面纯出站；观测面是独立只读 HTTP，不承接控制 | 部署不可行、NAT/防火墙问题 |
 | `SCH-19` | **同实例单活跃 attempt**：派发侧保证同一 `instanceId` 同一时刻只有一个未终结 attempt（Q1 选 A 时即串行） | 同一容器/技能根不能被两个 DSH 进程并行写；client 无法单方面拒绝已派发的 attempt | 产物与技能目录互相污染，不可逆 |
 
 ## 8. 客户端承诺（`CLT`）
@@ -1040,9 +1040,11 @@ client（CLI/gateway）                             调度器
 - 多机调度、跨 client 迁移、共享工作区；
 - `run` 本地模式（`LocalSchedulerAdapter`）的字段差异；本稿只约束 `serve` 的跨进程契约。
 
-### 17.1 已评估备选：client 入站 HTTP（否决）
+### 17.1 已评估备选：client 控制面入站 HTTP（否决）
 
-**结论**：S1/M1 不做；双方一致（client 侧评估 + 调度器评审 `review.md` §6），登记为已评估备选。
+> 本节否决的是**控制面**入站 HTTP（替代 heartbeat/claim/cancel）。只读观测 HTTP 是独立面，已另立 P1：`docs/works/2026-11-06-observability-http/`；它不参与控制、租约与结果上报。
+
+**结论**：控制面 S1/M1 不做；双方一致（client 侧评估 + 调度器评审 `review.md` §6），登记为已评估备选。
 
 **理由**：client 已是常驻后台服务，但常驻只说明进程生命周期，不提供稳定地址、身份或服务发现；它只把「心跳控制事件」半个操作变成直接调用，却引入新监听端口、第二套鉴权方向、endpoint 生命周期、服务发现与新的失败域；长任务仍需要 `202` + 状态查询 + 完成回调，契约面不降反增。净收益为负。
 

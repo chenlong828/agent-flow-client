@@ -2,7 +2,7 @@
 layer: works
 module: global
 status: active
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 
 # 工序结果：调度器契约提案（client 消费端）
@@ -16,8 +16,8 @@ updated: 2026-11-05
 - 三个身份（`clientId` / `runId` / `attemptId`）与两条租约（客户端租约 / 尝试租约）是契约的骨架；attempt 归属按 `(clientId, attemptId)`，不按 `runId`，否则崩溃重启后的已结算结果永远报不上去。
 - 调度器侧评审结论为 **有条件通过**：四条 Blocker 已全部修订，五条 Decision now 已按建议拍板；逐条处置见 [`review.md`](review.md)，评审原文见 `../../../../agent-flow-orchaster/docs/works/2026-11-05-scheduler-contract-review/review.md`。
 - 评审新增 8 项裁决（Q13–Q20）；加上首轮 12 项，共 **20 项**。阻塞 S1 的仍是 Q1/Q2/Q3/Q5/Q6/Q7；阻塞 M1 冻结的是 Q13–Q16 四条 Blocker。
-- client 的运行形态是 **CLI `serve` 启动的常驻后台执行进程**；CLI 只是入口，`run` 仍是一次性模式。常驻不等于可寻址：本契约仍只允许 client 出站，不监听端口。
-- 双方一致**不在 S1/M1 给 client 加入站 HTTP**；作为已评估备选登记在提案 §17.1，重开条件为具备稳定可寻址地址与身份（常驻已满足，但仍缺地址/身份/发现）、平台 mTLS/发现、调度器需多种本地能力、执行以短任务/异步 job 为主。
+- client 的运行形态是 **CLI `serve` 启动的常驻后台执行进程**；CLI 只是入口，`run` 仍是一次性模式。常驻不等于可寻址：本契约的控制面仍只允许 client 出站；只读观测面另立 P1。
+- 双方一致**不在 S1/M1 给 client 加控制面入站 HTTP**；作为已评估备选登记在提案 §17.1，重开条件为具备稳定可寻址地址与身份（常驻已满足，但仍缺地址/身份/发现）、平台 mTLS/发现、调度器需多种本地能力、执行以短任务/异步 job 为主。只读观测 HTTP 另立 P1（`2026-11-06-observability-http`），不承接控制。
 - 与现行文档的差异集中在：新增技能包下载面、`NodeRequest` 去掉 `skillSet`、`SchedulerPort` 的 `register`/`heartbeat`/`bindSession` 返回类型扩展、`claim` 改用 `claimRequestId`、控制事件按 run 作用域、退出码新增 7、`bindSession` 不再返回 `lease`。
 
 ## 1. 评审处置
@@ -58,7 +58,7 @@ updated: 2026-11-05
 | 与现行文档的差异 | `proposal.md` §13 | 按 P 级逐条改；契约变更按 P1/P2 走 |
 | 20 项待裁决 | `proposal.md` §15 | 调度器侧复核 Q13–Q16/Q18；关闭 `OQ-006/010/011/012/013` 与新增 OQ |
 | 联调与验收建议 | `proposal.md` §14 | S1 桩调度器与契约测试的任务输入 |
-| client 入站 HTTP 否决 | `proposal.md` §17.1 | 已评估备选；触发条件满足才另立 P1 |
+| client 控制面入站 HTTP 否决 | `proposal.md` §17.1 | 已评估备选；只读观测 HTTP 另立 P1 |
 
 ## 4. 未决与风险
 
@@ -81,7 +81,7 @@ updated: 2026-11-05
 1. `RB-01`–`RB-04` 的修订是否满足冻结条件；
 2. `Q13`–`Q16`（Blocker 结论）与 `Q18`（退出码 7）是否确认；
 3. `SCH-19`（同实例单活跃 attempt）是否由调度器派发侧承担；
-4. client 入站 HTTP 的否决与重开条件是否同意（§17.1）。
+4. client 控制面入站 HTTP 的否决与重开条件是否同意（§17.1）。
 
 ## 6. 下一步
 
