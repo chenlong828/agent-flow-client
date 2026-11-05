@@ -11,7 +11,12 @@
     "dev": "bun run src/cli.ts",
     "start": "bun run src/cli.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck && bun test && bun run docs:check && bun run quality:gate",
+    "docs:index": "bun run scripts/scenario-index.ts",
+    "docs:check": "bun run scripts/scenario-index.ts --check",
+    "quality:report": "bun run scripts/quality-report.ts",
+    "quality:gate": "bun run scripts/quality-report.ts --gate"
   },
   "devDependencies": {
     "@types/bun": "^1.4.4",
