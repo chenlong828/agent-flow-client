@@ -2,7 +2,7 @@
 layer: plan
 module: global
 status: current
-updated: 2026-11-03
+updated: 2026-11-04
 ---
 
 # 开放问题
@@ -18,5 +18,14 @@ updated: 2026-11-03
 | OQ-007 | 目标平台范围？ | 脚本/路径/进程实现 | 先 macOS/Linux |
 | OQ-008 | client 与 DSH 的版本兼容窗口？ | 升级策略 | 实测 ACP v1、dsh 0.2.2-alpha.2；兼容窗口待 S1 契约冻结时定 |
 | OQ-009 | DSH_HOME 隔离粒度：一实例一 home 还是一 client 一 home？ | 会话可见性、凭据与磁盘占用 | 预研建议一实例一 home；S0-11 补充：崩溃后 lock 残留、`session/list` 会列出崩溃会话、孤儿进程需清理，隔离粒度需一并考虑回收策略；2026-11-03 会话记录调研：session 按 `DSH_HOME` 归属、profile 目录不含 session，共用 home 时 web/desktop `session/list` 实测返回 ACP 会话（首次初始化还会被 workspace bootstrap 采纳），ACP 反向也能列出 desktop 会话；因此必须一实例一 home，client 只展示/恢复本实例记录的 id（详见 `docs/works/2026-11-03-acp-session-records/result.md`） |
-| OQ-010 | 租约 TTL 与心跳长轮询超时？ | 离线判定与取消延迟 | 心跳间隔已定 30s（2026-11-03）；TTL 必须大于 30s，M1 定具体值 |
-| OQ-011 | 容量单位：实例数还是 session 数？ | `serve` 循环与领取 | M1 定；当前按实例数设计 |
+| OQ-010 | 租约 TTL 与心跳长轮询超时？ | 离线判定与取消延迟 | 心跳间隔已定 30s（2026-11-03）；TTL 必须大于 30s。提案拆成客户端租约（90s）与尝试租约（120s），见 `docs/works/2026-11-04-scheduler-contract-proposal/proposal.md` §2.3/§15（Q8）；M1 定最终值。 |
+| OQ-011 | 容量单位：实例数还是 session 数？ | `serve` 循环与领取 | M1 定；提案 §11 给 A/B/C 三候选，S1 推荐「实例数 + 同实例串行」（Q1）。当前按实例数设计。 |
+| OQ-012 | 崩溃后调度器如何识别并重派？同一 attemptId 还是新 attempt？ | 恢复触发、幂等与结果归属 | S1 契约冻结时定；提案建议重跑必须新 `attemptId`，同 attemptId 只做传输重放；已结算结果按 `clientId + attemptId` 重报（`SCH-11`）。client 只清理并重新注册，不自动重跑（`REQ-0002` R-04）。 |
+| OQ-013 | 取消/超时强杀前是否抓取已产生的部分输出？ | 结果完整性与排障 | 当前默认不抓，报 `cancelled`/`timeout`；若需要，M1 结果契约加 partial 字段（`REQ-0002` R-03）。提案维持不带，`message` 只在成功时有内容。 |
+| OQ-014 | 除 `[acp].dsh_home` 外，配置键清单与优先级何时冻结？ | `SCN-0002` 的范围、`CMP-cli` 规格与部署文档 | 组件规格已提案 `[acp].permission`（默认 `deny`）与 `state.root`（默认 `<runDir>/.agent-flow-client`），并给 `run/serve --permission`；键名与优先级待 P1 确认 / M1 冻结。S0 只强制 `[acp].dsh_home`。 |
+| OQ-015 | `run` 的非成功节点结果是否用退出码 `1`，SIGTERM 是否用 `143`？ | CLI 契约、S0 测试与 CI 判定 | 组件规格暂定 `1`（非成功 `NodeResult`）与 `143`（SIGTERM）；已写入 `architecture.md` §3.2，待 P1 确认。 |
+| OQ-016 | 迟到结果用 `409 late_result` 还是 `200 disposition=late`？ | 结果重试、审计与调度器状态推进 | 提案推荐 `409`（与 `CMP-gateway` 现有错误表一致），client 按终态处理、只审计；见提案 §15 Q3。 |
+| OQ-017 | 启动恢复是否由调度器下发实例绑定（`register.assignments`）？ | 崩溃后容器校验/清理与恢复路径 | 提案推荐可选下发；client 无则按 journal 恢复，不阻塞领取；见提案 §5.1/§15 Q4。 |
+| OQ-018 | 技能包分发通道：调度器托管端点还是签名外链？ | 下载鉴权、缓存与凭据泄漏 | 提案推荐调度器托管 `GET /api/v1/executor/skill-packages/{packageId}/download`；外链必须短期签名且不带 client token；见提案 §5.5/§15 Q6。 |
+| OQ-019 | `claim` 是否长轮询？空闲客户端的轮询形态？ | 领取延迟、服务端连接数与空转 | 提案推荐 `claim` 长轮询 20s，`204` 可带 `Retry-After`；见提案 §4.6/§15 Q5。 |
+| OQ-020 | 客户端认证方式与轮换；`run_superseded` 的退出码？ | 安全、双跑 fencing 与 CLI 契约 | 提案推荐 Bearer + TLS、轮换下一版；`run_superseded` 暂用退出码 2，待 M1 确认；见提案 §4.2/§15 Q7、Q12。 |

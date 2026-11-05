@@ -7,22 +7,48 @@
 ```
 docs/
 ├── README.md
+├── requirements/                           ← 需求：为什么做
+│   ├── REQ-0001-acp-dsh-home-config.md
+│   └── REQ-0002-execution-reliability.md
 ├── plan/                                   ← 调度：接下来做什么
 │   ├── roadmap.md
 │   ├── risks.md
 │   └── open-questions.md
 ├── design/                                 ← 真相：系统现在是什么
-│   └── architecture.md
+│   ├── architecture.md                     ← 系统层：组件、依赖、契约、主流程
+│   ├── components/                         ← 组件规格（9 份，planned）
+│   │   ├── CMP-cli/spec.md
+│   │   ├── CMP-executor/spec.md
+│   │   ├── CMP-result/spec.md
+│   │   ├── CMP-gateway/spec.md
+│   │   ├── CMP-runtime/spec.md
+│   │   ├── CMP-workspace/spec.md
+│   │   ├── CMP-assets/spec.md
+│   │   ├── CMP-store/spec.md
+│   │   └── CMP-observability/spec.md
+│   └── scenarios/                          ← 业务场景
+│       ├── _index.md                       ← 生成物：场景索引
+│       └── execution-plane/
+│           ├── run-preparation/
+│           │   └── configure-and-self-check/
+│           │       └── scenario.md         ← SCN-0002 配置 client 并完成自检
+│           └── node-execution/
+│               └── execute-node-and-report/
+│                   └── scenario.md         ← SCN-0001 执行节点并回传结果
 ├── works/                                  ← 执行：正在做什么
 │   ├── 2026-11-03-s0-acp-verification/     ← S0 P0 阻断项验证（已收口）
 │   │   ├── brief.md
 │   │   ├── result.md
 │   │   ├── harness/                        ← 一键验证套件
 │   │   └── runs/                           ← 逐项证据与日志
-│   └── 2026-11-03-acp-session-records/      ← 会话记录与跨 profile 可见性调研（已收口）
+│   ├── 2026-11-03-acp-session-records/      ← 会话记录与跨 profile 可见性调研（已收口）
+│   │   ├── brief.md
+│   │   ├── result.md
+│   │   └── probe/                          ← 空会话探针
+│   └── 2026-11-04-scheduler-contract-proposal/ ← 调度器契约提案（待双侧评审）
 │       ├── brief.md
-│       ├── result.md
-│       └── probe/                          ← 空会话探针
+│       ├── proposal.md                     ← 6 个控制面操作 + 技能包通道、SCH/CLT、裁决项
+│       └── result.md
 └── history/                                ← 记忆：怎么走到这里的
     ├── works/                              ← 已归档工序（frozen）
     │   ├── 2026-11-03-dsh-acp-preflight/   ← DSH ACP 对接预研
@@ -39,15 +65,18 @@ docs/
         └── 2026-11-03-client-concept.md
 ```
 
-`requirements/`、`design/components/`、`design/scenarios/` 在出现第一份内容时创建，不预建空目录。
+组件规格随 S0 任务落地从 `planned` 转 `active`；`design/scenarios/_index.md` 由 `bun run docs:index` 生成，`bun run docs:check` 校验，不手改。
 
 ## 阅读顺序
 
-1. `plan/roadmap.md`：接下来做什么；
-2. `design/architecture.md`：现在是什么；
-3. `works/` 最近的工序：正在做什么、验证过什么；
-4. `plan/open-questions.md`、`plan/risks.md`：未决与风险；
-5. `history/decisions/`：为什么这样开始。
+1. `requirements/`：为什么做；
+2. `plan/roadmap.md`：接下来做什么；
+3. `design/architecture.md`：系统层组件、依赖、契约与主流程；
+4. `design/components/`：逐组件规格（职责、内部功能、契约、数据、验证）；
+5. `design/scenarios/`：业务场景与验收；
+6. `works/` 最近的工序：正在做什么、验证过什么；
+7. `plan/open-questions.md`、`plan/risks.md`：未决与风险；
+8. `history/decisions/`：为什么这样开始。
 
 ## 上游依据
 
