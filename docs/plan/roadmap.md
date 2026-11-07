@@ -38,7 +38,7 @@ updated: 2026-11-07
 ## 进行中工序
 
 - `docs/works/2026-11-06-observability-http/`：client 只读观测 HTTP 的 P1 设计稿（`/api/v1/observability`：当前/历史日志、SSE、DSH session 归档与 raw 下载）；调度器附评 `OB-01`–`OB-09` 已处置，`OB-01` 明文传 raw 已确认接受风险（`0.0.0.0` + 可选 token，2026-11-07）；待 P1 回填 `design/`。
-- `docs/works/2026-11-07-m1-contract-freeze/`：M1 契约冻结 T1–T9 完成：`v0.4` 已落进 `design/contracts/executor-http-v1.md` 与各组件规格；T10 评审待做。S0 本地执行闭环可与 M1 并行。
+- `docs/history/works/2026-11-07-m1-contract-freeze/`：M1 契约冻结已收口并归档（2026-11-07）；`protocolVersion = 2026-11-07.1`。S0 本地执行闭环可启动。
 - 组件规格已出，等待 P1 确认；确认后立项 S0 本地执行闭环（`docs/works/<日期>-s0-local-loop/`），按 `SCN-0002` / `SCN-0001` 的 S0 用例拆任务。
 
 ACP 预研、S0 P0 验证、会话记录调研均已收口；概念设计已确认、冻结并归档。S0 以冻结稿的不变量与 S0 用例为输入（`docs/history/works/2026-11-03-client-concept-design/`），并按 `SCN-0002`/`SCN-0001`/`REQ-0002` 收敛；「配置校验与 `doctor`」「取消立即强杀 + 进程组回收」「崩溃清理 + 等重派 + 已产生结果重报」「一实例一 home + 只展示本实例 session」已写入组件规格，S0 按规格实现。

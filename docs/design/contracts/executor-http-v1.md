@@ -7,7 +7,7 @@ updated: 2026-11-07
 
 # 执行面客户端 HTTP 契约 v1（调度器 ↔ client）
 
-> **状态：frozen（M1 T1–T9 已落盘；T10 评审待签字）**，`protocolVersion = 2026-11-07.1`。本文件是调度器与 client 执行面之间的**唯一字段级权威**；组件规格只写本组件的端口/消费/失败收口，字段一律链接到本文件。
+> **状态：frozen（M1 T1–T10 已收口，2026-11-07）**，`protocolVersion = 2026-11-07.1`。本文件是调度器与 client 执行面之间的**唯一字段级权威**；组件规格只写本组件的端口/消费/失败收口，字段一律链接到本文件。
 >
 > 上游：`docs/history/works/2026-11-04-scheduler-contract-proposal/proposal.md` v0.4（审核通过）；评审原文见其 `review.md`。括号中的 `RB-xx`/`RD-xx`/`ND-xx` 仅作追溯，不是契约语义。
 >

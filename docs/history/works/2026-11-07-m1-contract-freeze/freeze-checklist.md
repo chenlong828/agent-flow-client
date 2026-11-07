@@ -1,7 +1,7 @@
 ---
-layer: works
+layer: history
 module: global
-status: active
+status: frozen
 updated: 2026-11-07
 ---
 

@@ -47,16 +47,11 @@ docs/
 │   │   ├── brief.md
 │   │   ├── result.md
 │   │   └── probe/                          ← 空会话探针
-│   ├── 2026-11-06-observability-http/      ← 只读观测 HTTP（P1 设计稿，附评已处置）
-│   │   ├── brief.md
-│   │   ├── proposal.md                     ← /api/v1/observability：日志、SSE、DSH session 归档
-│   │   ├── review.md                       ← 调度器附评 OB-01～OB-09 处置
-│   │   └── result.md
-│   └── 2026-11-07-m1-contract-freeze/      ← M1 调度器契约冻结（T1–T9 完成，T10 评审待做）
-│       ├── brief.md                        ← 冻结范围、决策基线、任务表
-│       ├── freeze-checklist.md             ← 提案 §13 逐行落点清单
-│       ├── review.md                       ← 设计评审 AB/AD/AH 处置
-│       └── result.md                       ← T1–T9 + 评审修复结论
+│   └── 2026-11-06-observability-http/      ← 只读观测 HTTP（P1 设计稿，附评已处置）
+│       ├── brief.md
+│       ├── proposal.md                     ← /api/v1/observability：日志、SSE、DSH session 归档
+│       ├── review.md                       ← 调度器附评 OB-01～OB-09 处置
+│       └── result.md
 └── history/                                ← 记忆：怎么走到这里的
     ├── works/                              ← 已归档工序（frozen）
     │   ├── 2026-11-03-dsh-acp-preflight/   ← DSH ACP 对接预研
@@ -67,10 +62,15 @@ docs/
     │   │   ├── brief.md
     │   │   ├── design.md
     │   │   └── result.md
-    │   └── 2026-11-04-scheduler-contract-proposal/ ← 调度器契约提案（审核通过，v0.4 已归档）
+    │   ├── 2026-11-04-scheduler-contract-proposal/ ← 调度器契约提案（审核通过，v0.4 已归档）
+    │   │   ├── brief.md
+    │   │   ├── proposal.md                   ← 7 契约面、SCH/CLT、ND/OB 处置
+    │   │   ├── review.md                     ← 两轮评审收口为「通过」
+    │   │   └── result.md
+    │   └── 2026-11-07-m1-contract-freeze/    ← M1 契约冻结（冻结落盘 + 设计评审收口，已归档）
     │       ├── brief.md
-    │       ├── proposal.md                   ← 7 契约面、SCH/CLT、ND/OB 处置
-    │       ├── review.md                     ← 两轮评审收口为「通过」
+    │       ├── freeze-checklist.md           ← 提案 §13 逐行落点 + AB/AD/AH 清单
+    │       ├── review.md                     ← AB/AD/AH/NB/ND2 处置
     │       └── result.md
     └── decisions/
         ├── 2026-11-03-bootstrap.md

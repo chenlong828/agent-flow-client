@@ -312,7 +312,7 @@ S0 开工前补一张「场景 UC → 测试目录/文件」映射（`AH-08`）�
 ## 12. 后续
 
 - 组件规格已建（2026-11-04，`planned`）：9 份 `docs/design/components/<id>/spec.md` 覆盖职责、内部功能、端口实现、数据所有权、验证计划与预算；组件级确认前不写实现代码。
-- 调度器契约已落盘（2026-11-07，v1；T10 评审待签字）：字段级权威见 [`contracts/executor-http-v1.md`](contracts/executor-http-v1.md)，`protocolVersion = 2026-11-07.1`。
+- 调度器契约已冻结（2026-11-07，v1；M1 已收口）：字段级权威见 [`contracts/executor-http-v1.md`](contracts/executor-http-v1.md)，`protocolVersion = 2026-11-07.1`。
 - 场景与可靠性：`SCN-0002`（配置 client 并完成自检）、`SCN-0001`（执行节点并回传结果）与 `REQ-0002`（执行稳定性与可靠性）已建；S0 先按两个场景的 S0 用例落地。
 - S0 本地闭环工序：以冻结稿的用例与不变量为输入；优先验证取消/崩溃清理、容器根技能可见性、结果回传与 `doctor` 守门。
 - 只读观测 HTTP（`/api/v1/observability`）仍是独立 P1 设计稿（`docs/works/2026-11-06-observability-http/`），未进本架构；确认后另立工序回填。
@@ -331,6 +331,6 @@ S0 开工前补一张「场景 UC → 测试目录/文件」映射（`AH-08`）�
   - `run` 退出码 `1`、SIGTERM `143`；`run --permission`；
   - `stateRoot` 默认 `<runDir>/.agent-flow-client`（键名待 OQ-014）；
   - `doctor` 由 CLI 编排、各组件 `diagnose()` 提供检查项。
-- **M1 契约冻结落盘（2026-11-07，T1–T9；T10 评审待签字）**：`protocolVersion = 2026-11-07.1`；`C-01`…`C-07`、`SCH-01`…`SCH-20`、`CLT-01`…`CLT-13`、`cleanupPending`、退出码 7、`run` 作用域控制事件全部落盘；字段权威见 `contracts/executor-http-v1.md`。
+- **M1 契约冻结（2026-11-07，T1–T10，已收口）**：`protocolVersion = 2026-11-07.1`；`C-01`…`C-07`、`SCH-01`…`SCH-20`、`CLT-01`…`CLT-13`、`cleanupPending`、退出码 7、`run` 作用域控制事件全部落盘；字段权威见 `contracts/executor-http-v1.md`。
 - **仍待确认**：`[acp].permission` 默认值与配置键、`stateRoot` 键名（OQ-014）、`run` 退出码 `1` / SIGTERM `143`（OQ-015）；这些不阻塞调度器契约。
 - **确认前约束**：不写实现代码；不把 `planned` 组件改为 `active`；`SCN-0001` / `SCN-0002` 保持 `designed`，不升 `verified`。

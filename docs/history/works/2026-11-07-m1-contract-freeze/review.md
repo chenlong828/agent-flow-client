@@ -1,14 +1,14 @@
 ---
-layer: works
+layer: history
 module: global
-status: active
+status: frozen
 updated: 2026-11-07
 ---
 
 # 设计评审记录与处置（架构 + 组件规格）
 
 > 评审对象：`docs/design/architecture.md` 与 `docs/design/components/*/spec.md`（M1 落盘后版本）。
-> 评审原文：`../../../../agent-flow-orchaster/docs/works/2026-11-07-client-architecture-review/review.md`（P1）。
+> 评审原文：`../../../../../agent-flow-orchaster/docs/works/2026-11-07-client-architecture-review/review.md`（P1）。
 > 结论：**通过**。首轮 4 条 Blocker + 5 条 Decision now 已落稿；第二轮复核新增的 `NB-01`、`ND2-01`、`ND2-02` 也已补齐，`ND2-03`–`ND2-06` 按建议记录/部分落稿，不再需要新一轮评审。
 
 ## 1. 总览
@@ -51,12 +51,9 @@ updated: 2026-11-07
 | `AH-07` 预算合计偏高 | 排任务按组件切；跨组件任务先拆 |
 | `AH-08` 缺 UC→测试映射 | architecture §4.7 记「S0 开工前补」，不在本轮造表 |
 
-## 5. 待复核
+## 5. 复核结果
 
-1. `AB-01` 的端口裁剪（`HeartbeatOutcome` + `snapshotAttempts`）是否接受；
-2. `AB-04` 的 `reconcileCleanup` 归属与 CLI 只做搬运是否接受；
-3. `AD-03`/`AD-05` 的 `stateRoot` 分区与 `DSH_HOME` 删除归属是否接受；
-4. `AH-08` 的 UC→测试映射表放在 S0 工序是否可接受。
+调度器侧 2026-11-07 两轮复核后判 **通过**：`AB-01`–`AB-04`、`AD-01`–`AD-05` 全部关闭；第二轮新增的 `NB-01`、`ND2-01`、`ND2-02` 已补齐。详见 §6。
 
 
 ## 6. 第二轮复核（2026-11-07）
@@ -78,3 +75,18 @@ updated: 2026-11-07
 评审推荐「`assignments` 补进 `HeartbeatOutcome`；`assignmentsVersion` 由 gateway 截留、回传」。**问题成立，但推荐方案不是最优**：`assignments` 是 CLI 的容器视图，`assignmentsVersion` 是这个视图的游标，不是传输层状态。让 gateway 持有游标，会把 assignment 语义泄漏进 L0 传输组件，CLI 反而失去「我看到的快照是哪一版」的判断依据。
 
 因此本稿采用评审的第二方案并补齐：`ClientState.assignmentsVersion` + `HeartbeatOutcome.assignmentsVersion/assignments?`，gateway 只透传。两方案都能闭合 `NB-01`；第二方案与 `AB-01` 的「按所有者裁剪」原则更一致。
+
+### 6.2 收口
+
+- 通过（2026-11-07，第二轮）；
+- 本文件随工序归档，不再作为活动评审记录。
+
+## 7. 转出项
+
+| 项 | 去向 |
+|---|---|
+| `AH-02` `stateRoot` 默认 | OQ-014（M1 配置键冻结） |
+| `AH-07` 组件预算 | S0 排任务时按组件切 |
+| `AH-08` UC→测试映射 | S0 开工前补（`OQ-024`） |
+| `ND2-06` / `OQ-025` | 调度器侧 follow-up |
+| `ND2-03`–`ND2-05` | 已在 `design/` 落注，S0 实现时按注记执行 |
