@@ -50,10 +50,10 @@ updated: 2026-11-08
 
 | 用例 | 场景 | 阶段 | 主责组件 | 计划测试文件 | 测试 ID | 状态 |
 |---|---|---|---|---|---|---|
-| R1 | 无配置、无 env：默认 home | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-001` | planned |
-| R2 | 配置相对/绝对路径 | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-002` | planned |
-| R3 | env 覆盖配置 | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-003` | planned |
-| N1 | 非法 TOML/空值/不可写/指向 `~/.dsh` | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-004` | planned |
+| R1 | 无配置、无 env：默认 home | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-001` | existing |
+| R2 | 配置相对/绝对路径 | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-002` | existing |
+| R3 | env 覆盖配置 | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-003` | existing |
+| N1 | 非法 TOML/空值/不可写/指向 `~/.dsh` | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-004` | existing |
 | 补充 | `doctor` 缺 DSH/版本/容器/残留/凭据 | S0 | cli/observability | `tests/components/cli/doctor.test.ts` | TBD | planned |
 
 ## 3. 覆盖门禁

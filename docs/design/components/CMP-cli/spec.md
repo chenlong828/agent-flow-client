@@ -2,13 +2,13 @@
 layer: design
 module: execution-plane
 component: CMP-cli
-status: planned
+status: active
 updated: 2026-11-08
 ---
 
 # CMP-cli 组件规格
 
-> 状态：`planned`。命令、配置、`serve` 循环、组合根与退出码已定；实现未开始。
+> 状态：`active`（2026-11-08，T1 落地）。命令面、配置加载/冻结、退出码、组合根骨架与 `doctor` 已实现；`serve` 循环与执行内核在 S1/T5 接入。
 >
 > 上游：`docs/design/architecture.md` §3、§4、§10；`SCN-0002`；`REQ-0001`；`REQ-0002` R-04/R-09/R-10；配置键清单见 OQ-014。
 
@@ -246,8 +246,9 @@ config → observability → store → workspace → assets → runtime → gate
 ## 8. 预算与单独运行
 
 - 预算：目标 ≤35k token，上限 120k。
-- 单独运行：`bun test tests/components/cli/`（落地后创建）；用临时目录 + 假 L0 端口。
-- 状态：`planned`；无入口符号。
+- 单独运行：`bun test tests/components/cli/`；用临时目录 + 假 L0 端口。
+- 实现入口（T1）：`src/components/cli/main.ts#main`、`config.ts#loadConfig`、`run-dir.ts#resolveRunDir`、`args.ts#parseArgs`、`doctor-checks.ts#collectDoctorChecks`、`exit-codes.ts#ExitCode`；测试 `tests/components/cli/`。
+- 状态：`active`（`serve` 循环与执行接线待 S1/T5）。
 
 ## 9. 开放问题
 

@@ -8,7 +8,16 @@ scenario: SCN-0002
 domain: 执行面
 valueStream: 运行准备
 title: 配置 client 并完成自检
-entries: []
+entries:
+  - component: CMP-cli
+    path: src/components/cli/main.ts
+    symbol: main
+  - component: CMP-cli
+    path: src/components/cli/config.ts
+    symbol: loadConfig
+  - component: CMP-observability
+    path: src/components/observability/doctor.ts
+    symbol: collect
 docs:
   - path: docs/design/architecture.md
     heading: 3. 对外接口面
