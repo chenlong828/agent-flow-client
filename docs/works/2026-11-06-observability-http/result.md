@@ -15,7 +15,7 @@ updated: 2026-11-07
 - session 清理前归档到 `<stateRoot>/observability/sessions/<sessionId>/`；归档失败不删实例 home。
 - 推荐扩展 `CMP-observability`（方案 A），新增 `ObservationStore` / `EventHub` / `ObservationHttpServer`；`CMP-runtime` 只负责写 session 归档。
 - v1 默认 `bind=0.0.0.0:17890`，可用 `serve --observability-bind/--observability-port` 覆盖；Bearer token 可选，为空时不鉴权并告警；TLS/mTLS/轮换后续特性。
-- 调度器附评 `OB-01`–`OB-09` 已处置：`OB-02`–`OB-09` 落稿；`OB-01`（非 loopback 明文传 raw）因产品决策保留 `0.0.0.0`，作为**已接受风险**，关闭方式是 `--observability-bind 127.0.0.1` 或后续 TLS。详见 [`review.md`](review.md)。
+- 调度器附评 `OB-01`–`OB-09` 已处置：`OB-02`–`OB-09` 落稿；`OB-01`（非 loopback 明文传 raw）经产品确认（2026-11-07）保留默认 `0.0.0.0` + 可选 token，作为**已接受风险**，关闭方式是 `--observability-bind 127.0.0.1` 或后续 TLS。详见 [`review.md`](review.md)。
 
 ## 2. 已定口径
 
@@ -33,7 +33,7 @@ updated: 2026-11-07
 
 | ID | 结论 |
 |---|---|
-| `OB-01` | 接受风险：默认 `0.0.0.0` 是产品决策；风险、审计、`raw_enabled`、降级路径已写死；P1 确认门签字 |
+| `OB-01` | **已确认接受风险（2026-11-07）**：默认 `0.0.0.0` + 可选 token；风险、审计、`raw_enabled`、降级路径已写死；通道级安全后续补 |
 | `OB-02` | 已修：观测写盘走内存队列 + 批量落盘，执行路径不 `fsync`，溢出计数丢弃 |
 | `OB-03` | 已修：新增信任面反转说明；raw 含全文，调度器被攻破即全量泄露 |
 | `OB-04` | 已修：`CMP-observability` 预算改为 ≤60k / 120k，超限拆 B 方案 |
@@ -50,7 +50,7 @@ updated: 2026-11-07
 3. 历史是否只查本 client，还是按实例跨 client 合并。
 4. 原始 session 下载是否要二次授权/审计级别。
 5. `doctor` 是否增加观测面自检。
-6. `OB-01` 风险接受需 P1 确认门签字；若要求关闭，改默认 `127.0.0.1`/unix socket 或加 TLS。
+6. ~~`OB-01` 风险签字~~ 已确认（2026-11-07）；后续特性：TLS/mTLS、token 过期/轮换、unix socket。
 
 ## 5. 下一步
 
