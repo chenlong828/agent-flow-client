@@ -2,13 +2,13 @@
 layer: design
 module: execution-plane
 component: CMP-executor
-status: planned
+status: active
 updated: 2026-11-07
 ---
 
 # CMP-executor 组件规格
 
-> 状态：`planned`。只有职责、契约与内部设计，无代码/测试；S0 落地后转 `active`。
+> 状态：`active`（2026-11-08，T5 落地）。状态机、去重/单飞、取消、恢复与清理对账已实现；`serve` 循环接线待 S1。
 >
 > 上游：`docs/design/architecture.md` §4–§6；`SCN-0001`；`REQ-0002`；概念取舍见 `docs/history/decisions/2026-11-03-client-concept.md`。
 >
@@ -419,8 +419,9 @@ type SchedulerEndpoint = {
 ## 8. 预算与单独运行
 
 - 预算：目标 ≤30k token（源码 + 规格 + 测试），上限 120k。
-- 单独运行：`bun test tests/components/executor/`（落地后创建）；测试用桩实现 5 个端口，不启动 DSH。
-- 状态：`planned`；无入口符号，场景 `entries` 暂不引用本组件。
+- 单独运行：`bun test tests/components/executor/`；测试用桩实现 5 个端口，不启动 DSH。
+- 实现入口（T5）：`src/components/executor/executor.ts#NodeExecutor`、`ports.ts`（端口）、`types.ts`（值类型）、`scheduler-port.ts#SchedulerPort`；测试 `tests/components/executor/`。
+- 状态：`active`（`serve` 循环与 `CMP-gateway` 接线待 S1）。
 
 ## 9. 开放问题
 

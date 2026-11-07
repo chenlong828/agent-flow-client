@@ -2,13 +2,13 @@
 layer: design
 module: execution-plane
 component: CMP-result
-status: planned
+status: active
 updated: 2026-11-07
 ---
 
 # CMP-result 组件规格
 
-> 状态：`planned`。纯策略组件，无 I/O、无端口、无持久化。
+> 状态：`active`（2026-11-08，T5 落地）。组装、分类、UTF-8 截断与停止原因归一已实现。
 >
 > 上游：`docs/design/architecture.md` §4–§7；`SCN-0001`；`REQ-0002` R-02/R-08；结果三段拆分决策 D5。
 
@@ -167,8 +167,9 @@ type ErrorMapping = {
 ## 8. 预算与单独运行
 
 - 预算：目标 ≤8k token，上限 120k。
-- 单独运行：`bun test tests/components/result/`（落地后创建）；无外部依赖。
-- 状态：`planned`；无入口符号。
+- 单独运行：`bun test tests/components/result/`；无外部依赖。
+- 实现入口（T5）：`src/components/result/result.ts#assemble`/`classify`/`truncate`/`mapStopReason`；测试 `tests/components/result/`。
+- 状态：`active`。
 
 ## 9. 开放问题
 

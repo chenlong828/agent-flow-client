@@ -68,7 +68,7 @@ describe("cli 命令面", () => {
     expect(result.err).toContain("--request");
   });
 
-  test("run 接受合法请求但内核未接入时返回 4", async () => {
+  test("run 缺 DSH 入口时返回 4 且不产生 stdout 结果", async () => {
     const runDir = await mkdtemp(join(tmpdir(), "afc-run-"));
     const request = {
       attemptId: "01930000-0000-7000-8000-000000000001",
@@ -86,7 +86,8 @@ describe("cli 命令面", () => {
     await writeFile(file, JSON.stringify(request));
     const result = await run(["run", "--request", file], { runDir });
     expect(result.code).toBe(4);
-    expect(result.err).toContain("执行内核尚未接入");
+    expect(result.err).toContain("DSH 入口");
+    expect(result.out).toBe("");
   });
 
   test("run 请求文件非法返回 2", async () => {

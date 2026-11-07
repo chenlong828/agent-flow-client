@@ -8,7 +8,16 @@ scenario: SCN-0001
 domain: 执行面
 valueStream: 节点执行
 title: 执行节点并回传结果
-entries: []
+entries:
+  - component: CMP-cli
+    path: src/components/cli/run.ts
+    symbol: runOnce
+  - component: CMP-executor
+    path: src/components/executor/executor.ts
+    symbol: NodeExecutor
+  - component: CMP-result
+    path: src/components/result/result.ts
+    symbol: assemble
 docs:
   - path: docs/design/architecture.md
     heading: 5. 主流程

@@ -6,6 +6,7 @@ import { ExitCode } from "./exit-codes.ts";
 import { collectDoctorChecks } from "./doctor-checks.ts";
 import { render, collect, exitCode } from "../observability/doctor.ts";
 import { loadLocalRequest, RequestError } from "./request.ts";
+import { runOnce } from "./run.ts";
 
 export type CliIo = {
   out(message: string): void;
@@ -80,14 +81,11 @@ async function doctorCommand(args: ParsedArgs, config: AppConfig, deps: CliDeps)
   return exitCode(report);
 }
 
-async function runCommand(args: ParsedArgs, io: CliIo): Promise<number> {
+async function runCommand(args: ParsedArgs, config: AppConfig, deps: CliDeps): Promise<number> {
   const requestPath = flagString(args, "--request");
   if (requestPath === undefined) throw new UsageError("run 需要 --request <file>");
   const local = await loadLocalRequest(requestPath);
-  io.err(
-    `执行内核尚未接入（T5）；已校验请求 attemptId=${local.request.attemptId} instanceId=${local.request.instanceId} skillSet=${local.skillSet.digest}`,
-  );
-  return ExitCode.runtime;
+  return await runOnce({ config, env: deps.env, io: deps.io, local });
 }
 
 /** 进程入口：解析命令、加载配置、分派；返回退出码（CMP-cli §3.1）。 */
@@ -117,7 +115,7 @@ export async function main(argv: readonly string[], deps: CliDeps): Promise<numb
       io.err("serve 尚未实现：S0 只校验配置，S1 接入调度器与租约。");
       return ExitCode.usage;
     }
-    if (args.command === "run") return await runCommand(args, io);
+    if (args.command === "run") return await runCommand(args, config, deps);
 
     io.err(`未知命令：${args.command}\n\n${HELP}`);
     return ExitCode.usage;
