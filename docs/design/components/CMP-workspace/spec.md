@@ -2,13 +2,13 @@
 layer: design
 module: execution-plane
 component: CMP-workspace
-status: planned
+status: active
 updated: 2026-11-04
 ---
 
 # CMP-workspace 组件规格
 
-> 状态：`planned`。工作区是节点间与产物的事实源；client 只校验、安装技能、清理，不 clone、不检出、不建仓库。
+> 状态：`active`（2026-11-08，T3 落地）。容器校验、路径约束、清理与诊断已实现；大目录清理分片与磁盘阈值留 S1。
 >
 > 上游：`docs/design/architecture.md` §2、§7、§8；`SCN-0001` UC-05/08/28/29；`REQ-0002` R-07/R-10；决策 D7/D8/D11。
 
@@ -178,8 +178,9 @@ interface WorkspaceAdmin {
 ## 8. 预算与单独运行
 
 - 预算：目标 ≤20k token，上限 120k。
-- 单独运行：`bun test tests/components/workspace/`（落地后创建）；用临时目录夹具，不启动 DSH。
-- 状态：`planned`；无入口符号。
+- 单独运行：`bun test tests/components/workspace/`；用临时目录夹具，不启动 DSH。
+- 实现入口（T3）：`src/components/workspace/workspace.ts#FileWorkspace`、`project-root.ts#findProjectRoot`、`admin.ts#WorkspaceAdmin`；测试 `tests/components/workspace/`。
+- 状态：`active`。
 
 ## 9. 开放问题
 

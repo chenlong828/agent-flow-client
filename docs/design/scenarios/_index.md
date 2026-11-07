@@ -18,7 +18,7 @@ updated: 2026-11-04
 
 | 场景 | 状态 | 流程设计 | 代码入口 | 文档 | 测试 | 外部引用 |
 |---|---|---|---|---|---|---|
-| [SCN-0001 执行节点并回传结果](execution-plane/node-execution/execute-node-and-report/scenario.md) | designed | [scenario.md#3 运行序](execution-plane/node-execution/execute-node-and-report/scenario.md#3-运行序) |  | [docs/design/architecture.md#5. 主流程](../architecture.md#5-主流程)<br>[docs/design/architecture.md#6. 关键不变量](../architecture.md#6-关键不变量)<br>[docs/design/architecture.md#10. 失败与恢复](../architecture.md#10-失败与恢复)<br>[docs/requirements/REQ-0001-acp-dsh-home-config.md#5. 影响场景](../../requirements/REQ-0001-acp-dsh-home-config.md#5-影响场景)<br>[docs/requirements/REQ-0002-execution-reliability.md#4. 可靠性需求](../../requirements/REQ-0002-execution-reliability.md#4-可靠性需求) | `R1 TC-EXEC-001`（待实现）<br>`R2 TC-EXEC-002`（待实现）<br>`R3 TC-EXEC-003`（待实现）<br>`N1 TC-EXEC-004`（待实现） |  |
+| [SCN-0001 执行节点并回传结果](execution-plane/node-execution/execute-node-and-report/scenario.md) | designed | [scenario.md#3 运行序](execution-plane/node-execution/execute-node-and-report/scenario.md#3-运行序) |  | [docs/design/architecture.md#5. 主流程](../architecture.md#5-主流程)<br>[docs/design/architecture.md#6. 关键不变量](../architecture.md#6-关键不变量)<br>[docs/design/architecture.md#10. 失败与恢复](../architecture.md#10-失败与恢复)<br>[docs/requirements/REQ-0001-acp-dsh-home-config.md#5. 影响场景](../../requirements/REQ-0001-acp-dsh-home-config.md#5-影响场景)<br>[docs/requirements/REQ-0002-execution-reliability.md#4. 可靠性需求](../../requirements/REQ-0002-execution-reliability.md#4-可靠性需求) | `R1 TC-EXEC-001`（待实现）<br>`R2 TC-EXEC-002`（待实现）<br>`R3 TC-EXEC-003`（待实现）<br>`N1 TC-EXEC-004` 容器根有 .git 判 layout_invalid 且不创建 .dsh |  |
 
 ### 运行准备
 

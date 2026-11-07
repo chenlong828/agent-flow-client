@@ -2,13 +2,13 @@
 layer: design
 module: execution-plane
 component: CMP-assets
-status: planned
+status: active
 updated: 2026-11-07
 ---
 
 # CMP-assets 组件规格
 
-> 状态：`planned`。技能包获取、校验、原子替换与脚本落地；失败不留半套。
+> 状态：`active`（2026-11-08，T3 落地）。S0 本地目录来源的校验、原子替换、脚本权限与失败回滚已实现；HTTP 下载/缓存留 S1。
 >
 > 上游：`docs/design/architecture.md` §5、§8、§10；`SCN-0001` UC-04/06/25；`REQ-0002` R-05/R-10；决策 D9（同容器并发同集）。
 
@@ -185,8 +185,9 @@ interface AssetAdmin {
 ## 8. 预算与单独运行
 
 - 预算：目标 ≤30k token，上限 120k。
-- 单独运行：`bun test tests/components/assets/`（落地后创建）；用本地夹具包，不联网。
-- 状态：`planned`；无入口符号。
+- 单独运行：`bun test tests/components/assets/`；用本地夹具包，不联网。
+- 实现入口（T3）：`src/components/assets/assets.ts#LocalAssets`、`digest.ts#digestDirectory`、`format.ts#validateSkillsTree`、`copy.ts#copyTree`、`local-source.ts#resolveLocalSource`、`admin.ts#AssetAdmin`；测试 `tests/components/assets/`。
+- 状态：`active`（S0 本地目录来源；HTTP 下载/缓存待 S1）。
 
 ## 9. 开放问题
 

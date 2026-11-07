@@ -18,10 +18,10 @@ updated: 2026-11-08
 | UC-02 | 顺序多节点 | S0.1/S2 | executor | `tests/components/executor/sequential-nodes.test.ts` | `TC-EXEC-002` | planned |
 | UC-03 | fan-out 并发 | S2 | executor | `tests/components/executor/fanout.test.ts` | TBD | planned |
 | UC-04 | 技能切换 | S0.1/S2 | assets/executor | `tests/components/assets/install.test.ts` | TBD | planned |
-| UC-05 | 容器非法 | S0 | workspace | `tests/components/workspace/layout.test.ts` | `TC-EXEC-004` | planned |
-| UC-06 | 技能包异常 | S0 | assets | `tests/components/assets/install.test.ts` | `TC-EXEC-004` | planned |
+| UC-05 | 容器非法 | S0 | workspace | `tests/components/workspace/layout.test.ts` | `TC-EXEC-004` | existing |
+| UC-06 | 技能包异常 | S0 | assets | `tests/components/assets/install.test.ts` | `TC-EXEC-004` | existing |
 | UC-07 | 运行时不可用 | S0/S1 | runtime | `tests/components/runtime/session.test.ts` | TBD | planned |
-| UC-08 | 工作区不可写/磁盘满 | S0 | workspace | `tests/components/workspace/layout.test.ts` | TBD | planned |
+| UC-08 | 工作区不可写/磁盘满 | S0 | workspace | `tests/components/workspace/layout.test.ts` | TBD | existing |
 | UC-09 | prompt 超时 | S0/S1 | runtime | `tests/components/runtime/session.test.ts` | TBD | planned |
 | UC-10 | 工具失败/权限拒绝 | S0 | runtime | `tests/components/runtime/session.test.ts` | TBD | planned |
 | UC-11 | DSH 进程崩溃 | S0 | runtime | `tests/components/runtime/recovery.test.ts` | TBD | planned |
@@ -41,8 +41,8 @@ updated: 2026-11-08
 | UC-25 | 不同技能集并发 | S2 | executor/assets | `tests/components/executor/fanout.test.ts`、`tests/components/assets/install.test.ts` | TBD | planned |
 | UC-26 | 多实例/容量上限 | S1/S2 | cli | `tests/components/cli/serve-loop.test.ts` | TBD | planned |
 | UC-27 | 日志/结果/磁盘上限 | S1/S3 | result/observability/store | `tests/components/result/truncate.test.ts`、`tests/components/observability/logging.test.ts` | TBD | planned |
-| UC-28 | 不可信路径 | S0 | workspace | `tests/components/workspace/path.test.ts` | TBD | planned |
-| UC-29 | 不可信压缩包 | S0/S3 | assets | `tests/components/assets/security.test.ts` | TBD | planned |
+| UC-28 | 不可信路径 | S0 | workspace | `tests/components/workspace/path.test.ts` | TBD | existing |
+| UC-29 | 不可信压缩包 | S0/S3 | assets | `tests/components/assets/security.test.ts` | TBD | existing |
 | UC-30 | 凭据泄漏 | S3 | observability/result | `tests/components/observability/logging.test.ts` | TBD | planned |
 | UC-31 | 会话隔离 | S0/S3 | runtime/cli | `tests/components/runtime/session.test.ts`、`tests/components/cli/config.test.ts` | TBD | planned |
 
