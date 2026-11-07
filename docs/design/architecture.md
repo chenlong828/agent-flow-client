@@ -104,9 +104,9 @@ updated: 2026-11-07
 | `RuntimePort` | `ensureInstance`、`newSession`、`prompt`、`cancel`、`closeSession`、`shutdownInstance` | executor → DSH；`ensureInstance`/`closeSession` 幂等；prompt 受取消/超时 |
 | `WorkspacePort` | `ensureContainer`、`validate`、`resolve`、`cleanup` | executor → 文件系统；`ensureContainer`/`cleanup` 幂等；路径不越界 |
 | `AssetPort` | `install`、`verify`、`currentDigest` | executor → 技能包；同 digest `install` 为空操作；失败回滚 |
-| `JournalPort` | `append`、`pending`、`mark`、`lockInstance`、`recordOrphan`、`listOrphans`、`clearOrphan` | executor/CLI → 本地存储；追加不覆盖；同实例单写 |
+| `JournalPort` | 见 `CMP-executor` §3.4（9 个方法，含 `pendingAll`/`listInstances`） | executor/CLI → 本地存储；追加不覆盖；同实例单写 |
 
-值类型：`NodeRequest`、`NodeResult`、`SkillSet`、`ControlBatch`、`Lease`、`Registration`、`HeartbeatResult`、`HeartbeatRequest`、`SessionBinding`、`Assignment`、`CleanupPending`、`CleanupAck`、`SessionOutcome`、`ContainerPaths`、`InstalledSkills`、`AttemptRecord`、`OrphanRecord`。调度器相关字段见 [`contracts/executor-http-v1.md`](contracts/executor-http-v1.md) §6；组件只依赖语义，不自行扩展字段。
+值类型：`NodeRequest`、`NodeResult`、`SkillSet`、`ControlBatch`、`Lease`、`ClientState`、`HeartbeatOutcome`、`RegistrationOutcome`、`SessionBinding`、`Assignment`、`CleanupPending`、`CleanupAck`、`SessionOutcome`、`ContainerPaths`、`InstalledSkills`、`AttemptRecord`、`OrphanRecord`。调度器相关字段见 [`contracts/executor-http-v1.md`](contracts/executor-http-v1.md) §6；组件只依赖语义，不自行扩展字段。
 
 `AuthProvider` / `SchedulerEndpoint` 也是 `CMP-executor` ports 里的值类型：组合根注入同一个实例给 `CMP-gateway` 与 `CMP-assets`，这样 assets 复用凭据策略而不 import gateway。
 
@@ -137,8 +137,8 @@ updated: 2026-11-07
 
 | 调用方 | 被调方 | 契约 | 方式 | 冷热 | 失败处理 |
 |---|---|---|---|---|---|
-| `CMP-cli` | `CMP-executor` | `executeNode` / `cancelInstance` / `recover` | 同步 | 冷 | 节点失败，按错误类别上报 |
-| `CMP-cli` | `CMP-gateway` | `SchedulerPort` lease 组 | 同步 | **热** | 退避重试；心跳不可停 |
+| `CMP-cli` | `CMP-executor` | `executeNode` / `cancelInstance` / `recover` / `snapshotAttempts` / `reconcileCleanup` | 同步 | 冷 | 节点失败，按错误类别上报；快照失败按空集合；对账失败保留 pending |
+| `CMP-cli` | `CMP-gateway` | `SchedulerPort` lease 组（`register`/`heartbeat`/`claim`/`renew`） | 同步 | **热** | 退避重试；心跳不可停 |
 | `CMP-cli` | `CMP-store` | `JournalPort` / `StoreAdmin` | 同步 | 冷 | 降级：跳过坏记录并告警 |
 | `CMP-cli` | `CMP-runtime` | `RuntimeAdmin`（doctor/reap） | 同步 | 冷 | 记录并继续 |
 | `CMP-cli` | `CMP-workspace` / `CMP-assets` | `*Admin.diagnose` | 同步 | 冷 | 记录并继续 |
@@ -213,16 +213,18 @@ S0 不接调度器：`SCN-0001` 的触发用 `CMP-cli` 的 `run` + `LocalSchedul
 
 CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun run quality:gate`、契约测试、import 边界检查；S0 起加进程残留冒烟（取消/崩溃后 `kill -0` 为假）。
 
+S0 开工前补一张「场景 UC → 测试目录/文件」映射（`AH-08`）；当前 §4.5 只到组件级，不能用组件验证计划替代场景覆盖证明。
+
 ## 5. 主流程
 
-1. 领取（租约）：`claim` 取绑定本实例的 `NodeRequest`（含容器路径、技能集引用与 prompt）。
+1. 领取（租约）：`claim` 取绑定本实例的 `NodeRequest`（含容器路径、技能集引用与 prompt）；领取成功后 `journal.lockInstance(instanceId)`，`closed`/`abandoned` 后释放。取锁失败不执行，报 `failed(workspace)`。
 2. 准备：`CMP-workspace` 校验预置容器；`CMP-runtime` 确保实例 DSH 进程（独立 `DSH_HOME`，profile 补丁写入技能可见性配置）。
 3. 建 session：`session/new`，`cwd` 固定为容器根；上报 `sessionId`。
 4. 取技能集：`bindSession` 返回该节点技能集。
 5. 刷技能：`CMP-assets` 原子替换容器根 `.dsh/skills`（按 digest 幂等），脚本赋权。
 6. 执行：下发 prompt，消费 ACP 事件，累积最终消息、停止原因与用量。
 7. 结算：`CMP-result` 组装 `NodeResult` → journal 记 `settled` → `CMP-gateway` 上报（同 attempt 幂等）→ journal 记 `reported`。
-8. 收尾：关 session；journal 记 `closed`；实例结束或取消时关进程、按策略清理容器与 `DSH_HOME`。
+8. 收尾：关 session；journal 记 `closed`；实例结束或取消时由 executor 调 `runtime.shutdownInstance`（关闭并删除 `DSH_HOME`）与 `workspace.cleanup`（按策略）。
 
 技能刷新失败不降级执行；刷新失败、容器校验失败、DSH 启动失败都按节点失败上报。
 
@@ -232,13 +234,13 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 2. 先建 session、再取技能集、再刷新、再 prompt；顺序不交换。
 3. 技能刷新是替换不是叠加；失败不留半套，不 prompt。
 4. 一个可执行节点一个 session；session 不复用。
-5. 取消是实例级整体终止：所有活跃 session 关闭、杀进程组，各 attempt 报 `cancelled`。
+5. 取消是实例级整体终止：v1 A 方案下同一实例至多一个活跃 session（`SCH-19`），关闭它并杀进程组，attempt 报 `cancelled`；B 方案（S2）下扩为所有活跃 session。
 6. 跨边界只传控制信息；产物、完整会话记录、日志不出本机。
 7. 工作区单写；路径限制在容器内，拒绝越界与跟随越界符号链接。
 8. 容器预置：client 不 clone、不检出、不建仓库。
 9. 容器根即技能根：session `cwd` 固定为容器根，不指向子仓库。
 10. 容器根不建 `.git`，且位于任何仓库之外；`doctor` 校验 `findProjectRoot(容器根) === 容器根`。
-11. 同一容器的并发节点由调度器保证同一技能集；client 按 digest 幂等安装，违约显式失败。
+11. 同一容器的并发节点由调度器保证同一技能集；client 按 digest 幂等安装，违约显式失败。该条在 v1 A 方案下不可达，S2/B 方案才生效。
 12. 心跳是长轮询：请求到达即续租，断开/超时是离线信号，最终以租约过期裁决；心跳与领取是两个独立任务。
 13. 控制事件按 `(clientId, runId)` 作用域、至少一次投递、按 `seq` 幂等应用；新 run 丢弃旧 run 未 ack 事件；事件只作用于 `claimedAt <= issuedAt` 的 attempt，已结算的只 ack。
 14. 结果先落 journal（`settled`）再上报（`reported`）；上报失败只重试传输，不重复执行。
@@ -253,14 +255,17 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 |---|---|---|
 | 工作区容器与产物（根 + 子仓库工作树 + `.dsh/skills`） | `CMP-workspace` | 本地强一致；预置仓库按策略保留，默认不删 |
 | 技能缓存与落地 | `CMP-assets` | 原子替换；缓存可失效 |
-| DSH 进程 / session / `DSH_HOME` | `CMP-runtime` | 进程退出即回收；一实例一 home |
-| 运行状态目录：journal / 实例锁 / 孤儿记录 | `CMP-store` | 追加写；崩溃可重建；`stateRoot` 由 CLI 注入 |
+| DSH 进程 / session | `CMP-runtime` | 进程退出即回收；一实例一 home |
+| `DSH_HOME`（实例） | CLI 创建/校验；`CMP-runtime` 独占写入 | 运行时使用；`shutdownInstance` 内删除，失败记录留给 `doctor`；不指向 `~/.dsh` |
+| `<stateRoot>/journal.jsonl` / `locks/` / `orphans/` | `CMP-store` | 追加写；崩溃可重建；`stateRoot` 由 CLI 注入 |
+| `<stateRoot>/cache/` | `CMP-assets` | 技能包缓存；可失效；不得读写其他子树 |
+| `<stateRoot>/logs/` | `CMP-observability` | 日志轮转；不得读写其他子树 |
 | 尝试状态 | `CMP-executor` | 仅运行期；可从 journal 重建 |
 | 释放/清理意图 `cleanupPending`/`releaseId` | 调度器（权威）；client 只缓存已处理 `releaseId` | 跨 `runId` 保留到 ack `done`；client 清账后可删本地缓存 |
 | 配置 | `CMP-cli` | 启动校验；运行期不变 |
 | 日志 | `CMP-observability` | 本地、脱敏、轮转 |
 
-规则：每份数据只有一个写入口；client 本地记录只用于恢复，不是第二真相；session 绑定语义以调度器为准。
+规则：每份数据只有一个写入口；client 本地记录只用于恢复，不是第二真相；session 绑定语义以调度器为准。`<stateRoot>` 由 CLI 注入同一根，但按子树分区（store / assets / observability），组件不得读写对方子树；新增子树必须在 `architecture.md` 登记。
 
 ## 8. 工作区与技能可见性
 
@@ -282,7 +287,7 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 
 - 通道：心跳长轮询 `heartbeat(state, ackSeq, cleanupAcks?) → ControlBatch`；有事件立即返回，无事件挂起 30s 返回空批；不新增独立通知端点，不做 WebSocket/SSE。
 - 事件闭集：`cancel(instanceId, reason)`、`pause(instanceId)`、`resume(instanceId)`、`shutdown(instanceId?, cleanup?, releaseId?)`。
-- 流转：调度器按 `(clientId, runId)` 单调 `seq` 入队 → 心跳响应内联 `ControlBatch` + `cleanupPending` → `CMP-gateway` 校验 → `CMP-cli` 分派/对账 → `CMP-executor` 执行 → 下次心跳带 `ackSeq` 与 `cleanupAcks`。
+- 流转：调度器按 `(clientId, runId)` 单调 `seq` 入队 → 心跳响应内联 `ControlBatch` + `cleanupPending` → `CMP-gateway` 校验 → `CMP-cli` 分派；`cleanupPending` 交 `CMP-executor.reconcileCleanup` → 下次心跳带 `ackSeq` 与 `cleanupAcks`。
 - 语义：至少一次 + 按 `seq` 幂等；同 run 断连补发；新 run 丢弃旧 run 未 ack 事件；事件只作用于 `claimedAt <= issuedAt` 的 attempt（同刻取消优先）；已结算/未知实例只 ack + 审计。
 - `shutdown(instanceId, cleanup)` 的清理意图同时进 `cleanupPending`（§7）；事件丢失不丢清理，`releaseId` 幂等。
 - `cancel` 立即终止、不等 prompt 自然结算；未知类型 ack 并记录。

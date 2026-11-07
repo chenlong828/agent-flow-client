@@ -58,7 +58,7 @@ type LogRecord = {
 - sink：
   - `stderr`：始终开启；`run` 的 stdout 只放 `NodeResult`，日志不得混入；
   - 文件：`<stateRoot>/logs/client.jsonl`，可配置开启；按大小轮转（默认 10MB，保留 5 份）。
-- 关联键：`instanceId` / `nodeId` / `attemptId` / `sessionId` 能带则带；阶段用 `phase`（`claimed`/`bound`/`ready`/`running`/`settled`/`reported`/`closed`）。
+- 关联键：`instanceId` / `nodeId` / `attemptId` / `sessionId` 能带则带；阶段用 `phase`（`claimed`/`bound`/`ready`/`running`/`settled`/`reported`/`closed`/`abandoned`）。
 - 关键事件：配置生效、注册/心跳状态、领取、session 建立/关闭、技能安装、prompt 开始/结算、取消/超时、上报、恢复清理、doctor 结论。
 - 失败日志必须有 `code` / `errorClass` / `retryable`（能判定时）；无阈值不写性能断言。
 

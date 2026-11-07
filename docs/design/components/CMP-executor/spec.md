@@ -41,11 +41,15 @@ updated: 2026-11-07
 executeNode(request: NodeRequest, ctx: ExecutionContext): Promise<NodeResult>
 cancelInstance(instanceId: InstanceId, reason: CancelReason): Promise<void>
 recover(instanceId: InstanceId): Promise<RecoveryReport>
+snapshotAttempts(): ActiveAttemptSnapshot[]
+reconcileCleanup(pending: CleanupPending[]): Promise<CleanupAck[]>
 ```
 
 - `executeNode` 对**预期失败**不抛异常：返回 `NodeResult`，由 `status` / `error.class` 表达。只有违反编程前提（例如缺少 ports）才抛。
 - `cancelInstance` 是实例级（含整个 fan-out）取消；只做收口，不等待 prompt 自然结算。
 - `recover` 在启动时由 CLI 调用，返回待处理 attempt 与清理结果；不自动重跑。
+- `snapshotAttempts()` 返回当前活跃 attempt 的只读快照（`phase`/`sessionId`），供 CLI 组装 `ClientState`；不暴露 `AttemptRegistry`。
+- `reconcileCleanup(pending)` 执行实例终结与清理对账：取消活跃 attempt → 关 session/进程 → `workspace.cleanup` → 清孤儿；返回每条 `releaseId` 的 `CleanupAck`。幂等，按 `releaseId` 去重；`cleanupPending` 的对账不越过 executor。
 
 ### 2.2 尝试状态机
 
@@ -99,7 +103,8 @@ claimed ──▶ bound ──▶ ready ──▶ running ──▶ settled ─�
 7. `assets.install(skillSet, container)`；失败即 `asset_*`，不 prompt。
 8. `journal.mark(ready)`；`runtime.prompt(text, { signal, timeoutMs })`；先记 `running` 再下发。
 9. `result.assemble(outcome)` → `journal.mark(settled, result)` → `scheduler.reportResult`（或 `run` 输出）→ `journal.mark(reported)`。
-10. `runtime.closeSession` → `journal.mark(closed)`；实例结束/取消时 `runtime.shutdownInstance` 与 `workspace.cleanup`，成功后 `journal.clearOrphan(pid)`。
+10. `runtime.closeSession` → `journal.mark(closed)`。
+11. 实例终结（`cancelInstance` 收口、`shutdown`、`reconcileCleanup`）统一由本组件执行：取消活跃 attempt → `runtime.shutdownInstance` → `workspace.cleanup` → `journal.clearOrphan(pid)`；顺序固定，只在 executor 定义一次。
 
 顺序不可交换。`bindSession` 必须在 `newSession` 之后；`assets.install` 必须在 `prompt` 之前。
 
@@ -182,17 +187,35 @@ claimed ──▶ bound ──▶ ready ──▶ running ──▶ settled ─�
 
 ```ts
 interface SchedulerPort {
-  register(info: ClientInfo): Promise<Registration>;
-  heartbeat(request: HeartbeatRequest): Promise<HeartbeatResult>;
+  register(info: ClientInfo): Promise<RegistrationOutcome>;
+  heartbeat(state: ClientState, acks?: CleanupAck[]): Promise<HeartbeatOutcome>;
   claim(capacity: Capacity): Promise<NodeRequest | null>;
   renew(attemptId: AttemptId): Promise<Lease>;
   bindSession(attemptId: AttemptId, sessionId: SessionId): Promise<SessionBinding>;
   reportResult(attemptId: AttemptId, result: NodeResult): Promise<Ack>;
 }
+
+type RegistrationOutcome = {
+  serverTime: string;
+  limits: Limits;
+  assignmentsVersion: number;
+  assignments?: Assignment[];
+  cleanupPending: CleanupPending[];
+};
+
+type HeartbeatOutcome = {
+  serverTime: string;
+  control: ControlBatch;
+  cleanupPending: CleanupPending[];
+  nextPollAfterMs: number;
+};
 ```
 
+- `ackSeq` 与 `clientLease` 属于 gateway 的传输层状态，不进入端口签名：gateway 自己拼请求体、自己收租约。
+- `HeartbeatRequest` / `HeartbeatResult` / `Registration` 是 HTTP 线格式，只在契约 §6.6 定义；`ClientState` / `ActiveAttemptSnapshot` 也在契约 §6.6，本端口只暴露裁剪后的领域字段。
+
 - 不变量：`claim` 只返回绑定本 client 的请求；`bindSession` 只接受本 client 为本 attempt 创建且未关闭的 session；`reportResult` 同 attempt 幂等；版本不兼容拒绝领取。
-- `claim` 的 `claimRequestId` 由 gateway 生成并持有，不进入端口签名；`heartbeat` 的 `cleanupAcks` 在 `HeartbeatRequest` 里，由 CLI 对账后传入。
+- `claim` 的 `claimRequestId` 由 gateway 生成并持有，不进入端口签名；`cleanupAcks` 由 CLI 传入 `heartbeat`，gateway 拼进请求体。
 - `SessionBinding` 不再含 `lease`；租约唯一来源是 `claim` / `renew`（`Q20`）。
 - `Registration` / `HeartbeatResult` / `HeartbeatRequest` / `SessionBinding` / `Assignment` / `CleanupPending` / `CleanupAck` 的字段定义见 [`contracts/executor-http-v1.md`](../../contracts/executor-http-v1.md) §6.6；本规格不复制，避免两套真相。
 - 消费方：`CMP-executor` 只用 `bindSession` / `reportResult`；`CMP-cli` 只用 `register` / `heartbeat` / `claim` / `renew`。方法集合固定，不按消费方拆端口。
@@ -239,7 +262,7 @@ interface AssetPort {
 ```
 
 - 不变量：替换语义、原子生效；失败不留半套；同 digest 重复安装为空操作；脚本落地即可执行。
-- 错误：`download_failed`、`checksum_mismatch`、`unpack_failed`、`invalid_skill_format`、`io_error`、`skill_set_conflict`。
+- 错误：`download_failed`、`checksum_mismatch`、`unpack_failed`、`invalid_skill_format`、`io_error`、`asset_skill_set_conflict`。
 
 #### `JournalPort`
 
@@ -259,6 +282,7 @@ interface JournalPort {
 
 - 不变量：追加不覆盖；同实例单写（锁）；状态可重建；损坏记录可降级跳过；孤儿记录不含敏感信息。
 - `pendingAll` / `listInstances` 只在没有 `assignments` 快照时用于恢复枚举；不是新增调度器契约（P2）。
+- **取锁点（`AD-04`）**：CLI 在 `claim` 成功、`executeNode` 之前调 `lockInstance`，`closed`/`abandoned` 后释放；取锁失败即拒绝执行该 attempt 并报 `failed(workspace)`。executor 不自行取锁。
 - 错误：`io_error`、`locked`、`corrupt`。
 - 孤儿方法：executor 只写 `recordOrphan` / `clearOrphan`；`listOrphans` 供 CLI 启动恢复使用。
 
@@ -338,6 +362,8 @@ type SchedulerEndpoint = {
 ```
 
 字段若后续扩展，按 P1 版本规则走；当前只冻结“定义位置 + 策略归属”。
+
+`ports.ts` 内部分两区：**领域端口**（`SchedulerPort`/`RuntimePort`/`WorkspacePort`/`AssetPort`/`JournalPort`）与**跨 L0 共享值类型**（`AuthProvider`/`SchedulerEndpoint`）。后者不得长成第二套传输层；若继续增长，S1 抽独立 L0 小模块（`AH-05`）。
 
 `NodeResult` / `SkillSet` / `ControlBatch` / `Lease` / `SessionOutcome` 的字段已冻结；本组件只依赖 `CMP-result` 提供的值类型名与不变量，不自行扩展。
 

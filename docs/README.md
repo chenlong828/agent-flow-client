@@ -54,7 +54,9 @@ docs/
 │   │   └── result.md
 │   └── 2026-11-07-m1-contract-freeze/      ← M1 调度器契约冻结（T1–T9 完成，T10 评审待做）
 │       ├── brief.md                        ← 冻结范围、决策基线、任务表
-│       └── freeze-checklist.md             ← 提案 §13 逐行落点清单
+│       ├── freeze-checklist.md             ← 提案 §13 逐行落点清单
+│       ├── review.md                       ← 设计评审 AB/AD/AH 处置
+│       └── result.md                       ← T1–T9 + 评审修复结论
 └── history/                                ← 记忆：怎么走到这里的
     ├── works/                              ← 已归档工序（frozen）
     │   ├── 2026-11-03-dsh-acp-preflight/   ← DSH ACP 对接预研

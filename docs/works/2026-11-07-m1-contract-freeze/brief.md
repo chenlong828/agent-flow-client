@@ -62,7 +62,7 @@ updated: 2026-11-07
 | 架构更新 | `docs/design/architecture.md` | §3.1/§3.2/§4.3/§6/§10 等；只链接主文档，不复述字段 |
 | 组件更新 | `docs/design/components/<id>/spec.md` | 只写本组件的端口/消费/失败收口，字段链接主文档 |
 | 冻结清单 | `freeze-checklist.md`（本目录） | 提案 §13 每一行 → 目标章节 → 状态 |
-| 结果/评审 | `result.md`、`review.md`（本目录） | 冻结结论、四档评审、签字 |
+| 结果/评审 | `result.md`、`review.md`（本目录） | 冻结结论、设计评审处置（AB/AD/AH）、签字 |
 | 计划收口 | `docs/plan/open-questions.md`、`roadmap.md`、`risks.md` | 关闭 OQ-006/010/011/012/013 等，记录 M1 完成 |
 
 ## 5. 任务表
@@ -78,7 +78,7 @@ updated: 2026-11-07
 | T7 | 更新 `CMP-result`：`message`、错误映射、`retryable` | `CMP-result` | §2.1/§2.2 | T2 | T2、`CMP-result` §2 | 有输出就填；`late_result`/`invalid_session` 映射 | 完成 |
 | T8 | 更新 `CMP-assets`：`C-05`、304、跨 host 不带 token、共享凭据 | `CMP-assets` | §1/§3 | T2/T4 | T2、`CMP-assets` §1/§3 | 不 import gateway；凭据单一来源 | 完成 |
 | T9 | 跨文档一致性 + OQ/计划收口：关闭 OQ-006/010/011/012/013，OQ-021 记账，记录 OQ-023 | `plan/` | OQ/roadmap/risks 更新 | T3–T8 | T3–T8、`plan/open-questions.md` | 无旧语义残留；OQ 状态可追溯 | 完成 |
-| T10 | 冻结评审：四档记录、人工签字、`bun run check`、归档本工序 | 本工序 | `review.md`/`result.md` | T1–T9 | 全量 + `freeze-checklist.md` | 评审通过；差异清单全绿 | 待做 |
+| T10 | 冻结评审：四档记录、人工签字、`bun run check`、归档本工序 | 本工序 | `review.md`/`result.md` | T1–T9 | 全量 + `freeze-checklist.md` | 评审已回：AB-01–04/AD-01–05 已修，待复核签字 | 进行中 |
 
 > 任务按文档边界拆，不按“字段批次”拆；同一事实只写在主文档，组件规格链接过去，避免两套真相。
 

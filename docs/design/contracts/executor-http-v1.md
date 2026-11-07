@@ -850,6 +850,44 @@ type Limits = {
 };
 ```
 
+`Registration` / `HeartbeatRequest` / `HeartbeatResult` 是 **HTTP 线格式**，不是 `SchedulerPort` 的入参/返回类型。`SchedulerPort` 只暴露领域需要的字段：
+
+```ts
+type ActiveAttemptSnapshot = {
+  attemptId: string;
+  instanceId: string;
+  phase: "claimed" | "bound" | "ready" | "running" | "settled" | "reported";
+  sessionId?: string;
+};
+
+type ClientState = {
+  capacity: { maxInstances: number; activeInstances: number; activeAttempts: number };
+  pausedInstances: string[];
+  activeAttempts: ActiveAttemptSnapshot[];
+};
+
+type HeartbeatOutcome = {
+  serverTime: string;
+  control: ControlBatch;
+  cleanupPending: CleanupPending[];
+  nextPollAfterMs: number;
+};
+
+type RegistrationOutcome = {
+  serverTime: string;
+  limits: Limits;
+  assignmentsVersion: number;
+  assignments?: Assignment[];
+  cleanupPending: CleanupPending[];
+};
+```
+
+- `SchedulerPort.register(info): Promise<RegistrationOutcome>`。
+- `SchedulerPort.heartbeat(state: ClientState, acks?: CleanupAck[]): Promise<HeartbeatOutcome>`。
+- `ackSeq` 是 gateway 的传输层状态，由 `ControlSeq` 自己拼进 HTTP body；不进入 L1 端口签名。
+- `clientLease` 由 gateway 的 `LeaseTracker` 截留；`register` 的 `clientLease` 字段同理，CLI 只用 `limits`/`assignments`/`cleanupPending`。
+- CLI 组装 `ClientState`：容量与 `pausedInstances` 是 CLI 的，`activeAttempts` 来自 `executor.snapshotAttempts()`。
+
 `cleanupPending` 在 JSON 响应中允许省略（旧服务端）；新调度器只要存在释放意图就必须返回。`heartbeat` 的 `cleanupAcks` 可省略，视为无回执。`shutdown(instanceId)` 的 `releaseId` 必填，且与 `cleanupPending[].releaseId` 一致。
 
 `claim` / `renew` / `reportResult` 的返回类型不变（`NodeRequest` 内含 `lease`；`renew` 返回 `Lease`；`reportResult` 返回 `Ack`）。`bindSession` 不再返回 `lease`，租约唯一来源是 `claim` / `renew`（`Q20`）。端口签名已冻结；若未来要退回 `void`，只能在 CLI 另加读取限制/assignments 的端口方法，不推荐。
@@ -895,7 +933,7 @@ type Limits = {
 | `CLT-10` | 崩溃后清孤儿、不自动重跑、等调度器重派 | `recover` + `CMP-runtime` |
 | `CLT-11` | 只连 `scheduler.url` 与 manifest 授权的下载地址；跨 host 不带 token | `CMP-gateway` + `CMP-assets` |
 | `CLT-12` | 租约按 `serverTime` + 单调时钟判断，不依赖本地墙钟 | `LeaseTracker` |
-| `CLT-13` | `cleanupPending` 幂等对账：按 `releaseId` 执行并回执 `done`/`failed`；cleanup 完成前不领取该实例；事件丢失不丢清理 | `CMP-cli` 对账 + `WorkspacePort.cleanup` |
+| `CLT-13` | `cleanupPending` 幂等对账：按 `releaseId` 执行并回执 `done`/`failed`；cleanup 完成前不领取该实例；事件丢失不丢清理 | `CMP-executor#reconcileCleanup` + CLI 搬运/回执 |
 
 ## 9. 执行器承接：从 HTTP 到组件、状态机与 journal
 
@@ -904,7 +942,7 @@ type Limits = {
 | 操作 | 端口方法 | 调用组件 | 调用点 | 尝试状态迁移 | journal | 失败处理 |
 |---|---|---|---|---|---|---|
 | `C-01` | `register` | `CMP-cli` | 启动/重连 | 无 attempt | 无 | 401/403/426 退出 3；409 退出 7；其余退避，持续退出 6 |
-| `C-02` | `heartbeat` | `CMP-cli` 心跳任务 | 常驻 30s | 无迁移 | 无 | 退避重连；控制事件分派给 executor；对账 `cleanupPending` 并回执 `cleanupAcks` |
+| `C-02` | `heartbeat` | `CMP-cli` 心跳任务 | 常驻 30s | 无迁移 | 无 | 退避重连；控制事件分派给 executor；`cleanupPending` 交 `executor.reconcileCleanup`，回执 `cleanupAcks` |
 | `C-03` | `claim` | `CMP-cli` 领取循环 | 有空容量 | `→ claimed` | `claimed` | `204` 等待；429/5xx 退避 |
 | `C-04` | `bindSession` | `CMP-executor` | `newSession` 后 | `claimed → bound` | `bound`（含 sessionId） | 关 session；按 §5.4 分档（stale→cancelled、invalid→failed）；不 prompt |
 | `C-05` | 无（`CMP-assets` 直连） | `CMP-executor` 编排 | `bindSession` 后 | `bound → ready`（安装成功） | `ready` | 原子回滚；`settled(failed)`，不 prompt |
@@ -939,7 +977,7 @@ claim ──▶ claimed ──newSession──▶ bindSession(C-04) ──▶ bo
 
 1. 清孤儿：`store.listOrphans` → `runtime.reapOrphan` → `store.clearOrphan`（client 不杀别人的进程）。
 2. `register`（新 `runId`）；调度器 fence 旧 run（`run_superseded`），但保留旧 attempt 的归属；旧 run 的活跃 attempt 未被旧 run 收口或租约过期前，调度器不得为同一实例重派（`SCH-02`/`SCH-19`）。
-3. **对账 `cleanupPending`**：按 `releaseId` 幂等执行释放/清理；完成前该实例不领取；结果通过下一跳 `cleanupAcks` 回执。这是旧 run `shutdown(instanceId, cleanup)` 事件丢失后的补偿路径（`SCH-20`）。
+3. **对账 `cleanupPending`**：交给 `CMP-executor#reconcileCleanup`；按 `releaseId` 幂等执行释放/清理；完成前该实例不领取；结果通过下一跳 `cleanupAcks` 回执。这是旧 run `shutdown(instanceId, cleanup)` 事件丢失后的补偿路径（`SCH-20`）。
 4. `recover`：读 journal 非终态 attempt；`settled`/`reported` 且有结果的 → 用 **新 runId** 重报 `C-07`；`claimed`…`running` 无结果的 → 标记 `abandoned`，不上报。
 5. 重报成功的旧 attempt → `reported` → `closed`；失败的保留 `settled`，下次再试。
 6. 不自动重跑；等调度器用**新 attemptId**重派（`SCH-03`）。

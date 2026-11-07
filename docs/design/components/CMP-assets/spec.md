@@ -85,7 +85,7 @@ type SkillPackageRef = {
 
 - 同一容器同一时刻只允许一个安装临界区（锁文件 + 进程内 Mutex）。
 - 同 digest 并发安装：后来者等待/短路 `noop`。
-- 不同 digest 且存在活跃 session：由 `CMP-executor` 判 `skill_set_conflict`；assets 不改写正在使用的技能集。
+- 不同 digest 且存在活跃 session：由 `CMP-executor` 判 `asset_skill_set_conflict`；assets 不改写正在使用的技能集。
 - 锁文件记录 `{pid, digest, startedAt}`；进程崩溃后由下一次安装或 `doctor` 清理陈旧锁。
 
 ## 3. 契约
@@ -121,7 +121,7 @@ type SkillPackageRef = {
 | `unpack_failed` | 损坏包/路径穿越/超限 | 是（换包） | 节点失败；不 prompt |
 | `invalid_skill_format` | 缺 frontmatter/嵌套/非法 name | 否 | 节点失败；不 prompt |
 | `io_error` | 锁/rename/权限/磁盘 | 否（同机） | 节点失败；不 prompt |
-| `skill_set_conflict` | 同容器不同 digest 并发 | 否 | 显式失败；调度器换实例/重排 |
+| `asset_skill_set_conflict` | 同容器不同 digest 并发 | 否 | 显式失败；调度器换实例/重排 |
 
 ### 3.4 下载鉴权与共享值对象
 
@@ -134,6 +134,7 @@ interface AuthProvider {
 
 - token 单一来源：组合根注入同一个 `AuthProvider` / `SchedulerEndpoint`；`CMP-assets` 只读这两个值类型，不 import `CMP-gateway`。
 - 判断规则只有一条：同 `baseUrl` host 才带 `Authorization`；跨 host 一律不带，即使 manifest 给了 URL。
+- TLS/超时配置与 gateway 共用 `SchedulerEndpoint`；S1 联调核对两套 HTTP 栈，避免“下载能连、上报不能连”（`AH-06`）。
 - 凭据不进日志、不进错误 message、不写进容器。
 
 ### 3.5 `AssetAdmin`（L0 管理面）

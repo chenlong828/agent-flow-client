@@ -109,17 +109,19 @@ type OrphanRecord = {
 
 ### 3.1 实现 `JournalPort`
 
-签名见 `CMP-executor` §3.4；本规格把孤儿记录纳入同一本地持久化端口：
+签名**只在 `CMP-executor` §3.4 定义**；本节是实现视图，不另立契约。当前 9 个方法（含 `pendingAll` / `listInstances`）：
 
 ```ts
 interface JournalPort {
   append(record: AttemptRecord): Promise<void>;
   pending(instanceId: InstanceId): Promise<AttemptRecord[]>;
+  pendingAll(): Promise<AttemptRecord[]>;
   mark(attemptId: AttemptId, state: AttemptState, patch?: Partial<AttemptRecord>): Promise<void>;
   lockInstance(instanceId: InstanceId): Promise<Unlock>;
   recordOrphan(record: OrphanRecord): Promise<void>;
   listOrphans(instanceId?: InstanceId): Promise<OrphanRecord[]>;
   clearOrphan(pid: number): Promise<void>;
+  listInstances(): Promise<InstanceId[]>;
 }
 ```
 

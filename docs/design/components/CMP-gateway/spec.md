@@ -51,7 +51,7 @@ updated: 2026-11-07
 
 ### 2.2 长轮询心跳
 
-- 形态：`heartbeat(state, ackSeq)` 一条常驻请求；服务端有事件立即返回，无事件挂起至 30s 返回空批。
+- 形态：`heartbeat(state, cleanupAcks)` 一条常驻请求；`ackSeq` 与 `clientLease` 由 gateway 在 HTTP 层拼装/截留，不出现在 L1 端口。服务端有事件立即返回，无事件挂起至 30s 返回空批。
 - 请求到达即续租；连接断开/超时是离线信号；最终以租约过期裁决。
 - 客户端超时 = 服务端挂起 + 余量（建议 35s）；超时后按退避重连，不视为业务失败。
 - 传输重连**不重新 `register`**：同一 `runId` 直接重试 `heartbeat`/`claim`；只有新进程（新 `runId`）或调度器显式要求时重新注册。
@@ -80,6 +80,7 @@ updated: 2026-11-07
 - 版本不兼容：停止领取，`version_incompatible`，由 CLI 退出 3。
 - 鉴权失败：停止领取，`unauthorized`，退出 3；不无限重试。
 - 凭据只从注入的 `AuthProvider` 取；不写日志、不进结果、不进 prompt。
+- 与 `CMP-assets` 共用同一 `SchedulerEndpoint` 的 host 判定与 TLS/超时配置；S1 联调时核对两套 HTTP 栈（`AH-06`）。
 
 ## 3. 契约
 
@@ -89,8 +90,8 @@ updated: 2026-11-07
 
 | 方法 | 传输语义 | 返回类型 | 错误 |
 |---|---|---|---|
-| `register` | 幂等注册；鉴权；版本上报；带回 `assignments`/`cleanupPending` | `Registration` | `unreachable`、`unauthorized`、`version_incompatible` |
-| `heartbeat` | 长轮询；返回控制与清理待办；续租 | `HeartbeatResult` | `unreachable`、`timeout`、`rate_limited`、`run_superseded` |
+| `register` | 幂等注册；鉴权；版本上报；带回 `assignments`/`cleanupPending` | `RegistrationOutcome` | `unreachable`、`unauthorized`、`version_incompatible` |
+| `heartbeat` | 长轮询；返回控制与清理待办；续租 | `HeartbeatOutcome` | `unreachable`、`timeout`、`rate_limited`、`run_superseded` |
 | `claim` | 长轮询；取绑定本 client 的请求；无则 `null` | `NodeRequest \| null` | `lease_expired`、`rate_limited`、`invalid_request`、`run_superseded` |
 | `renew` | 延长尝试租约 | `Lease` | `lease_expired`、`unreachable`、`run_superseded` |
 | `bindSession` | 上报 sessionId；返回技能集（无 `lease`） | `SessionBinding` | `stale_attempt`、`invalid_session`、`unreachable` |

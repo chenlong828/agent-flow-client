@@ -75,3 +75,27 @@ M1 结束前对 `docs/design/` 全量 grep，以下必须为零或只在“被�
 - M1 `review.md` 四档评审签字；
 - `docs/design/` 与主文档无未解释差异；
 - `protocolVersion` 固定为冻结值。
+
+## 7. 设计评审反馈（2026-11-07）
+
+> 评审原文：`agent-flow-orchaster/docs/works/2026-11-07-client-architecture-review/review.md`。处置记录见 [`review.md`](review.md)。
+
+| ID | 反馈 | 落点 | 状态 |
+|---|---|---|---|
+| `AB-01` | `heartbeat` 入参跨 CLI/executor/gateway 三个所有者 | 端口改 `heartbeat(ClientState, acks)`；`ackSeq`/`clientLease` 归 gateway；新增 `snapshotAttempts` | [x] |
+| `AB-02` | `JournalPort` 三份签名 | executor §3.4 唯一定义；store §3.1 补 `pendingAll`/`listInstances`；架构改引用 | [x] |
+| `AB-03` | 技能冲突两个 `code` | 统一 `asset_skill_set_conflict` | [x] |
+| `AB-04` | 实例终结有两个主人 | 收进 `executor.reconcileCleanup`；CLI 只搬运/回执 | [x] |
+| `AD-01` | `prompt_failed` 映射两类别 | 拆 `protocol_error` → `protocol`、`prompt_failed` → `runtime` | [x] |
+| `AD-02` | 截断标记导致超上限 | 预留 15 字节标记；补边界用例 | [x] |
+| `AD-03` | `<stateRoot>` 多写者 | 架构 §7 按 store/assets/observability 分区 | [x] |
+| `AD-04` | `lockInstance` 无调用点 | CLI claim 后取锁、closed/abandoned 释放 | [x] |
+| `AD-05` | `DSH_HOME` 归属三说 | CLI 创建、runtime 写入、`shutdownInstance` 删除 | [x] |
+| `AH-01` | `--concurrency` 双容量源 | 删除 flag；只用 `capacity.maxInstances` | [x] |
+| `AH-03` | phase 缺 `abandoned` | observability 补 | [x] |
+| `AH-04` | 多 session 取消在 A 方案不可达 | 不变量 5/11 标 S2/B 生效 | [x] |
+| `AH-05` | L1b 持传输类型 | `ports.ts` 分领域端口/共享值类型 | [x] |
+| `AH-06` | 两套 HTTP 栈 | 共用 host/TLS/超时配置，S1 核对 | [x] |
+| `AH-02` | `stateRoot` 默认系统目录 | 随 OQ-014，记录在 CLI §9 | [ ] |
+| `AH-07` | 组件预算合计偏高 | S0 排任务按组件切 | [ ] |
+| `AH-08` | 缺 UC→测试映射 | S0 开工前补 | [ ] |

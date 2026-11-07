@@ -62,9 +62,10 @@ updated: 2026-11-07
 | workspace | `not_prepared`、`layout_invalid`、`path_escape`、`permission_denied` | `workspace` | false |
 | workspace | `disk_full` | `workspace` | false（同机重试无意义；由调度器换实例） |
 | assets | `download_failed`、`checksum_mismatch`、`unpack_failed` | `asset` | true |
-| assets | `invalid_skill_format`、`skill_set_conflict` | `asset` | false |
+| assets | `invalid_skill_format`、`asset_skill_set_conflict` | `asset` | false |
 | runtime | `spawn_failed`、`process_exited` | `runtime` | true |
-| runtime | `protocol_error`、`prompt_failed` | `runtime` / `protocol` | false |
+| runtime | `protocol_error` | `protocol` | false |
+| runtime | `prompt_failed` | `runtime` | false |
 | runtime | `cancelled` | `cancelled` | false |
 | runtime | `timeout` | `timeout` | true |
 | gateway | `unreachable`、`rate_limited` | `scheduler` | true |
@@ -86,9 +87,10 @@ updated: 2026-11-07
 ### 2.3 截断
 
 - 单位：UTF-8 字节；上限来自 `limits.maxResultBytes`，v1 冻结为 **256 KiB**（Q9）。
-- 超过上限：在边界处回退到完整码点，追加 `\n…[truncated]`，`truncated: true`。
+- 超过上限：先预留标记字节（`\n…[truncated]`，UTF-8 15 字节），按 `maxBytes - markerBytes` 在完整码点边界截断，再拼标记；**含标记的总字节数 ≤ `maxBytes`**。
 - 不截断 `status`、`error`、`sessionId`、`attemptId`、`stopReason`。
 - 截断后仍是合法 JSON 字符串；不产生半个码点。
+- `maxBytes < markerBytes`（15）时无法同时保留标记与上限：返回空串 + `truncated=true`；调用方不应传过小上限。
 
 ## 3. 契约
 
@@ -110,7 +112,7 @@ updated: 2026-11-07
 
 - **签名**：`truncate(text, maxBytes) → { text, truncated }`。
 - **前置**：`maxBytes ≥ 0`。
-- **不变量**：输出字节数不超过 `maxBytes`；不切断 UTF-8 码点；`truncated` 准确。
+- **不变量**：输出字节数（含 `\n…[truncated]` 标记）不超过 `maxBytes`；不切断 UTF-8 码点；`truncated` 准确。
 - **错误模式**：`maxBytes < 0` 视为编程错误，抛 `RangeError`。
 
 ### 3.4 值类型（占位）
@@ -154,7 +156,7 @@ type ErrorMapping = {
 |---|---|---|
 | 规则 | 成功/失败/取消/超时四类组装 | `status`、`error.class`、`sessionId` 正确 |
 | 映射 | 表驱动覆盖每个错误码；未知错误 | 类别与 `retryable` 与表一致 |
-| 边界 | 文本刚好等于上限、超 1 字节、超多字节码点、空串 | 不切断码点；`truncated` 准确 |
+| 边界 | 文本刚好等于上限、超 1 字节、超多字节码点、空串、`maxBytes < markerBytes` | 含标记仍 ≤ 上限；不切断码点；`truncated` 准确 |
 | 纯度 | 同样输入两次调用 | 输出相等；无副作用 |
 | 契约 | 输出可 JSON 序列化；控制字段不被截断 | 序列化/字段断言 |
 

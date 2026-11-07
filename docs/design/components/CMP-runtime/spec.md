@@ -108,7 +108,8 @@ opening ──▶ open ──▶ prompting ──▶ open
 - 取消后 2s 内做残留检查（`kill -0` 为假）；2s 是检查窗口，不是等待时间。
 - `shutdownInstance(instance, mode)`：
   - `graceful`：关闭所有 session → stdin EOF → 等退出（上限 5s）→ 超时杀进程组；
-  - `force`：直接杀进程组。
+  - `force`：直接杀进程组；
+  - 进程组确认退出后删除实例 `DSH_HOME`；删除失败只记录并留给 `doctor`，不回滚已完成的关闭。
 - `closeSession` 上限 10s；超时杀进程组。
 - 崩溃：进程退出事件触发所有活跃 session 失败（`process_exited`）；清理 session 注册表。
 - 孤儿进程：`RuntimeAdmin.reapOrphan(orphan)` 按 pid/pgid 强杀并返回是否存活过；由 CLI 在启动恢复时调用，runtime 不读 store。
@@ -185,7 +186,7 @@ interface RuntimeAdmin {
 | 数据 | 写入口 | 读方 | 一致性/保留 |
 |---|---|---|---|
 | DSH 进程 / session 注册表 | `CMP-runtime` | executor、CLI、observability | 进程退出即回收 |
-| `DSH_HOME`（实例） | 调用方创建；runtime 只使用/写 profile 补丁与空目录 | runtime | 一实例一 home；不指向 `~/.dsh` |
+| `DSH_HOME`（实例） | CLI 创建并校验；runtime 独占写入 | runtime | 一实例一 home；不指向 `~/.dsh`；`shutdownInstance` 内删除，失败记录留给 `doctor` |
 | profile 补丁 / 空目录 | `CMP-runtime` | DSH | 启动时生成；可重建 |
 | `SessionOutcome` | `CMP-runtime` | executor / result | 请求级，不持久化 |
 | 进程组 pid / 退出状态 | `CMP-runtime` | runtime、CLI | 运行期；孤儿记录归 store |
