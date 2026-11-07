@@ -2,7 +2,7 @@
 layer: works
 module: global
 status: active
-updated: 2026-11-06
+updated: 2026-11-07
 ---
 
 # 工序 Brief：client 只读观测 HTTP 面
@@ -50,7 +50,7 @@ updated: 2026-11-06
 | T1 | 设计 | 端点、字段、分页、SSE、错误码 | 观测 HTTP | 进行中 | 本 brief、`proposal.md` |
 | T2 | 设计 | 存储/归档/保留与数据所有权 | `CMP-observability`、`CMP-runtime` | 待做 | T1、`CMP-observability`/`CMP-runtime` 规格 |
 | T3 | 设计 | 组件切分与 `serve` 启停、配置、鉴权 | `CMP-cli`、`CMP-observability` | 待做 | T1/T2、`architecture.md` §4 |
-| T4 | 评审 | P1 四档评审与人工确认 | 双侧 | 待做 | T1–T3 |
+| T4 | 评审 | P1 四档评审与人工确认 | 双侧 | 调度器附评已回并处置；待确认 `OB-01` 风险 | T1–T3 |
 | T5 | 落地 | 按确认稿改 `design/` 与代码 | 组件 | 待做 | T4 通过 |
 
 ## 6. 领取的开放问题
@@ -75,4 +75,4 @@ updated: 2026-11-06
 
 - `proposal.md`：只读观测 HTTP 契约与组件修改方案。
 - `result.md`：设计结论、待确认项与落地顺序。
-- `review.md`：P1 评审记录（T4 后补）。
+- `review.md`：调度器附评 `OB-01`–`OB-09` 的处置记录。

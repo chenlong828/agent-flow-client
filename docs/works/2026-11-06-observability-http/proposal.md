@@ -2,7 +2,7 @@
 layer: works
 module: global
 status: active
-updated: 2026-11-06
+updated: 2026-11-07
 ---
 
 # Client 只读观测 HTTP 提案（P1）
@@ -30,6 +30,12 @@ GET /api/v1/observability/...
 - 不提供 claim/cancel/pause/shutdown 的入站替代；
 - 不参与租约、心跳、重试与结果上报；
 - 调度器控制仍走心跳长轮询，`SCH-18` 不变。
+
+### 1.1 为什么观测面可以入站（判据）
+
+观测请求是**无 liveness / 无 ordering 语义**的：请求丢了、超时了，只影响一次查看，不影响执行、租约或控制；不需要 `seq`、不需要至少一次投递、不需要把失败映射回 attempt 状态。控制面入站恰好相反：`cancel`/`shutdown` 必须被可靠投递、必须有序、必须能判断「没送到」与「送到了没答完」，于是要新增投递保证、去重、鉴权方向与 endpoint 生命周期。
+
+这条判据要写进 P1 记录，防止将来拿观测面当「client 可以接控制 HTTP」的先例。
 
 ## 2. 关键决策
 
@@ -65,7 +71,8 @@ GET /api/v1/observability/...
 ```json
 {
   "status": "ok",
-  "version": "2026-11-06.1",
+  "observabilityVersion": "2026-11-06.1",
+  "clientVersion": "0.1.0",
   "startedAt": "2026-11-06T01:00:00Z",
   "uptimeMs": 123456,
   "activeAttempts": 2,
@@ -75,6 +82,8 @@ GET /api/v1/observability/...
 ```
 
 鉴权与其它端点一致：token 非空时要求 Bearer；token 为空时不鉴权（受控网络）。`health` 不返回路径、配置、凭据；`status` 取值 `ok` / `degraded`（日志写盘或归档失败）。
+
+`observabilityVersion` 是观测 API 版本，`clientVersion` 是 client 构建版本；不要复用 `protocolVersion`（调度器契约）或语义模糊的 `version`（`OB-06`）。
 
 ### 3.2 `O-02` `GET /attempts`
 
@@ -194,7 +203,7 @@ data: {"status":"completed","finishedAt":"..."}
 - 之后实时 `log`/`phase`/`acp`/`result`；每 15s `heartbeat`。
 - attempt 已结束：`snapshot` + `end` 后关闭。
 - 慢消费者：队列上限 1000；超过则发 `event: error`（`slow_consumer`）并关闭。
-- 并发流上限 `maxStreams`（默认 20）；超限 `429 rate_limited`。
+- 并发流上限 `maxStreams`（默认 20，**按 client 全局**，不是 per-attempt）；超限 `429 rate_limited`（`OB-09`）。
 
 ### 3.6 `O-06` `GET /sessions/{sessionId}`
 
@@ -299,6 +308,17 @@ type ObservationEvent = {
 - `CMP-runtime` 是 `sessions/*` 的唯一写入口：session 关闭时把实例 home 中的原始文件复制到归档目录；原子 rename；计算 sha256。`session.v4.jsonl.zstd` 是当前实测名，实际文件名/格式以 DSH 为准，归档记录 `sourceFile`，不做解析。
 - `CMP-observability` 只读 `sessions/*`，不写；不直接读 journal。
 
+**归档文件契约（`OB-05`）**：`CMP-runtime` 写、`CMP-observability` 读，是两 L0 之间的文件契约，必须当正式契约登记，不能靠「组合根注入路径」口口相传。
+
+| 项 | 约定 |
+|---|---|
+| 布局版本 | `meta.json` 必带 `layoutVersion: 1`；不兼容变更升版本，读方遇到未知版本只报 `unsupported_layout`，不猜测 |
+| 写入原子性 | 同目录临时文件 → `fsync` → `rename`；读取方只认 `rename` 后的文件，忽略 `*.tmp` |
+| 完整性 | `meta.json` 先写 `sha256: null`，复制完成并校验后原子更新；`raw` 端点只在 `sha256` 非空时提供下载 |
+| 谁写谁读 | `CMP-runtime` 唯一写者；`CMP-observability` 只读；组合根只注入 `archiveRoot`，不参与写 |
+| 失败语义 | 复制/校验失败留 `meta.json` 的 `archiveStatus=failed` 与 `errorClass`；不删实例 home；读方返回 `409`/`503`，不返回半个文件 |
+| 并发 | 同一 `sessionId` 只允许一个写者（实例 home 独占 + 原子 rename）；读方容忍文件在 `rename` 瞬间消失，按 404/409 处理 |
+
 ### 4.4 保留与清理
 
 | 配置 | 默认 | 语义 |
@@ -309,9 +329,21 @@ type ObservationEvent = {
 
 - 只清理已结束的 attempt/session；活跃永不清理。
 - 清理顺序：先 attempt 事件，后 session 归档；失败重试，不阻塞主流程。
-- 已清理的 attempt 在列表可省略；直接访问返回 `410 observation_gone`（raw/session）或 `404`（attempt index 已删）。
+- 清理时删除事件/raw，但保留 `meta.json` 的 tombstone（`retained=false`、`prunedAt`）；直接访问返回 `410 observation_gone`。只有从未存在过才返回 `404`，这样调度器能区分「base URL 配错」与「数据过期」（`OB-08`）。
 - 实例清理前必须先归档 session；归档失败时**不删除实例 home**，记 `archive_failed`，留待重试/人工处理。
 - 崩溃恢复：`serve` 启动时扫描未归档的实例 home；能读到的 session 文件先复制为 `partial` 归档（`meta.partial=true`），再进入正常清理；读不到则保留 home 并告警。部分归档的 raw 可下载，但列表标记 `archiveStatus=partial`。
+
+### 4.5 写盘路径（`OB-02`）
+
+`ObservationEvent` 每事件追加写，而 Bun 是单线程：同步写或 `fsync` 会直接卡住心跳长轮询与 `renew`，把观测面变成租约过期的原因。因此：
+
+- **执行路径只入内存队列**，不 `fsync`、不做同步磁盘 I/O；
+- 后台单写者按批落盘（默认 100 条或 200ms，取先到者）；
+- 队列上限 10,000 条；溢出按 `kind` 计数丢弃并每分钟记一条 `observability_dropped` 告警，不阻塞执行；
+- 进程退出前 `flush` 一次（上限 2s），超时即放弃并记 `dropped_on_exit`；
+- 写盘失败降级为丢事件（同溢出路径），不改 `health.status`；只有持续失败（连续 3 批）才置 `degraded`。
+
+观测写入永远是「可丢的旁路」：宁可少几条日志，不能让执行与租约受影响。例外：session 归档复制发生在 session 关闭后的冷路径，允许 `fsync`；它不占执行/心跳线程。
 
 ## 5. 组件修改方案
 
@@ -349,7 +381,9 @@ CMP-observability ── 读 ──▶ attempts/*、sessions/*（HTTP）
 | `architecture.md` §3.2 | CLI 只有 serve/run/doctor/version | 不变；`serve` 增加观测 HTTP 启停与配置，不新增命令 |
 | `CMP-observability` §1 | 不负责跨边界上传日志/全文；不负责进程/文件/网络 | 保留「不上传/不控制」；新增「只读本地观测 HTTP、观测存储、session 归档读取」 |
 | `CMP-runtime` §1 | 不负责 store/结果/调度器 | 新增「session 关闭时归档原始 session 文件到观测目录」；仍不负责查询/HTTP |
-| `CMP-cli` §1 | 命令与配置、serve 循环、组合根 | 新增「启动/停止 ObservationHttpServer；注入 bind/port/token/archiveRoot」 |
+| `CMP-cli` §1 | 命令与配置、serve 循环、组合根 | 新增「启动/停止 ObservationHttpServer；注入 bind/port/token/archiveRoot/rawEnabled」 |
+| `CMP-observability` §8 | 预算目标 ≤15k token，上限 120k | 新增 HTTP server、查询/索引、SSE hub、保留策略、归档读取后预算必超。改为**目标 ≤60k、上限 120k**；超过 60k 或端点 >12 个即触发 B 方案（拆 `CMP-observer`）（`OB-04`） |
+| `architecture.md` §4 数据所有权 | 无观测归档行 | 加一行：`<stateRoot>/observability/**` 写者 `CMP-observability`（attempts）+ `CMP-runtime`（sessions 归档），读者观测 HTTP；保留按 §4.4 |
 
 这些修订在 P1 评审通过后回填，不在本设计稿中直接改 `design/`。
 
@@ -366,13 +400,15 @@ enabled = true          # 仅 serve 生效；run 不启
 bind = "0.0.0.0"
 port = 17890
 token = ""              # 空 = 不鉴权；仅用于受控网络
-max_streams = 20
+max_streams = 20        # 全局并发 SSE 上限
+raw_enabled = true      # false 时 raw 端点返回 403 raw_disabled
 ```
 
 - `bind` 默认 `0.0.0.0`，`port` 默认 `17890`；CLI 参数 `--observability-bind` / `--observability-port` / `--observability-token` 覆盖配置（`serve` 专用，`run` 不启）。
 - `token` 为空：不鉴权，启动日志与 `doctor` 记 `observability_insecure` 警告；仅用于受控网络。token 非空：所有请求要求 Bearer。
 - 绑定失败/端口占用：退出 4（`observability_bind_failed`）。
 - 调度器跨机访问：`0.0.0.0` 只是监听所有接口，调度器仍需可达 IP/端口；v1 不做自动发现。
+- `raw_enabled=false`：关闭原始 session 下载，只留规范化事件；适合「先上线看日志、全文排障后开」的部署。
 
 ## 6. 鉴权与安全
 
@@ -383,6 +419,27 @@ max_streams = 20
 - 只读：不提供 POST/PUT/PATCH/DELETE；不提供文件系统路径参数；`sessionId`/`attemptId` 必须存在。
 - 响应头：`X-Content-Type-Options: nosniff`、`Cache-Control: no-store`；不做 CORS（调度器非浏览器）。
 - 速率限制：v1 只限制并发 SSE；HTTP 请求可由反向代理限流。
+
+### 6.1 信任面反转（`OB-03`）
+
+观测面让调度器（或任何持有 token 的调用方）读取 client 本地全文；而 client 现行架构的前提是「全文不跨边界、只回少量控制信息」。这是本次新增的、跨两侧的信任面，不是普通只读接口：
+
+- 原始 session 含 system prompt、模型推理、工具完整 I/O；
+- 规范化事件也可能含 assistant 文本片段；
+- 一旦调度器侧被攻破，攻击者可读取所有已接入 client 的会话全文。
+
+接受理由：可观测性是本次明确的产品需求；只读、无控制副作用、可审计、可关闭（`raw_enabled=false`）。约束：只读、token/网络边界、`no-store`、审计、保留窗口；`v1` 不做 `register` 上报 `observabilityUrl`，避免调度器保存 client 的访问凭据。
+
+### 6.2 明文与绑定风险（`OB-01`）
+
+调度器评审建议 v1 只允许 loopback（或 unix socket），跨机由 SSH 隧道/反代解决；产品决策（2026-11-06）要求默认 `0.0.0.0`、CLI 可改、先做功能性。当前按产品决策保留 `0.0.0.0`，但必须把风险写死：
+
+- **风险**：非 loopback + 明文 HTTP + 长期静态 token + raw 整份下载 = token 被嗅探即可重放，所有 session 全文泄露；没有传输层保护。
+- **已接受**：v1 只在受控网络使用；token 强烈建议配置；`raw_enabled` 可按部署关闭；访问写审计。
+- **关闭该风险的现成方式**：`--observability-bind 127.0.0.1`（或后续 unix socket），跨机走隧道/反代；这就是评审推荐的形态，不需要改代码。
+- **后续特性**：TLS/mTLS、token 过期与轮换、来源 IP 限制、unix socket + 权限位。
+
+多用户机器上「loopback + 空 token」仍可被本机其他用户读取 raw；v1 的前提是单用户开发机或受控容器（`OB-07`）。
 
 ## 7. 错误码
 
@@ -397,11 +454,13 @@ max_streams = 20
 | 400 | `validation_error` | 参数缺失/非法/超限 |
 | 401 | `unauthorized` | token 缺失/错误 |
 | 403 | `forbidden` | token 无权访问该资源（预留） |
-| 404 | `attempt_not_found` | attempt 不存在 |
-| 404 | `session_not_found` | session 不存在 |
+| 403 | `raw_disabled` | 配置关闭 raw 下载 |
+| 404 | `attempt_not_found` | attempt 从未存在（无 meta/tombstone） |
+| 404 | `session_not_found` | session 从未存在（无 meta/tombstone） |
 | 409 | `archive_not_ready` | session 活跃/归档未完成时下载 raw |
-| 410 | `observation_gone` | 已按保留策略清理 |
+| 410 | `observation_gone` | 曾存在，已按保留策略清理（保留 tombstone） |
 | 429 | `rate_limited` | SSE 并发超限 |
+| 500 | `unsupported_layout` | 归档 `layoutVersion` 不被当前 client 支持 |
 | 500 | `internal` | 未分类 |
 | 503 | `service_unavailable` | 归档/磁盘暂不可用 |
 
@@ -433,6 +492,7 @@ max_streams = 20
 3. 历史范围：只保留本 client 的 attempt，还是按实例跨 client 合并？（当前：本 client）。
 4. 原始 session 下载是否需要二次授权/审计级别（v1 只 token）。
 5. 是否需要在 `doctor` 中增加观测面自检（端口、归档目录、保留空间）。
+6. `OB-01` 安全取舍：当前按产品决策 `0.0.0.0` + 可选 token；若要求关闭该风险，改默认 `127.0.0.1`/unix socket，跨机走隧道。
 
 ## 11. 验收建议
 

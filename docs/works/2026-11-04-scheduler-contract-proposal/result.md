@@ -2,12 +2,12 @@
 layer: works
 module: global
 status: active
-updated: 2026-11-06
+updated: 2026-11-07
 ---
 
 # 工序结果：调度器契约提案（client 消费端）
 
-> 状态：**v0.3 已按调度器评审修订并补 ND-01/ND-02，待调度器复核**。契约未冻结，`design/` 未改；冻结后另立 M1 工序。
+> 状态：**v0.4 已处置两轮评审（RB/RD/ND-01～ND-06），满足收口条件，待调度器侧收口**。契约未冻结，`design/` 未改；冻结后另立 M1 工序。
 
 ## 结论摘要
 
@@ -35,6 +35,10 @@ updated: 2026-11-06
 | `RD-05` `bindSession.lease` | 删除；租约唯一来源 `claim`/`renew` | §5.4、§6.6 |
 | `ND-01` `shutdown(instanceId, cleanup)` 副作用随旧事件丢失 | 新增 `cleanupPending[]`/`cleanupAcks[]` 与 `releaseId`；事件只做在线加速，状态跨 run 幂等补偿 | §5.1、§5.2、§7 `SCH-20`、§9.3 |
 | `ND-02` `SCH-19` 隐含 Q1=A | `SCH-19` 明写等价于 Q1 选 A；选 B 须改 `SCH-19` 并升 `protocolVersion` | §7、§11、§15 Q1 |
+| `ND-03` 同刻作用域 | `claimedAt <= issuedAt`，同刻取消优先 | §5.2、§6.1、§6.4、§14.1 |
+| `ND-04` `claimRequestId` 保留窗口 | 明确 `>= 尝试租约 TTL + 结果确认窗口`（建议 10min），属实现参数 | §5.3 |
+| `ND-05` 凭据类型定义位置 | 定义在 `CMP-executor` 的 `ports`，组合根注入 | §5.5 |
+| `ND-06` 三处簿记 | Q12 标注、`architecture.md` §3.2 退出码、§4.4 词表脚注 | §4.4、§13、§15 Q12 |
 
 ## 2. 验收对照
 
@@ -72,7 +76,7 @@ updated: 2026-11-06
 | Q4 assignments | 不提供时 client 只能靠 journal 恢复；容器清理可能滞后 | 先按可选实现，S2 再评估 |
 | Q6 技能包通道 | 跨 host 带 token 会泄漏凭据；签名 URL 过期会让长任务下载失败 | 托管端点优先；外链短期签名 + 不带 token |
 | Q18 退出码 | 新增退出码 7 是 CLI 契约变更 | 评审建议采用 7；M1 确认后写入 `CMP-cli` |
-| Q13–Q16 Blocker | 未复核前不能冻结 | 已按评审修法修订，待调度器复核 |
+| Q13–Q16 Blocker | 未复核前不能冻结 | 两轮复核均判「关闭」；待调度器把评审收口为「通过」 |
 | H-01 结果保留窗口 | journal 重报窗口未定，可能丢历史结果 | M1 前补 `OQ-021` |
 | 上游现状 | 调度器仓库还没有这组端点，联调需先建桩 | S1 桩调度器与 client 并行开发 |
 
@@ -85,10 +89,13 @@ updated: 2026-11-06
 3. `SCH-19`（同实例单活跃 attempt）是否由调度器派发侧承担；
 4. client 控制面入站 HTTP 的否决与重开条件是否同意（§17.1）；
 5. `cleanupPending[]`/`cleanupAcks[]` 与 `SCH-20` 是否接受（`ND-01`）；
-6. `SCH-19` 明写“等价 Q1=A、选 B 需改条并升版本”是否接受（`ND-02`）。
+6. `SCH-19` 明写“等价 Q1=A、选 B 需改条并升版本”是否接受（`ND-02`）；
+7. `ND-03`–`ND-06` 四条 Hold 已在本稿落掉，是否可直接并入 M1 清单。
+
+> 调度器侧 2026-11-06 复核已把条件收窄为 `ND-01`/`ND-02`，且这两条与 `ND-03`–`ND-06` 均已落稿（见 `review.md` §6.1/§6.2）；剩下的动作是把评审收口为「通过」并归档本工序。
 
 ## 6. 下一步
 
-1. 调度器侧复核本稿 v0.3；通过后 `review.md` 收口、本目录归档。
+1. 调度器侧收口本稿 v0.4；通过后 `review.md` 收口、本目录归档。
 2. 开 M1 冻结工序：把字段/错误码/枚举写进 `design/`，同步 `architecture.md`、`CMP-executor`、`CMP-gateway`、`CMP-cli`、`CMP-assets`、`CMP-result`。
 3. S1 实现顺序：桩调度器 → `CMP-gateway` 契约测试 → `CMP-cli` 循环（含 `claimRequestId`、`SCH-19`）→ `CMP-executor` 绑定/上报（含 C-04 分档）→ `CMP-assets` 下载。

@@ -2,7 +2,7 @@
 layer: plan
 module: global
 status: current
-updated: 2026-11-06
+updated: 2026-11-07
 ---
 
 # 风险
@@ -30,4 +30,6 @@ updated: 2026-11-06
 | 取消立即强杀丢失最终输出 | 模型已产生的部分输出来不及回传，结果只能报 `cancelled` | 取消以收敛为先；journal 保留已收事件供本地排障；若 prompt 已结算则按实际结果上报（`REQ-0002` R-03） |
 | 释放/清理意图随旧 run 事件丢失 | 容器/工作区永久留存，调度器误以为已释放，容量与磁盘泄漏 | `cleanupPending[]` 跨 run 幂等保留到 `cleanupAcks`；`shutdown` 事件只做在线加速；`SCH-20` 明确事件可丢、状态不可丢 |
 | 观测 HTTP 暴露原始 DSH session | 原始文件含 system prompt、推理、工具 I/O；误暴露或无限保留会泄漏/撑爆磁盘 | 默认 `0.0.0.0` 且 token 可空，必须限定受控网络；token 非空时强制 Bearer；raw 响应 `no-store` 并审计；`retentionDays`/`maxBytes` 清理；归档失败不删实例 home，先重试再清理 |
+| 观测面明文传 raw（`OB-01`） | 非 loopback + 明文 + 长期静态 token：token 被嗅探即可重放，所有 client 的 session 全文泄露 | 已接受风险（产品决策 `0.0.0.0`）；关闭方式 `--observability-bind 127.0.0.1` 或后续 TLS/mTLS；`raw_enabled=false` 可先关全文下载；审计 + `no-store` |
+| 观测写盘阻塞执行（`OB-02`） | 单线程同步写/`fsync` 拖慢心跳与 `renew`，把观测面变成租约过期原因 | 执行路径只入内存队列，后台批量落盘，不 `fsync`；队列 10k 溢出计数丢弃；退出 flush 上限 2s |
 | 配置错误被静默回退 | 非法 `.config`、空值或不可写目录回退默认，操作员以为配置生效，节点用错 home | `SCN-0002` 校验失败即退出 2，不回退默认；`doctor` 输出生效值与来源；启动日志记录来源 |

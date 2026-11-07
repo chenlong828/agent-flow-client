@@ -52,7 +52,7 @@ updated: 2026-11-05
 | T3 | 设计 | 写调度器责任（`SCH-*`）与客户端承诺（`CLT-*`），逐条给违反后果 | 双侧职责 | 完成 | T2 产出、`architecture.md` §6 不变量、`REQ-0002` R-01…R-10 |
 | T4 | 设计 | 映射到执行器承接：端口方法、状态机迁移、journal 落点、重试与退出码 | `CMP-executor`、`CMP-cli`、`CMP-gateway` | 完成 | T2/T3 产出、`CMP-executor` §2.2–§2.7、`CMP-cli` §2.4 |
 | T5 | 核对 | 与现行文档逐条 diff，标出提案变更/待裁决/不改；核对与上游 REST 约定的冲突 | 文档一致性 | 完成 | T2/T3/T4 产出、`docs/design/**`、上游 `http-gateway/spec.md` |
-| T6 | 交付 | 汇总待裁决问题与推荐默认值，交调度器侧评审 | 双侧评审 | 完成（调度器评审：有条件通过；v0.3 待复核） | T5 产出、`plan/open-questions.md` |
+| T6 | 交付 | 汇总待裁决问题与推荐默认值，交调度器侧评审 | 双侧评审 | 完成（两轮评审已处置；v0.4 待调度器收口） | T5 产出、`plan/open-questions.md` |
 
 ## 6. 领取的开放问题
 
@@ -77,7 +77,7 @@ updated: 2026-11-05
 
 ## 8. 产出
 
-- `proposal.md`：契约提案正文（本工序主产物，v0.3）。
+- `proposal.md`：契约提案正文（本工序主产物，v0.4）。
 - `result.md`：验收对照、结论落点与未决项。
 - `review.md`：调度器评审结论与 client 四档裁决（P1 评审记录）。
 - `docs/README.md` 工序导航与 `docs/plan/open-questions.md` 的 OQ-016…021 登记。
