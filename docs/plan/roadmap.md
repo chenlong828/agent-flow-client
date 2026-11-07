@@ -2,7 +2,7 @@
 layer: plan
 module: global
 status: current
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 # 路线图
@@ -55,7 +55,7 @@ updated: 2026-11-07
 | 5 | 执行内核 | `CMP-executor`、`CMP-result` | 状态机、`reconcileCleanup`、结果组装与截断 |
 | 6 | S0 门禁 | 全部 | `SCN-0002` 3+1、`SCN-0001` S0 用例、R-03/R-04 |
 
-开工前必做：补 `AH-08` 的「场景 UC → 测试目录」映射（`OQ-024`）；确定 `stateRoot` 默认与配置键（`OQ-014`，含 `AH-02`）。
+开工前置已清：`OQ-024` 映射见 `docs/design/test-matrix.md`；`OQ-014` 配置键与 `stateRoot` 默认已冻结（`CMP-cli` §2.3）。
 
 ### 批次 2：S1 契约骨架（与批次 1 并行）
 
@@ -83,8 +83,8 @@ updated: 2026-11-07
 
 | 项 | 影响 | 处理 |
 |---|---|---|
-| `OQ-014` 配置键 / `stateRoot` 默认 | S0 批次 1 的配置面 | 批次 1 开工前定 |
-| `OQ-024` UC→测试映射 | S0 验收可证明性 | 批次 1 开工前补 |
+| ~~`OQ-014` 配置键 / `stateRoot` 默认~~ | 已关闭（2026-11-08） | `CMP-cli` §2.3 |
+| ~~`OQ-024` UC→测试映射~~ | 已关闭（2026-11-08） | `docs/design/test-matrix.md` |
 | `OQ-021` 结果保留窗口 | journal 磁盘增长 | S1 实测后定 |
 | `OQ-025` `CleanupAck.failed` 终止规则 | 调度器侧永久重发 | 调度器 follow-up，不阻塞 client |
 | `AH-07` 组件预算 | 跨组件任务超装载 | 按组件拆工序，已体现在批次 1 的 6 个工序 |

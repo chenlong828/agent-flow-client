@@ -2,7 +2,7 @@
 layer: design
 module: global
 status: current
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 # 执行面客户端架构
@@ -213,7 +213,7 @@ S0 不接调度器：`SCN-0001` 的触发用 `CMP-cli` 的 `run` + `LocalSchedul
 
 CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun run quality:gate`、契约测试、import 边界检查；S0 起加进程残留冒烟（取消/崩溃后 `kill -0` 为假）。
 
-S0 开工前补一张「场景 UC → 测试目录/文件」映射（`AH-08`）；当前 §4.5 只到组件级，不能用组件验证计划替代场景覆盖证明。
+场景 UC → 测试文件的映射见 [`test-matrix.md`](test-matrix.md)（`AH-08`/`OQ-024`）；每个 S0 UC 至少有一个计划测试文件，测试 ID 在工序中回填。
 
 ## 5. 主流程
 
@@ -332,5 +332,5 @@ S0 开工前补一张「场景 UC → 测试目录/文件」映射（`AH-08`）�
   - `stateRoot` 默认 `<runDir>/.agent-flow-client`（键名待 OQ-014）；
   - `doctor` 由 CLI 编排、各组件 `diagnose()` 提供检查项。
 - **M1 契约冻结（2026-11-07，T1–T10，已收口）**：`protocolVersion = 2026-11-07.1`；`C-01`…`C-07`、`SCH-01`…`SCH-20`、`CLT-01`…`CLT-13`、`cleanupPending`、退出码 7、`run` 作用域控制事件全部落盘；字段权威见 `contracts/executor-http-v1.md`。
-- **仍待确认**：`[acp].permission` 默认值与配置键、`stateRoot` 键名（OQ-014）、`run` 退出码 `1` / SIGTERM `143`（OQ-015）；这些不阻塞调度器契约。
+- **配置键已冻结（2026-11-08，OQ-014 关闭）**：`[acp].dsh_home`/`permission`、`[state].root`、`[logging].level`、`[capacity].max_instances`；`stateRoot` 默认 `<runDir>/.agent-flow-client`。仍待确认：`run` 退出码 `1` / SIGTERM `143`（OQ-015）。
 - **确认前约束**：不写实现代码；不把 `planned` 组件改为 `active`；`SCN-0001` / `SCN-0002` 保持 `designed`，不升 `verified`。

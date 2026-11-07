@@ -18,6 +18,7 @@ docs/
 │   ├── architecture.md                     ← 系统层：组件、依赖、契约、主流程
 │   ├── contracts/
 │   │   └── executor-http-v1.md             ← 调度器执行面 HTTP 契约 v1（frozen）
+│   ├── test-matrix.md                      ← SCN UC → 测试文件映射
 │   ├── components/                         ← 组件规格（9 份，planned）
 │   │   ├── CMP-cli/spec.md
 │   │   ├── CMP-executor/spec.md

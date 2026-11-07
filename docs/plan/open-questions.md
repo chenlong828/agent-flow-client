@@ -2,7 +2,7 @@
 layer: plan
 module: global
 status: current
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 # 开放问题
@@ -22,7 +22,7 @@ updated: 2026-11-07
 | OQ-011 | 容量单位：实例数还是 session 数？ | `serve` 循环与领取 | **已关闭**（2026-11-07 冻结）：实例数 + 同实例串行（方案 A）；`SCH-19`；选 B 须改条并升 `protocolVersion`。见契约 §11。 |
 | OQ-012 | 崩溃后调度器如何识别并重派？同一 attemptId 还是新 attempt？ | 恢复触发、幂等与结果归属 | **已关闭**（2026-11-07 冻结）：重跑必须新 `attemptId`，同 attemptId 只做传输重放；已结算结果按 `(clientId, attemptId)` 重报（`SCH-11`）；client 不自动重跑（`REQ-0002` R-04）。 |
 | OQ-013 | 取消/超时强杀前是否抓取已产生的部分输出？ | 结果完整性与排障 | **已关闭**（2026-11-07 冻结）：不额外抓取，但已产生的输出填入 `message`（截断）；空串只表示确实没有输出；不加 partial 字段（`RD-04`）。 |
-| OQ-014 | 除 `[acp].dsh_home` 外，配置键清单与优先级何时冻结？ | `SCN-0002` 的范围、`CMP-cli` 规格与部署文档 | 组件规格已提案 `[acp].permission`（默认 `deny`）与 `state.root`（默认 `<runDir>/.agent-flow-client`），并给 `run/serve --permission`；键名与优先级待 P1 确认 / M1 冻结。S0 只强制 `[acp].dsh_home`。 |
+| OQ-014 | 除 `[acp].dsh_home` 外，配置键清单与优先级何时冻结？ | `SCN-0002` 的范围、`CMP-cli` 规格与部署文档 | **已关闭**（2026-11-08）：`[acp].dsh_home`/`permission`、`[state].root`、`[logging].level`、`[capacity].max_instances`；优先级 CLI flag > `DSH_HOME` > config > default。`stateRoot` 默认 `<runDir>/.agent-flow-client`，不可写退出 4，不静默回退。见 `CMP-cli` §2.3。 |
 | OQ-015 | `run` 的非成功节点结果是否用退出码 `1`，SIGTERM 是否用 `143`？ | CLI 契约、S0 测试与 CI 判定 | 组件规格暂定 `1`（非成功 `NodeResult`）与 `143`（SIGTERM）；已写入 `architecture.md` §3.2，待 P1 确认。 |
 | OQ-016 | 迟到结果用 `409 late_result` 还是 `200 disposition=late`？ | 结果重试、审计与调度器状态推进 | 提案推荐 `409`（与 `CMP-gateway` 现有错误表一致），client 按终态处理、只审计；见提案 §15 Q3。 |
 | OQ-017 | 启动恢复是否由调度器下发实例绑定（`register.assignments`）？ | 崩溃后容器校验/清理与恢复路径 | 提案推荐可选下发；client 无则按 journal 恢复，不阻塞领取；见提案 §5.1/§15 Q4。 |
@@ -32,5 +32,5 @@ updated: 2026-11-07
 | OQ-021 | 「已上报但服务端未确认」的结果在 journal 保留多久？ | 磁盘占用、凭据吊销后的滞留与可重报窗口 | 评审 `H-01` 提出；属 client 内部存储策略，不改调度器契约。M1 后仍开放：S1 按「attempt 未重派且未关闭即可重报」实现，保留窗口在 S1 期间按实测磁盘占用定；不阻塞契约。 |
 | OQ-022 | 只读观测 HTTP 的绑定地址、端口、token 与调度器发现方式？ | 调度器能否访问、原始 session 暴露面、部署方式 | P1 设计稿：默认 `0.0.0.0:17890`（CLI 可改）；token 可选，空则不鉴权并告警；v1 调度器侧静态配置 base URL，不自动发现。调度器附评 `OB-01` 建议 v1 只 loopback；当前按产品决策保留 `0.0.0.0` 并记为已接受风险，P1 确认门签字。见 `docs/works/2026-11-06-observability-http/review.md`。 |
 | OQ-023 | `claimRequestId` 幂等记录的保留窗口取多少？ | 窗口过短会产生影子租约（丢包重试多租一个 attempt） | **已定（实现参数，不进对外契约）**：`>= 尝试租约 TTL + 结果确认窗口`，建议 10min。M1 起写入 `CMP-gateway` 实现说明；调度器侧同步。 |
-| OQ-024 | 场景 UC → 测试目录/文件的映射表何时补？ | 场景覆盖证明、S0 验收 | 设计评审 `AH-08` 提出；S0 开工前由 S0 工序补，按 `SCN-0001`/`SCN-0002` 的 UC 列到 `tests/components/*` 与契约测试；不阻塞 M1 契约。 |
+| OQ-024 | 场景 UC → 测试目录/文件的映射表何时补？ | 场景覆盖证明、S0 验收 | **已关闭**（2026-11-08）：见 `docs/design/test-matrix.md`；每个 S0 UC 至少一个计划测试文件，测试 ID 在工序中回填。 |
 | OQ-025 | `CleanupAck.failed` + `retryable=false` 的终止规则？ | 调度器是否永久重发清理、告警噪声 | 调度器侧 follow-up（`ND2-06`）：v1 约定 `failed` 保留 pending；若 `retryable=false`，应停止下发并转审计，而不是永久重发。待调度器确认后写进契约/实现。 |

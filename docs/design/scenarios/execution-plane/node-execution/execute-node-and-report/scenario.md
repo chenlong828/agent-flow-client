@@ -182,6 +182,8 @@ S0 的 `run --request` 是替身触发；不新增第二个场景。
 
 ## 7. 测试映射
 
+> UC → 测试文件的完整映射见 [`docs/design/test-matrix.md`](../../../../test-matrix.md)；本表列出的用例是首批锚点。
+
 | 角色 | 测试 ID | 断言 |
 |---|---|---|
 | R1 | `TC-EXEC-001` | 单节点成功：`NodeResult`、usage、退出 0；会话落 client home，`~/.dsh/sessions` 无新增 |

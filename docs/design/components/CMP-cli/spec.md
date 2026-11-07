@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-cli
 status: planned
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 # CMP-cli 组件规格
@@ -37,8 +37,8 @@ updated: 2026-11-07
 ### 2.1 命令面
 
 ```text
-agent-flow-client serve   [--config <path>] [--log-level <level>] [--permission deny|allow]
-agent-flow-client run     --request <file> [--config <path>] [--permission deny|allow]
+agent-flow-client serve   [--config <path>] [--state-root <path>] [--log-level <level>] [--permission deny|allow]
+agent-flow-client run     --request <file> [--config <path>] [--state-root <path>] [--permission deny|allow]
 agent-flow-client doctor  [--config <path>] [--workspace <path>] [--json]
 agent-flow-client version [--json]
 agent-flow-client --help
@@ -63,18 +63,32 @@ agent-flow-client --help
 ```ts
 type AppConfig = Readonly<{
   runDir: string;
-  acp: { dshHome: string; dshHomeSource: "env" | "config" | "default"; permission: "deny" | "allow" };
-  state: { root: string }; // S0 默认 <runDir>/.agent-flow-client；键名待 OQ-014
-  logging: { level: LogLevel };
-  // S1 起：scheduler、capacity、retention；键清单 OQ-014
+  acp: {
+    dshHome: string;
+    dshHomeSource: "env" | "config" | "default";
+    permission: "deny" | "allow";
+  };
+  state: { root: string; source: "cli" | "config" | "default" };
+  logging: { level: LogLevel; source: "cli" | "config" | "default" };
+  capacity: { maxInstances: number; source: "config" | "default" };
+  // S1 起：scheduler.url / retention；键名沿用本表
 }>;
 ```
 
-优先级（高 → 低）：
+**配置键（v1 冻结，`OQ-014`）**：
 
-1. 非空环境变量 `DSH_HOME`；
-2. `<runDir>/.config` 的 `[acp].dsh_home`；
-3. `<runDir>/AF_DSH_HOME`。
+| 段 | 键 | 类型/范围 | 默认 | 覆盖方式 |
+|---|---|---|---|---|
+| `[acp]` | `dsh_home` | string，绝对或相对 `<runDir>` | `<runDir>/AF_DSH_HOME` | `DSH_HOME` > 配置 |
+| `[acp]` | `permission` | `deny` / `allow` | `deny` | `--permission` > 配置 |
+| `[state]` | `root` | string，相对 `<runDir>` 解析 | `<runDir>/.agent-flow-client` | `--state-root` > 配置 |
+| `[logging]` | `level` | `debug` / `info` / `warn` / `error` | `info` | `--log-level` > 配置 |
+| `[capacity]` | `max_instances` | integer 1..64 | `4` | 仅配置 |
+| `[scheduler]` | `url` | string，S1 使用 | 无 | 仅配置（S1） |
+
+优先级（高 → 低）：**CLI flag > 环境变量（仅 `DSH_HOME`）> `<runDir>/.config` > 默认值**。`capacity.max_instances` 只能来自配置，不提供 flag（`AH-01`）。
+
+`stateRoot` 默认选 `<runDir>/.agent-flow-client`：与 `REQ-0001` 的 `AF_DSH_HOME` 同一基准，不引入平台状态目录。运行目录不可写时**不静默回退**：退出 4（`state_root_unwritable`），提示用 `--state-root` 覆盖；`doctor` 报生效值。这是 `AH-02` 的收口。
 
 规则：
 
@@ -241,5 +255,5 @@ config → observability → store → workspace → assets → runtime → gate
 - 容量单位已冻结：实例数 + 同实例串行（OQ-011 已关闭，契约 §11）。
 - `run` 的退出码 `1` 与 SIGTERM `143` 需在架构 §3.2 同步（本次已补，待确认）。
 - 打包态 `process.execPath` 与源码态包根解析需在 S0 实测（REQ-0001 待确认项）。
-- `stateRoot` 默认 `<runDir>/.agent-flow-client` 在装到 `/usr/local/bin` 时可能不可写；S0 前定「便携模式 vs 平台数据目录」默认（`AH-02`，随 OQ-014 一起）。
+- ~~`stateRoot` 默认与平台目录~~ 已定（2026-11-08）：`<runDir>/.agent-flow-client`；不可写退出 4，不静默回退。
 - 权限策略默认值（`allow` / `deny`）与是否可配置，需在 S0 定。

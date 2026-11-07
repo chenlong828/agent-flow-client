@@ -76,6 +76,8 @@ tests:
 
 ## 5. 测试映射
 
+> UC/用例 → 测试文件的完整映射见 [`docs/design/test-matrix.md`](../../../../test-matrix.md)。
+
 | 角色 | 测试 ID | 断言 |
 |---|---|---|
 | R1 | `TC-CONFIG-001` | 无 `.config`、无 env：默认 `<runDir>/AF_DSH_HOME` 生效；`doctor` 全绿；退出 0 |
