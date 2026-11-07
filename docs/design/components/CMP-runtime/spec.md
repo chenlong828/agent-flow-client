@@ -2,13 +2,13 @@
 layer: design
 module: execution-plane
 component: CMP-runtime
-status: planned
+status: active
 updated: 2026-11-04
 ---
 
 # CMP-runtime 组件规格
 
-> 状态：`planned`。DSH 进程与 ACP 会话的唯一边界；实现前需按 S0 探针序列复验。
+> 状态：`active`（2026-11-08，T4 落地）。实例进程、profile 补丁、session/prompt/update/permission/cancel/close 与进程组回收已实现；多实例 home 派生留 S1。
 >
 > 上游：`docs/design/architecture.md` §2、§5、§8、§10；`SCN-0001` UC-07/09/11/13/16/17/31；`REQ-0002` R-03/R-06/R-10；ACP 预研结论见 `docs/history/works/2026-11-03-dsh-acp-preflight/result.md`。
 
@@ -214,8 +214,9 @@ interface RuntimeAdmin {
 ## 8. 预算与单独运行
 
 - 预算：目标 ≤45k token，上限 120k。
-- 单独运行：`bun test tests/components/runtime/`（落地后创建）；用 ACP 桩进程/回放序列，不调用真实模型。
-- 状态：`planned`；无入口符号。
+- 单独运行：`bun test tests/components/runtime/`；用 ACP 桩（`tests/fixtures/fake-acp.mjs`），不调用真实模型。
+- 实现入口（T4）：`src/components/runtime/runtime.ts#AcpRuntime`、`runtime-instance.ts#startInstance`、`acp-client.ts#AcpConnection`、`acp-protocol.ts#AcpProtocol`、`profile.ts#writeProfilePatch`、`admin.ts`（待补）；测试 `tests/components/runtime/`。
+- 状态：`active`（单实例；多实例 home 派生待 S1）。
 
 ## 9. 开放问题
 
