@@ -9,7 +9,7 @@ updated: 2026-11-07
 
 > 评审对象：`docs/design/architecture.md` 与 `docs/design/components/*/spec.md`（M1 落盘后版本）。
 > 评审原文：`../../../../agent-flow-orchaster/docs/works/2026-11-07-client-architecture-review/review.md`（P1）。
-> 结论：**有条件通过**；4 条 Blocker + 5 条 Decision now 已在本轮全部落稿，Hold 按评审建议分档处理。
+> 结论：**通过**。首轮 4 条 Blocker + 5 条 Decision now 已落稿；第二轮复核新增的 `NB-01`、`ND2-01`、`ND2-02` 也已补齐，`ND2-03`–`ND2-06` 按建议记录/部分落稿，不再需要新一轮评审。
 
 ## 1. 总览
 
@@ -57,3 +57,24 @@ updated: 2026-11-07
 2. `AB-04` 的 `reconcileCleanup` 归属与 CLI 只做搬运是否接受；
 3. `AD-03`/`AD-05` 的 `stateRoot` 分区与 `DSH_HOME` 删除归属是否接受；
 4. `AH-08` 的 UC→测试映射表放在 S0 工序是否可接受。
+
+
+## 6. 第二轮复核（2026-11-07）
+
+调度器侧复核 `8e3c168` 后判「通过，条件一处补字段」，新增 `NB-01`、`ND2-01`/`ND2-02` 与 `ND2-03`–`ND2-06`。处置如下。
+
+| ID | 档位 | 处置 | 落点 |
+|---|---|---|---|
+| `NB-01` | Blocker | **成立**，但采用评审给的第二方案：`assignments`/`assignmentsVersion` 留在 CLI 的容器视图，不裁给 gateway。`ClientState` 增加 `assignmentsVersion`；`HeartbeatOutcome` 增加 `assignmentsVersion` + `assignments?`；gateway 只透传。这样 gateway 不需要理解 assignment 语义，CLI 仍能在运行期替换快照 | contract §6.6、executor §3.4、cli §2.4.6、gateway §3.1 |
+| `ND2-01` | Decision now | 成立。result §2.2 补 store/journal 来源：`locked` → `workspace`/false、`corrupt` → `internal`/false、journal `io_error` → `internal`/true；assets 的 `io_error` 标注按来源区分 | result §2.2 |
+| `ND2-02` | Decision now | 成立。CLI §2.4.9 补：事件先到、无 pending 时用 `{releaseId, instanceId, cleanup}` 合成，`workspacePath` 缺失由 executor 回查 journal | cli §2.4.9、executor §2.1 |
+| `ND2-03` | Hold | 成立，补一句：去重只是进程内优化；正确性依赖 cleanup/releaseId 幂等，崩溃后重复执行可接受 | executor §2.1 |
+| `ND2-04` | Hold | 成立，`CleanupReconciler` 加入 executor 内部结构与 architecture §4.4 | executor §2.8、architecture §4.4 |
+| `ND2-05` | Hold | 成立，标注 `snapshotAttempts` 是观测快照，允许与容量计数瞬时偏差 | cli §2.4 |
+| `ND2-06` | Hold | 成立，但属调度器侧行为：记 `OQ-025`，契约补 follow-up 注记，不改 client 回执语义 | contract §5.2、open-questions OQ-025 |
+
+### 6.1 对 `NB-01` 推荐方案的判断
+
+评审推荐「`assignments` 补进 `HeartbeatOutcome`；`assignmentsVersion` 由 gateway 截留、回传」。**问题成立，但推荐方案不是最优**：`assignments` 是 CLI 的容器视图，`assignmentsVersion` 是这个视图的游标，不是传输层状态。让 gateway 持有游标，会把 assignment 语义泄漏进 L0 传输组件，CLI 反而失去「我看到的快照是哪一版」的判断依据。
+
+因此本稿采用评审的第二方案并补齐：`ClientState.assignmentsVersion` + `HeartbeatOutcome.assignmentsVersion/assignments?`，gateway 只透传。两方案都能闭合 `NB-01`；第二方案与 `AB-01` 的「按所有者裁剪」原则更一致。

@@ -91,7 +91,7 @@ updated: 2026-11-07
 | 方法 | 传输语义 | 返回类型 | 错误 |
 |---|---|---|---|
 | `register` | 幂等注册；鉴权；版本上报；带回 `assignments`/`cleanupPending` | `RegistrationOutcome` | `unreachable`、`unauthorized`、`version_incompatible` |
-| `heartbeat` | 长轮询；返回控制与清理待办；续租 | `HeartbeatOutcome` | `unreachable`、`timeout`、`rate_limited`、`run_superseded` |
+| `heartbeat` | 长轮询；返回控制、清理待办与 assignments 快照；续租 | `HeartbeatOutcome` | `unreachable`、`timeout`、`rate_limited`、`run_superseded` |
 | `claim` | 长轮询；取绑定本 client 的请求；无则 `null` | `NodeRequest \| null` | `lease_expired`、`rate_limited`、`invalid_request`、`run_superseded` |
 | `renew` | 延长尝试租约 | `Lease` | `lease_expired`、`unreachable`、`run_superseded` |
 | `bindSession` | 上报 sessionId；返回技能集（无 `lease`） | `SessionBinding` | `stale_attempt`、`invalid_session`、`unreachable` |

@@ -169,7 +169,7 @@ updated: 2026-11-07
 | 组件 | 内部功能 | 关键状态/不变量 |
 |---|---|---|
 | `CMP-cli` | `main`、`resolveRunDir`、`loadConfig`、`runServe`、`runOnce`、`runDoctor`、`runVersion`、组合根、信号 | 配置冻结；心跳独立于执行；退出码 |
-| `CMP-executor` | `AttemptRegistry`、`AttemptRunner`、`CancellationScope`、`SkillDigestGuard`、`RecoveryPlanner`、`ports` | 状态机 `claimed→bound→ready→running→settled→reported→closed`；attempt 单飞 |
+| `CMP-executor` | `AttemptRegistry`、`AttemptRunner`、`CancellationScope`、`SkillDigestGuard`、`RecoveryPlanner`、`CleanupReconciler`、`ports` | 状态机 `claimed→bound→ready→running→settled→reported→closed`；attempt 单飞；清理对账单点 |
 | `CMP-result` | `assemble`、`classify`、`truncate`、`mapStopReason` | 纯函数；错误分类单点；UTF-8 安全截断 |
 | `CMP-gateway` | `HttpTransport`、`LongPollLoop`、`RetryPolicy`、`AuthProvider`、`VersionNegotiator`、`IdempotencyCache`、`LeaseTracker`、`ControlSeq` | 长轮询续租；`seq` 幂等；迟到只审计 |
 | `CMP-runtime` | `InstanceSupervisor`、`ProfilePatcher`、`AcpConnection`、`SessionRegistry`、`ProcessReaper`、`PermissionPolicy` | 一实例一进程；一 session 单 prompt；取消立即强杀 |

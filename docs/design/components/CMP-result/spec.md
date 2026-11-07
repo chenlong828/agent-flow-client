@@ -63,6 +63,7 @@ updated: 2026-11-07
 | workspace | `disk_full` | `workspace` | false（同机重试无意义；由调度器换实例） |
 | assets | `download_failed`、`checksum_mismatch`、`unpack_failed` | `asset` | true |
 | assets | `invalid_skill_format`、`asset_skill_set_conflict` | `asset` | false |
+| assets | `io_error`（assets 侧） | `asset` | false |
 | runtime | `spawn_failed`、`process_exited` | `runtime` | true |
 | runtime | `protocol_error` | `protocol` | false |
 | runtime | `prompt_failed` | `runtime` | false |
@@ -72,6 +73,9 @@ updated: 2026-11-07
 | gateway | `unauthorized`、`version_incompatible`、`invalid_request` | `scheduler` | false |
 | gateway | `lease_expired` | `scheduler` | false（丢弃尝试；`NodeResult` 的 `retryable` 见下） |
 | gateway | `invalid_session`、`run_superseded`、`stale_attempt` | `scheduler` | false |
+| store/journal | `locked` | `workspace` | false |
+| store/journal | `corrupt` | `internal` | false |
+| store/journal | `io_error`（journal 侧） | `internal` | true |
 | 未知 | — | `internal` | false |
 
 取消/超时的 `retryable` 提示（`reason` 闭集）：

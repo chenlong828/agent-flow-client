@@ -99,3 +99,15 @@ M1 结束前对 `docs/design/` 全量 grep，以下必须为零或只在“被�
 | `AH-02` | `stateRoot` 默认系统目录 | 随 OQ-014，记录在 CLI §9 | [ ] |
 | `AH-07` | 组件预算合计偏高 | S0 排任务按组件切 | [ ] |
 | `AH-08` | 缺 UC→测试映射 | S0 开工前补 | [ ] |
+
+### 第二轮复核新增
+
+| ID | 反馈 | 落点 | 状态 |
+|---|---|---|---|
+| `NB-01` | 端口裁剪丢了 `assignments`/`assignmentsVersion` | `ClientState` 加版本；`HeartbeatOutcome` 加版本+快照；gateway 只透传 | [x] |
+| `ND2-01` | `locked`/`corrupt`/journal `io_error` 无映射 | result §2.2 补 store/journal 行 | [x] |
+| `ND2-02` | `shutdown` 事件路径的 pending 来源 | CLI 用事件字段合成，缺 `workspacePath` 回落 journal | [x] |
+| `ND2-03` | `reconcileCleanup` 去重状态归属 | 标注进程内优化，正确性依赖幂等 | [x] |
+| `ND2-04` | `CleanupReconciler` 未进内部骨架 | executor §2.8、architecture §4.4 补 | [x] |
+| `ND2-05` | `snapshotAttempts` 与容量计数可能瞬时不一致 | 标注观测快照，允许偏差 | [x] |
+| `ND2-06` | `CleanupAck.failed + retryable=false` 终止规则 | `OQ-025` 调度器 follow-up；契约加注 | [x] |

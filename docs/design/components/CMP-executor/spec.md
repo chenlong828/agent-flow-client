@@ -50,6 +50,8 @@ reconcileCleanup(pending: CleanupPending[]): Promise<CleanupAck[]>
 - `recover` 在启动时由 CLI 调用，返回待处理 attempt 与清理结果；不自动重跑。
 - `snapshotAttempts()` 返回当前活跃 attempt 的只读快照（`phase`/`sessionId`），供 CLI 组装 `ClientState`；不暴露 `AttemptRegistry`。
 - `reconcileCleanup(pending)` 执行实例终结与清理对账：取消活跃 attempt → 关 session/进程 → `workspace.cleanup` → 清孤儿；返回每条 `releaseId` 的 `CleanupAck`。幂等，按 `releaseId` 去重；`cleanupPending` 的对账不越过 executor。
+- 去重只是进程内优化；正确性依赖 `workspace.cleanup` 与调度器 `releaseId` 幂等，崩溃后重复执行可接受（`ND2-03`）。
+- 事件先于 `cleanupPending` 到达时，CLI 用 `{releaseId, instanceId, cleanup, releasedAt: issuedAt}` 合成 `CleanupPending`；`workspacePath` 缺失则按 `instanceId` 查 journal（契约 §5.1.5）。
 
 ### 2.2 尝试状态机
 
@@ -145,6 +147,7 @@ claimed ──▶ bound ──▶ ready ──▶ running ──▶ settled ─�
 | `CancellationScope` | 实例级 `AbortController` 树；attempt 继承实例信号 |
 | `SkillDigestGuard` | 容器 digest 与活跃 session 的冲突判定 |
 | `RecoveryPlanner` | journal → 孤儿/残留清理计划 |
+| `CleanupReconciler` | `cleanupPending` 对账：按 `releaseId` 去重、实例终结顺序、回执生成 |
 | `ports.ts` | 5 个端口与值类型的唯一定义处 |
 
 ## 3. 契约
@@ -207,6 +210,8 @@ type HeartbeatOutcome = {
   serverTime: string;
   control: ControlBatch;
   cleanupPending: CleanupPending[];
+  assignmentsVersion: number;
+  assignments?: Assignment[];
   nextPollAfterMs: number;
 };
 ```

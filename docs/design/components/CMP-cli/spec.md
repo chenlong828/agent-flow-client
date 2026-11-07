@@ -97,15 +97,16 @@ type AppConfig = Readonly<{
 3. `scheduler.register`（新 `runId`）；返回 `assignments`（可选）与 `cleanupPending`；失败按错误类别退避/退出。
 4. **清理对账**：把 `cleanupPending` 交给 `executor.reconcileCleanup(pending)`，结果暂存到下一跳 `cleanupAcks`；cleanup 完成前该实例不领取（`SCH-20`）。CLI 不直接调 `RuntimePort`/`WorkspacePort`。
 5. 恢复：`executor.recover(...)`：未结算的标记 `abandoned`，已产生结果的按 `attemptId` 幂等重报；无 `assignments` 时用 `JournalPort.listInstances()` / `pendingAll()` 枚举；重报失败保留 `settled`，下次重试。
-6. 启动**独立**心跳任务：`state = { capacity, pausedInstances, activeAttempts: executor.snapshotAttempts() }`，调 `heartbeat(state, cleanupAcks)`；`ackSeq`/`clientLease` 由 gateway 内部处理。
+6. 启动**独立**心跳任务：`state = { capacity, pausedInstances, activeAttempts: executor.snapshotAttempts(), assignmentsVersion }`，调 `heartbeat(state, cleanupAcks)`；响应里的 `assignmentsVersion`/`assignments` 更新本地容器视图；`ackSeq`/`clientLease` 由 gateway 内部处理。
 7. 领取循环：有容量时 `claim(capacity)`（`claimRequestId` 由 gateway 生成/复用）；无请求则等待下一次心跳/短退避。
 8. 对每个请求：`journal.lockInstance(instanceId)` → `executor.executeNode`（异步）→ 在 `closed`/`abandoned` 后释放锁；同一 `instanceId` 同一时刻只执行一个 attempt（`SCH-19`）。取锁失败报 `failed(workspace)`，不执行。
-9. 控制事件分派：`cancel` → `executor.cancelInstance`；`pause` → 停止领取 + 取消活跃；`resume` → 恢复领取；`shutdown(instanceId, cleanup, releaseId)` → `executor.reconcileCleanup([pending])` 并按 `releaseId` 回执；无 `instanceId` → 优雅停整个 client。
+9. 控制事件分派：`cancel` → `executor.cancelInstance`；`pause` → 停止领取 + 取消活跃；`resume` → 恢复领取；`shutdown(instanceId, cleanup, releaseId)` → 有 `cleanupPending` 则按 `releaseId` 合并，**没有则用事件字段合成** `{releaseId, instanceId, cleanup, releasedAt: issuedAt}`（`workspacePath` 缺失，由 executor 按契约 §5.1.5 回查 journal），再交 `executor.reconcileCleanup`；无 `instanceId` → 优雅停整个 client。
 10. 实例结束/取消/关闭：由 executor 统一收口（关 session/进程、`workspace.cleanup`、`journal.clearOrphan`）；CLI 只负责释放锁、容量与回执。
 11. 信号：第一次 SIGINT/SIGTERM → 停止领取 → 取消活跃 → flush journal → 关 session/进程 → 退出；第二次 → 强杀并记录未收口 attempt。
 
 - 心跳与执行**不共享定时器/队列**；prompt 再长也不阻塞心跳。
 - 容量单位：实例数 + 同实例串行（契约 §11 方案 A，`SCH-19`）。
+- `snapshotAttempts()` 是观测快照，`capacity.activeAttempts` 允许与其瞬时不一致；判定以服务端为准（`ND2-05`）。
 - 同一实例不并发执行；client 可承载多实例，受 `maxInstances` 限制。
 - `409 run_superseded`：停止领取、取消活跃、收口后退出 7，不再重连。
 

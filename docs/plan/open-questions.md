@@ -33,3 +33,4 @@ updated: 2026-11-07
 | OQ-022 | 只读观测 HTTP 的绑定地址、端口、token 与调度器发现方式？ | 调度器能否访问、原始 session 暴露面、部署方式 | P1 设计稿：默认 `0.0.0.0:17890`（CLI 可改）；token 可选，空则不鉴权并告警；v1 调度器侧静态配置 base URL，不自动发现。调度器附评 `OB-01` 建议 v1 只 loopback；当前按产品决策保留 `0.0.0.0` 并记为已接受风险，P1 确认门签字。见 `docs/works/2026-11-06-observability-http/review.md`。 |
 | OQ-023 | `claimRequestId` 幂等记录的保留窗口取多少？ | 窗口过短会产生影子租约（丢包重试多租一个 attempt） | **已定（实现参数，不进对外契约）**：`>= 尝试租约 TTL + 结果确认窗口`，建议 10min。M1 起写入 `CMP-gateway` 实现说明；调度器侧同步。 |
 | OQ-024 | 场景 UC → 测试目录/文件的映射表何时补？ | 场景覆盖证明、S0 验收 | 设计评审 `AH-08` 提出；S0 开工前由 S0 工序补，按 `SCN-0001`/`SCN-0002` 的 UC 列到 `tests/components/*` 与契约测试；不阻塞 M1 契约。 |
+| OQ-025 | `CleanupAck.failed` + `retryable=false` 的终止规则？ | 调度器是否永久重发清理、告警噪声 | 调度器侧 follow-up（`ND2-06`）：v1 约定 `failed` 保留 pending；若 `retryable=false`，应停止下发并转审计，而不是永久重发。待调度器确认后写进契约/实现。 |

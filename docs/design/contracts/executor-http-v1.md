@@ -375,6 +375,7 @@ X-Client-Run-Id: <runId>
 - `assignmentsVersion` 与 client 上报值不同时，响应额外带 `assignments` 快照（结构同 `C-01`）；相同则省略。client 以最新快照替换本地视图，不阻塞执行。
 - `cleanupPending` **不受** `assignmentsVersion` 控制：`register` 与每次 `heartbeat` 都返回当前列表（可为 `[]`）。client 以 `releaseId` 幂等对账，完成后在下一跳 `cleanupAcks` 回执；调度器只在 `status=done` 时移除，`failed` 保留并继续下发。
 - `cleanupAcks` 最多 20 条/跳；`status` 取 `done` / `failed`，`failed` 带 `errorClass` 与 `retryable`。ack 丢失时 client 下一跳重发同一 `releaseId`，调度器按 `releaseId` 幂等。
+- 调度器侧 follow-up（`OQ-025`）：对 `failed + retryable=false` 不应永久重发；应停止下发并转审计。该终止规则待调度器确认，不改变 client 的 `done`/`failed` 回执语义。
 - 释放顺序：先取消活跃 attempt、关 session/进程并释放容量，再执行 `cleanup`；`cleanup` 失败不回滚已释放的容量，只保留 pending 重试。
 - `state.activeAttempts[].phase` 取尝试生命周期值：`claimed` / `bound` / `ready` / `running` / `settled` / `reported`；只用于观测。
 - `state.pausedInstances` 列出本 client 当前暂停的实例；暂停由控制事件驱动、权威在调度器，这里只用于观测。
@@ -864,12 +865,15 @@ type ClientState = {
   capacity: { maxInstances: number; activeInstances: number; activeAttempts: number };
   pausedInstances: string[];
   activeAttempts: ActiveAttemptSnapshot[];
+  assignmentsVersion: number;
 };
 
 type HeartbeatOutcome = {
   serverTime: string;
   control: ControlBatch;
   cleanupPending: CleanupPending[];
+  assignmentsVersion: number;
+  assignments?: Assignment[];
   nextPollAfterMs: number;
 };
 
@@ -884,6 +888,7 @@ type RegistrationOutcome = {
 
 - `SchedulerPort.register(info): Promise<RegistrationOutcome>`。
 - `SchedulerPort.heartbeat(state: ClientState, acks?: CleanupAck[]): Promise<HeartbeatOutcome>`。
+- `assignments`/`assignmentsVersion` 是 CLI 的容器视图与游标，**不裁给 gateway**：CLI 在 `ClientState` 里上报当前版本，收到响应里的新版本/快照后替换本地视图；gateway 只透传。
 - `ackSeq` 是 gateway 的传输层状态，由 `ControlSeq` 自己拼进 HTTP body；不进入 L1 端口签名。
 - `clientLease` 由 gateway 的 `LeaseTracker` 截留；`register` 的 `clientLease` 字段同理，CLI 只用 `limits`/`assignments`/`cleanupPending`。
 - CLI 组装 `ClientState`：容量与 `pausedInstances` 是 CLI 的，`activeAttempts` 来自 `executor.snapshotAttempts()`。
