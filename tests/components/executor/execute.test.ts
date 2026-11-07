@@ -37,7 +37,7 @@ function setup() {
 const signal = () => new AbortController().signal;
 
 describe("执行序列", () => {
-  test("TC-EXEC-001 状态按 claimed→bound→ready→running→settled→reported→closed 前进", async () => {
+  test("状态按 claimed→bound→ready→running→settled→reported→closed 前进", async () => {
     const { journal, runtime, assets, scheduler, executor } = setup();
     const result = await executor.executeNode(request, { signal: signal() });
     expect(result.status).toBe("succeeded");

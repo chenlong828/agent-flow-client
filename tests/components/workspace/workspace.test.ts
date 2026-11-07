@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { lstat, mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileWorkspace } from "../../../src/components/workspace/workspace.ts";
@@ -24,7 +24,7 @@ describe("容器校验", () => {
     expect((await workspace.validate(paths)).ok).toBe(true);
   });
 
-  test("TC-EXEC-004 容器根有 .git 判 layout_invalid 且不创建 .dsh", async () => {
+  test("容器根有 .git 判 layout_invalid 且不创建 .dsh", async () => {
     const root = await container();
     await mkdir(join(root, ".git"));
     const workspace = new FileWorkspace();
@@ -91,5 +91,15 @@ describe("清理", () => {
     await mkdir(paths.skillRoot);
     await workspace.cleanup(instance, "keep");
     expect((await lstat(paths.skillRoot)).isDirectory()).toBe(true);
+  });
+});
+
+describe("不可写容器", () => {
+  test("容器不可写判 permission_denied", async () => {
+    const root = await container();
+    const workspace = new FileWorkspace();
+    await chmod(root, 0o500);
+    await expect(workspace.ensureContainer(instance, root)).rejects.toMatchObject({ code: "permission_denied" });
+    await chmod(root, 0o700);
   });
 });

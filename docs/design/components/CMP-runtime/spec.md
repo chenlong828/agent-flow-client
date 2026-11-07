@@ -215,7 +215,7 @@ interface RuntimeAdmin {
 
 - 预算：目标 ≤45k token，上限 120k。
 - 单独运行：`bun test tests/components/runtime/`；用 ACP 桩（`tests/fixtures/fake-acp.mjs`），不调用真实模型。
-- 实现入口（T4）：`src/components/runtime/runtime.ts#AcpRuntime`、`runtime-instance.ts#startInstance`、`acp-client.ts#AcpConnection`、`acp-protocol.ts#AcpProtocol`、`profile.ts#writeProfilePatch`、`admin.ts`（待补）；测试 `tests/components/runtime/`。
+- 实现入口（T4）：`src/components/runtime/runtime.ts#AcpRuntime`、`runtime-instance.ts#startInstance`、`acp-client.ts#AcpConnection`、`acp-protocol.ts#AcpProtocol`、`profile.ts#writeProfilePatch`、`admin.ts#RuntimeAdmin`；测试 `tests/components/runtime/`。
 - 状态：`active`（单实例；多实例 home 派生待 S1）。
 
 ## 9. 开放问题

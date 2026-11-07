@@ -10,6 +10,7 @@ import { resolveDshCommand, dshCommandExists, probeDshVersion } from "../runtime
 import { findProjectRoot } from "../workspace/project-root.ts";
 import { FileStore } from "../store/store.ts";
 import { StoreAdmin } from "../store/admin.ts";
+import { RuntimeAdmin } from "../runtime/admin.ts";
 
 export type DoctorOptions = {
   config: AppConfig;
@@ -185,6 +186,7 @@ export async function collectDoctorChecks(options: DoctorOptions): Promise<Check
     ...authChecks(hasCredentials),
     ...(await dshChecks(env)),
     ...(await storeChecks(config)),
+    ...(await new RuntimeAdmin().diagnose(config.acp.dshHome)),
   ];
   if (options.workspacePath !== undefined) {
     checks.push(...workspaceChecks(options.workspacePath));

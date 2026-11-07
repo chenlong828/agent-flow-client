@@ -14,23 +14,23 @@ updated: 2026-11-08
 
 | UC | 场景 | 阶段 | 主责组件 | 计划测试文件 | 测试 ID | 状态 |
 |---|---|---|---|---|---|---|
-| UC-01 | 单节点执行 | S0 | executor/result | `tests/components/executor/execute-node.test.ts` | `TC-EXEC-001` | planned |
+| UC-01 | 单节点执行 | S0 | executor/result | `tests/scenarios/s0-exec.test.ts` | `TC-EXEC-001` | existing |
 | UC-02 | 顺序多节点 | S0.1/S2 | executor | `tests/components/executor/sequential-nodes.test.ts` | `TC-EXEC-002` | planned |
 | UC-03 | fan-out 并发 | S2 | executor | `tests/components/executor/fanout.test.ts` | TBD | planned |
 | UC-04 | 技能切换 | S0.1/S2 | assets/executor | `tests/components/assets/install.test.ts` | TBD | planned |
-| UC-05 | 容器非法 | S0 | workspace | `tests/components/workspace/layout.test.ts` | `TC-EXEC-004` | existing |
-| UC-06 | 技能包异常 | S0 | assets | `tests/components/assets/install.test.ts` | `TC-EXEC-004` | existing |
-| UC-07 | 运行时不可用 | S0/S1 | runtime | `tests/components/runtime/session.test.ts` | TBD | planned |
-| UC-08 | 工作区不可写/磁盘满 | S0 | workspace | `tests/components/workspace/layout.test.ts` | TBD | existing |
-| UC-09 | prompt 超时 | S0/S1 | runtime | `tests/components/runtime/session.test.ts` | TBD | planned |
-| UC-10 | 工具失败/权限拒绝 | S0 | runtime | `tests/components/runtime/session.test.ts` | TBD | planned |
-| UC-11 | DSH 进程崩溃 | S0 | runtime | `tests/components/runtime/recovery.test.ts` | TBD | planned |
+| UC-05 | 容器非法 | S0 | workspace | `tests/components/workspace/workspace.test.ts` | TBD | existing |
+| UC-06 | 技能包异常 | S0 | assets | `tests/scenarios/s0-exec.test.ts` | `TC-EXEC-004` | existing |
+| UC-07 | 运行时不可用 | S0/S1 | runtime | `tests/components/runtime/runtime.test.ts` | TBD | existing |
+| UC-08 | 工作区不可写/磁盘满 | S0 | workspace | `tests/components/workspace/workspace.test.ts` | TBD | existing |
+| UC-09 | prompt 超时 | S0/S1 | runtime | `tests/components/runtime/runtime.test.ts` | TBD | existing |
+| UC-10 | 工具失败/权限拒绝 | S0 | runtime | `tests/components/runtime/runtime.test.ts` | TBD | existing |
+| UC-11 | DSH 进程崩溃 | S0 | runtime | `tests/components/runtime/runtime.test.ts` | TBD | existing |
 | UC-12 | 结果过大 | S1 | result | `tests/components/result/truncate.test.ts` | TBD | planned |
-| UC-13 | 取消执行 | S0/S2 | runtime/executor | `tests/components/runtime/cancel.test.ts` | `TC-EXEC-003` | planned |
-| UC-14 | 关闭/二次信号 | S0/S2 | cli | `tests/components/cli/signals.test.ts` | `TC-EXEC-003` | planned |
-| UC-15 | client 崩溃重启 | S0（仅清理）/S2 | cli/executor/store | `tests/components/cli/serve-loop.test.ts`、`tests/components/store/recovery.test.ts` | TBD | planned |
-| UC-16 | 孤儿进程 | S0 | runtime | `tests/components/runtime/recovery.test.ts` | TBD | planned |
-| UC-17 | 崩溃 session/lock | S0 | runtime/store | `tests/components/runtime/recovery.test.ts`、`tests/components/store/locks.test.ts` | TBD | planned |
+| UC-13 | 取消执行 | S0/S2 | runtime/executor | `tests/scenarios/s0-exec.test.ts` | `TC-EXEC-003` | existing |
+| UC-14 | 关闭/二次信号 | S0/S2 | cli | `tests/components/cli/signals.test.ts` | TBD | existing |
+| UC-15 | client 崩溃重启 | S0（仅清理）/S2 | cli/executor/store | `tests/components/executor/execute.test.ts`（`recover`）、`tests/components/store/journal.test.ts` | TBD | existing |
+| UC-16 | 孤儿进程 | S0 | runtime | `tests/components/runtime/runtime.test.ts`、`tests/scenarios/s0-exec.test.ts` | TBD | existing |
+| UC-17 | 崩溃 session/lock | S0 | runtime/store | `tests/components/runtime/runtime.test.ts`、`tests/components/store/locks.test.ts` | TBD | existing |
 | UC-18 | 重跑幂等 | S0.1/S1 | executor | `tests/components/executor/state-machine.test.ts` | TBD | planned |
 | UC-19 | 调度器不可达 | S1 | gateway/cli | `tests/components/gateway/transport.test.ts` | TBD | planned |
 | UC-20 | 心跳长轮询断开 | S1 | gateway | `tests/components/gateway/long-poll.test.ts` | TBD | planned |
@@ -41,10 +41,10 @@ updated: 2026-11-08
 | UC-25 | 不同技能集并发 | S2 | executor/assets | `tests/components/executor/fanout.test.ts`、`tests/components/assets/install.test.ts` | TBD | planned |
 | UC-26 | 多实例/容量上限 | S1/S2 | cli | `tests/components/cli/serve-loop.test.ts` | TBD | planned |
 | UC-27 | 日志/结果/磁盘上限 | S1/S3 | result/observability/store | `tests/components/result/truncate.test.ts`、`tests/components/observability/logging.test.ts` | TBD | planned |
-| UC-28 | 不可信路径 | S0 | workspace | `tests/components/workspace/path.test.ts` | TBD | existing |
-| UC-29 | 不可信压缩包 | S0/S3 | assets | `tests/components/assets/security.test.ts` | TBD | existing |
+| UC-28 | 不可信路径 | S0 | workspace | `tests/components/workspace/workspace.test.ts` | TBD | existing |
+| UC-29 | 不可信压缩包 | S0/S3 | assets | `tests/components/assets/assets.test.ts` | TBD | existing |
 | UC-30 | 凭据泄漏 | S3 | observability/result | `tests/components/observability/logging.test.ts` | TBD | planned |
-| UC-31 | 会话隔离 | S0/S3 | runtime/cli | `tests/components/runtime/session.test.ts`、`tests/components/cli/config.test.ts` | TBD | planned |
+| UC-31 | 会话隔离 | S0/S3 | runtime/cli | `tests/components/runtime/runtime.test.ts`、`tests/scenarios/s0-config.test.ts` | TBD | existing |
 
 ## 2. 配置与自检（`SCN-0002`）
 

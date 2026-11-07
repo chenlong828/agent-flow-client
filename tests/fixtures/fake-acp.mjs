@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 // 测试用 ACP 服务器：覆盖 initialize/session/new/prompt/update/permission/cancel/close。
 import { spawn } from "node:child_process";
+
+if (process.argv.includes("-V")) {
+  process.stdout.write("0.2.2-alpha.2\n");
+  process.exit(0);
+}
 import { writeFileSync } from "node:fs";
 
 const sessions = new Map();
@@ -163,3 +168,9 @@ process.stdin.on("data", (data) => {
 });
 
 process.stdin.on("end", () => process.exit(0));
+
+// 记录子进程实际收到的 DSH_HOME（TC-CONFIG-002 的端到端断言）。
+if (process.env.FAKE_ACP_HOME_FILE) {
+  const { writeFileSync } = await import("node:fs");
+  writeFileSync(process.env.FAKE_ACP_HOME_FILE, String(process.env.DSH_HOME ?? ""));
+}

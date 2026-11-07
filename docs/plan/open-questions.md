@@ -23,7 +23,7 @@ updated: 2026-11-08
 | OQ-012 | 崩溃后调度器如何识别并重派？同一 attemptId 还是新 attempt？ | 恢复触发、幂等与结果归属 | **已关闭**（2026-11-07 冻结）：重跑必须新 `attemptId`，同 attemptId 只做传输重放；已结算结果按 `(clientId, attemptId)` 重报（`SCH-11`）；client 不自动重跑（`REQ-0002` R-04）。 |
 | OQ-013 | 取消/超时强杀前是否抓取已产生的部分输出？ | 结果完整性与排障 | **已关闭**（2026-11-07 冻结）：不额外抓取，但已产生的输出填入 `message`（截断）；空串只表示确实没有输出；不加 partial 字段（`RD-04`）。 |
 | OQ-014 | 除 `[acp].dsh_home` 外，配置键清单与优先级何时冻结？ | `SCN-0002` 的范围、`CMP-cli` 规格与部署文档 | **已关闭**（2026-11-08）：`[acp].dsh_home`/`permission`、`[state].root`、`[logging].level`、`[capacity].max_instances`；优先级 CLI flag > `DSH_HOME` > config > default。`stateRoot` 默认 `<runDir>/.agent-flow-client`，不可写退出 4，不静默回退。见 `CMP-cli` §2.3。 |
-| OQ-015 | `run` 的非成功节点结果是否用退出码 `1`，SIGTERM 是否用 `143`？ | CLI 契约、S0 测试与 CI 判定 | **已关闭**（2026-11-08 用户确认）：按 `architecture.md` §3.2 冻结 `0/1/2/3/4/5/6/7/130/143`；`run` 非成功 `NodeResult` 用 `1`，SIGINT `130`、SIGTERM `143`。见 `docs/works/2026-11-08-s0-local-loop/brief.md` §2.2。 |
+| OQ-015 | `run` 的非成功节点结果是否用退出码 `1`，SIGTERM 是否用 `143`？ | CLI 契约、S0 测试与 CI 判定 | **已关闭**（2026-11-08 用户确认）：按 `architecture.md` §3.2 冻结 `0/1/2/3/4/5/6/7/130/143`；`run` 非成功 `NodeResult` 用 `1`，SIGINT `130`、SIGTERM `143`。见 `docs/history/works/2026-11-08-s0-local-loop/brief.md` §2.2。 |
 | OQ-016 | 迟到结果用 `409 late_result` 还是 `200 disposition=late`？ | 结果重试、审计与调度器状态推进 | 提案推荐 `409`（与 `CMP-gateway` 现有错误表一致），client 按终态处理、只审计；见提案 §15 Q3。 |
 | OQ-017 | 启动恢复是否由调度器下发实例绑定（`register.assignments`）？ | 崩溃后容器校验/清理与恢复路径 | 提案推荐可选下发；client 无则按 journal 恢复，不阻塞领取；见提案 §5.1/§15 Q4。 |
 | OQ-018 | 技能包分发通道：调度器托管端点还是签名外链？ | 下载鉴权、缓存与凭据泄漏 | 提案推荐调度器托管 `GET /api/v1/executor/skill-packages/{packageId}/download`；外链必须短期签名且不带 client token；见提案 §5.5/§15 Q6。 |
@@ -34,3 +34,4 @@ updated: 2026-11-08
 | OQ-023 | `claimRequestId` 幂等记录的保留窗口取多少？ | 窗口过短会产生影子租约（丢包重试多租一个 attempt） | **已定（实现参数，不进对外契约）**：`>= 尝试租约 TTL + 结果确认窗口`，建议 10min。M1 起写入 `CMP-gateway` 实现说明；调度器侧同步。 |
 | OQ-024 | 场景 UC → 测试目录/文件的映射表何时补？ | 场景覆盖证明、S0 验收 | **已关闭**（2026-11-08）：见 `docs/design/test-matrix.md`；每个 S0 UC 至少一个计划测试文件，测试 ID 在工序中回填。 |
 | OQ-025 | `CleanupAck.failed` + `retryable=false` 的终止规则？ | 调度器是否永久重发清理、告警噪声 | 调度器侧 follow-up（`ND2-06`）：v1 约定 `failed` 保留 pending；若 `retryable=false`，应停止下发并转审计，而不是永久重发。待调度器确认后写进契约/实现。 |
+| OQ-026 | S0 的模型路由（`hundsun-public/hs-deepseek-flash-latest`）由谁下发、如何与调度器节点参数解耦？ | 生产环境的模型选择与调度器契约 | S0 用实例 profile 补丁固定 `llm-pi-ai` + `agent-default-model` + `acp` 三处，`AF_MODEL`/`AF_LLM_BASE_URL` 可覆盖；S1 决定进配置键还是由 `NodeRequest` 携带（后者需改契约）。见 `docs/history/works/2026-11-08-s0-local-loop/result.md` §5。 |

@@ -15,11 +15,11 @@ export async function startInstance(
 ): Promise<InstanceHandle> {
   await mkdir(instance.dshHome, { recursive: true, mode: 0o700 });
   await copyCredentials(instance.dshHome, options.credentialsSource);
-  await writeProfilePatch(instance.dshHome, options.model ?? S0_MODEL);
+  const patchPath = await writeProfilePatch(instance.dshHome, options.model ?? S0_MODEL);
 
   try {
     const acp = await AcpConnection.connect({
-      command: options.command,
+      command: { command: options.command.command, args: [...options.command.args, "--profile", "acp", "--patch", patchPath] },
       cwd: instance.containerRoot,
       env: { ...options.env, DSH_HOME: instance.dshHome, DSH_TELEMETRY_DISABLED: "1" },
       initializeTimeoutMs: 10_000,

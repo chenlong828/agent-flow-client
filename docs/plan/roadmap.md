@@ -9,8 +9,8 @@ updated: 2026-11-08
 
 ## 当前状态
 
-- 项目骨架已初始化；CLI 只提供 `help`/`version`，`serve`/`run`/`doctor` 尚未实现。
-- 当前目标：S0 本地执行闭环，验证 DSH 技能可见性与 session 生命周期。
+- S0 本地执行闭环已落地（2026-11-08）：`run`/`doctor`/`version` 可用，`serve` 待 S1；9 个组件除 `CMP-gateway` 外均已 `active`。见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
+- 当前目标：S1 契约骨架（桩调度器 + `CMP-gateway` + `serve` 主循环）；`TC-EXEC-002`（顺序两节点）随 S1 一起补。
 - 已完成 DSH ACP 对接预研并归档：启动方式、协议序列、权限/取消/关闭边界与本机版本基线，见 `docs/history/works/2026-11-03-dsh-acp-preflight/result.md`。
 - 已完成 S0 P0 阻断项验证（12 项 11 通过）：技能根/格式、写入时机、每节点替换、根隔离、脚本权限、并发、项目根均成立；崩溃遗留孤儿进程（S0-11）未通过，见 `docs/works/2026-11-03-s0-acp-verification/result.md`。
 - 已完成 ACP 会话记录与跨 profile 可见性调研：session 记录按 `DSH_HOME` 归属、不按 profile；共用 home 会被 web/desktop 的 `session/list` 读取，首次初始化还会被 workspace bootstrap 采纳；专用 home 才能满足「desktop/web 看不到」，见 `docs/works/2026-11-03-acp-session-records/result.md`。
@@ -38,13 +38,13 @@ updated: 2026-11-08
 
 ## 下一步工作计划
 
-> 当前活跃工序：`docs/works/2026-11-08-s0-local-loop/`（S0 本地执行闭环，批次 1）；`docs/works/2026-11-06-observability-http/`（观测 HTTP P1 设计稿，独立轨道）；M1 已归档。
+> 当前活跃工序：`docs/works/2026-11-06-observability-http/`（观测 HTTP P1 设计稿，独立轨道）；S0 已收口归档（`docs/history/works/2026-11-08-s0-local-loop/`），M1 已归档。
 
-### 批次 1：S0 本地执行闭环（进行中，最高优先级）
+### 批次 1：S0 本地执行闭环（已完成，2026-11-08）
 
 目标：不接调度器，用 `run` + `LocalSchedulerAdapter` 跑通「容器校验 → 建 session → 装技能 → prompt → 结果」；出口是 `SCN-0002` 3+1、`SCN-0001` S0 用例、`REQ-0002` R-03/R-04。
 
-建议拆成 6 个工序（按组件切，避免跨组件任务超预算，`AH-07`）；实际在 `docs/works/2026-11-08-s0-local-loop/` 内按 6 个任务顺序执行：
+建议拆成 6 个工序（按组件切，避免跨组件任务超预算，`AH-07`）；实际在 `docs/history/works/2026-11-08-s0-local-loop/` 内按 6 个任务顺序执行：
 
 | 顺序 | 工序 | 组件 | 出口 |
 |---|---|---|---|
@@ -56,6 +56,8 @@ updated: 2026-11-08
 | 6 | S0 门禁 | 全部 | `SCN-0002` 3+1、`SCN-0001` S0 用例、R-03/R-04 |
 
 开工前置已清：`OQ-024` 映射见 `docs/design/test-matrix.md`；`OQ-014` 配置键与 `stateRoot` 默认已冻结（`CMP-cli` §2.3）。
+
+收口：6 个任务全部落地，`SCN-0002` 3+1 与 `SCN-0001` 的 S0 用例通过，R-03/R-04 通过，真机 prompt 成功；`TC-EXEC-002`（顺序两节点）与 `serve` 转 S1。见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
 
 ### 批次 2：S1 契约骨架（与批次 1 并行）
 

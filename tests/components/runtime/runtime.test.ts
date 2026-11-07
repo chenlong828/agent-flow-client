@@ -74,7 +74,7 @@ describe("ACP 会话", () => {
 });
 
 describe("取消与超时", () => {
-  test("TC-EXEC-003 cancel 立即结束 prompt 并回收进程组与子进程", async () => {
+  test("cancel 立即结束 prompt 并回收进程组与子进程", async () => {
     const { runtime, handle, cwd, pidFile } = await fixture();
     const session = await runtime.newSession(handle, cwd);
     const pending = runtime.prompt(session, "SLOW", { signal: new AbortController().signal, timeoutMs: 30_000 });

@@ -50,6 +50,7 @@ export async function writeProfilePatch(homeDir: string, model: ProfileModel = S
       },
     },
     { id: "agent-default-model", config: { provider: model.provider, model: model.model } },
+    { id: "acp", config: { provider: model.provider, model: model.model } },
   ];
   await writeFile(patchPath, JSON.stringify(patch, null, 2), { mode: 0o600 });
   return patchPath;
