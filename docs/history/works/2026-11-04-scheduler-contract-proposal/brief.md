@@ -2,7 +2,7 @@
 layer: history
 module: global
 status: frozen
-updated: 2026-11-05
+updated: 2026-11-07
 ---
 
 # 工序 Brief：调度器契约提案（client 消费端）
