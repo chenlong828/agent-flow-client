@@ -45,11 +45,14 @@ docs/
 │   │   ├── brief.md
 │   │   ├── result.md
 │   │   └── probe/                          ← 空会话探针
-│   └── 2026-11-06-observability-http/      ← 只读观测 HTTP（P1 设计稿，附评已处置）
-│       ├── brief.md
-│       ├── proposal.md                     ← /api/v1/observability：日志、SSE、DSH session 归档
-│       ├── review.md                       ← 调度器附评 OB-01～OB-09 处置
-│       └── result.md
+│   ├── 2026-11-06-observability-http/      ← 只读观测 HTTP（P1 设计稿，附评已处置）
+│   │   ├── brief.md
+│   │   ├── proposal.md                     ← /api/v1/observability：日志、SSE、DSH session 归档
+│   │   ├── review.md                       ← 调度器附评 OB-01～OB-09 处置
+│   │   └── result.md
+│   └── 2026-11-07-m1-contract-freeze/      ← M1 调度器契约冻结（进行中）
+│       ├── brief.md                        ← 冻结范围、决策基线、任务表
+│       └── freeze-checklist.md             ← 提案 §13 逐行落点清单
 └── history/                                ← 记忆：怎么走到这里的
     ├── works/                              ← 已归档工序（frozen）
     │   ├── 2026-11-03-dsh-acp-preflight/   ← DSH ACP 对接预研
