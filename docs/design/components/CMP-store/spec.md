@@ -2,13 +2,13 @@
 layer: design
 module: execution-plane
 component: CMP-store
-status: planned
+status: active
 updated: 2026-11-04
 ---
 
 # CMP-store 组件规格
 
-> 状态：`planned`。本地恢复事实的唯一边界：journal、实例锁、孤儿进程记录。它是恢复依据，不是第二真相。
+> 状态：`active`（2026-11-08，T2 落地）。journal、实例锁、孤儿记录已实现；压缩与 `doctor` 诊断可用。
 >
 > 上游：`docs/design/architecture.md` §7、§10；`SCN-0001` UC-15/16/17；`REQ-0002` R-02/R-04；决策 D11（工作区预置）与「等重派」结论。
 
@@ -193,8 +193,9 @@ interface StoreAdmin {
 ## 8. 预算与单独运行
 
 - 预算：目标 ≤25k token，上限 120k。
-- 单独运行：`bun test tests/components/store/`（落地后创建）；临时目录夹具。
-- 状态：`planned`；无入口符号。
+- 单独运行：`bun test tests/components/store/`；临时目录夹具。
+- 实现入口（T2）：`src/components/store/journal.ts#FileJournal`、`journal-io.ts`、`journal-query.ts`、`locks.ts#LockManager`、`orphans.ts#OrphanStore`、`store.ts#FileStore`、`admin.ts#StoreAdmin`；测试 `tests/components/store/`。
+- 状态：`active`。
 
 ## 9. 开放问题
 

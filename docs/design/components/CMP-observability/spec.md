@@ -2,13 +2,13 @@
 layer: design
 module: execution-plane
 component: CMP-observability
-status: planned
+status: active
 updated: 2026-11-04
 ---
 
 # CMP-observability 组件规格
 
-> 状态：`planned`。结构化日志、脱敏、`doctor` 渲染与可选进度事件；横切工具，不含业务判定。
+> 状态：`active`（2026-11-08，T2 落地）。结构化日志、脱敏、文件 sink/轮转与 `doctor` 聚合渲染已实现；进度事件未实现。
 >
 > 上游：`docs/design/architecture.md` §3.2、§7、§10；`SCN-0002`；`REQ-0002` R-09/R-10；日志字段与脱敏要求。
 
@@ -177,8 +177,9 @@ interface Doctor {
 ## 8. 预算与单独运行
 
 - 预算：目标 ≤15k token，上限 120k。
-- 单独运行：`bun test tests/components/observability/`（落地后创建）；临时日志目录。
-- 状态：`planned`；无入口符号。
+- 单独运行：`bun test tests/components/observability/`；临时日志目录。
+- 实现入口（T2）：`src/components/observability/logger.ts#JsonLogger`/`redactRecord`、`doctor.ts#collect`/`render`/`exitCode`；测试 `tests/components/observability/`。
+- 状态：`active`（进度事件未实现）。
 
 ## 9. 开放问题
 

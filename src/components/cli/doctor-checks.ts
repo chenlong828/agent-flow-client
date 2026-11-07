@@ -8,6 +8,8 @@ import { isUserDshPath } from "./config.ts";
 import type { CheckResult } from "../observability/doctor.ts";
 import { resolveDshCommand, dshCommandExists, probeDshVersion } from "../runtime/dsh.ts";
 import { findProjectRoot } from "../workspace/project-root.ts";
+import { FileStore } from "../store/store.ts";
+import { StoreAdmin } from "../store/admin.ts";
 
 export type DoctorOptions = {
   config: AppConfig;
@@ -100,12 +102,6 @@ async function pathChecks(config: AppConfig): Promise<CheckResult[]> {
             remediation: "目录不存在或不可写；修正权限或换路径",
           },
         ]),
-    {
-      id: "state.journal",
-      title: "journal",
-      status: "pass",
-      detail: join(config.state.root, "journal.jsonl"),
-    },
   ];
 }
 
@@ -172,6 +168,11 @@ function authChecks(hasCredentials: boolean): CheckResult[] {
   ];
 }
 
+async function storeChecks(config: AppConfig): Promise<CheckResult[]> {
+  const store = new FileStore({ stateRoot: config.state.root });
+  return await new StoreAdmin({ stateRoot: config.state.root, store }).diagnose();
+}
+
 /** 收集 S0 的 `doctor` 检查项；只读，不启动执行（CMP-cli §2.6）。 */
 export async function collectDoctorChecks(options: DoctorOptions): Promise<CheckResult[]> {
   const { config, env } = options;
@@ -183,6 +184,7 @@ export async function collectDoctorChecks(options: DoctorOptions): Promise<Check
     ...(await pathChecks(config)),
     ...authChecks(hasCredentials),
     ...(await dshChecks(env)),
+    ...(await storeChecks(config)),
   ];
   if (options.workspacePath !== undefined) {
     checks.push(...workspaceChecks(options.workspacePath));

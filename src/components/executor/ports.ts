@@ -126,3 +126,16 @@ export type OrphanRecord = {
 };
 
 export type Unlock = () => Promise<void>;
+
+/** 本地恢复事实端口（CMP-store 实现；executor/CLI 消费）。 */
+export interface JournalPort {
+  append(record: AttemptRecord): Promise<void>;
+  pending(instanceId: InstanceId): Promise<AttemptRecord[]>;
+  pendingAll(): Promise<AttemptRecord[]>;
+  listInstances(): Promise<InstanceId[]>;
+  mark(attemptId: AttemptId, state: AttemptState, patch?: Partial<AttemptRecord>): Promise<void>;
+  lockInstance(instanceId: InstanceId): Promise<Unlock>;
+  recordOrphan(record: OrphanRecord): Promise<void>;
+  listOrphans(instanceId?: InstanceId): Promise<OrphanRecord[]>;
+  clearOrphan(pid: number): Promise<void>;
+}
