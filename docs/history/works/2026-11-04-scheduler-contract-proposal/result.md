@@ -1,20 +1,20 @@
 ---
-layer: works
+layer: history
 module: global
-status: active
+status: frozen
 updated: 2026-11-07
 ---
 
 # 工序结果：调度器契约提案（client 消费端）
 
-> 状态：**v0.4 已处置两轮评审（RB/RD/ND-01～ND-06），满足收口条件，待调度器侧收口**。契约未冻结，`design/` 未改；冻结后另立 M1 工序。
+> 状态：**v0.4 审核通过（2026-11-07），提案定稿并归档**。本工序只冻结提案，不冻结 `design/`；M1 冻结另立工序。
 
 ## 结论摘要
 
 - 调度器对 client 的接口面收敛为 **6 个控制面操作 + 1 个制品通道**：`register`、`heartbeat`（长轮询兼控制事件）、`claim`、`renew`、`bindSession`、`reportResult`，以及技能包下载。
 - client 侧需要调度器保证 **20 条**语义（`SCH-01`…`SCH-20`），client 承诺 13 条（`CLT-01`…`CLT-13`）；其中 6 条是 S1 的硬前提：实例粘性、单派发、attempt 身份、容器预置、技能集确定性、两条租约。
 - 三个身份（`clientId` / `runId` / `attemptId`）与两条租约（客户端租约 / 尝试租约）是契约的骨架；attempt 归属按 `(clientId, attemptId)`，不按 `runId`，否则崩溃重启后的已结算结果永远报不上去。
-- 调度器侧评审结论为 **有条件通过**：四条 Blocker 已全部修订，五条 Decision now 已按建议拍板；逐条处置见 [`review.md`](review.md)，评审原文见 `../../../../agent-flow-orchaster/docs/works/2026-11-05-scheduler-contract-review/review.md`。
+- 调度器侧评审结论为 **通过**：两轮 Blocker/Decision now/Hold 全部关闭；逐条处置见 [`review.md`](review.md)，评审原文见 `../../../../../agent-flow-orchaster/docs/works/2026-11-05-scheduler-contract-review/review.md`。
 - 评审新增 8 项裁决（Q13–Q20）；加上首轮 12 项，共 **20 项**。阻塞 S1 的仍是 Q1/Q2/Q3/Q5/Q6/Q7；阻塞 M1 冻结的是 Q13–Q16 四条 Blocker。
 - client 的运行形态是 **CLI `serve` 启动的常驻后台执行进程**；CLI 只是入口，`run` 仍是一次性模式。常驻不等于可寻址：本契约的控制面仍只允许 client 出站；只读观测面另立 P1。
 - 双方一致**不在 S1/M1 给 client 加控制面入站 HTTP**；作为已评估备选登记在提案 §17.1，重开条件为具备稳定可寻址地址与身份（常驻已满足，但仍缺地址/身份/发现）、平台 mTLS/发现、调度器需多种本地能力、执行以短任务/异步 job 为主。只读观测 HTTP 另立 P1（`2026-11-06-observability-http`），不承接控制。
@@ -80,22 +80,18 @@ updated: 2026-11-07
 | H-01 结果保留窗口 | journal 重报窗口未定，可能丢历史结果 | M1 前补 `OQ-021` |
 | 上游现状 | 调度器仓库还没有这组端点，联调需先建桩 | S1 桩调度器与 client 并行开发 |
 
-## 5. 待复核
+## 5. 审核结论
 
-请调度器侧确认：
+调度器侧 2026-11-07 确认**通过**：
 
-1. `RB-01`–`RB-04` 的修订是否满足冻结条件；
-2. `Q13`–`Q16`（Blocker 结论）与 `Q18`（退出码 7）是否确认；
-3. `SCH-19`（同实例单活跃 attempt）是否由调度器派发侧承担；
-4. client 控制面入站 HTTP 的否决与重开条件是否同意（§17.1）；
-5. `cleanupPending[]`/`cleanupAcks[]` 与 `SCH-20` 是否接受（`ND-01`）；
-6. `SCH-19` 明写“等价 Q1=A、选 B 需改条并升版本”是否接受（`ND-02`）；
-7. `ND-03`–`ND-06` 四条 Hold 已在本稿落掉，是否可直接并入 M1 清单。
+1. `RB-01`–`RB-04` 全部关闭；
+2. `RD-01`–`RD-05` 与 `Q13`–`Q20` 按提案建议拍板；
+3. `ND-01`–`ND-06` 全部落稿；
+4. `SCH-19`/`SCH-20`、`CLT-13` 纳入 M1 冻结输入。
 
-> 调度器侧 2026-11-06 复核已把条件收窄为 `ND-01`/`ND-02`，且这两条与 `ND-03`–`ND-06` 均已落稿（见 `review.md` §6.1/§6.2）；剩下的动作是把评审收口为「通过」并归档本工序。
+本工序归档为历史记录；契约字段的权威落盘在 M1，不在本目录。
 
 ## 6. 下一步
 
-1. 调度器侧收口本稿 v0.4；通过后 `review.md` 收口、本目录归档。
-2. 开 M1 冻结工序：把字段/错误码/枚举写进 `design/`，同步 `architecture.md`、`CMP-executor`、`CMP-gateway`、`CMP-cli`、`CMP-assets`、`CMP-result`。
-3. S1 实现顺序：桩调度器 → `CMP-gateway` 契约测试 → `CMP-cli` 循环（含 `claimRequestId`、`SCH-19`）→ `CMP-executor` 绑定/上报（含 C-04 分档）→ `CMP-assets` 下载。
+1. 开 M1 冻结工序：把字段/错误码/枚举写进 `design/`，同步 `architecture.md`、`CMP-executor`、`CMP-gateway`、`CMP-cli`、`CMP-assets`、`CMP-result`。
+2. S1 实现顺序：桩调度器 → `CMP-gateway` 契约测试 → `CMP-cli` 循环（含 `claimRequestId`、`SCH-19`）→ `CMP-executor` 绑定/上报（含 C-04 分档）→ `CMP-assets` 下载。

@@ -45,11 +45,6 @@ docs/
 │   │   ├── brief.md
 │   │   ├── result.md
 │   │   └── probe/                          ← 空会话探针
-│   ├── 2026-11-04-scheduler-contract-proposal/ ← 调度器契约提案（两轮评审已处置，v0.4 待收口）
-│   │   ├── brief.md
-│   │   ├── proposal.md                     ← 6 个控制面操作 + 技能包通道、SCH/CLT、裁决项
-│   │   ├── review.md                       ← 调度器评审结论 + client 四档裁决
-│   │   └── result.md
 │   └── 2026-11-06-observability-http/      ← 只读观测 HTTP（P1 设计稿，附评已处置）
 │       ├── brief.md
 │       ├── proposal.md                     ← /api/v1/observability：日志、SSE、DSH session 归档
@@ -61,9 +56,14 @@ docs/
     │   │   ├── brief.md
     │   │   ├── result.md
     │   │   └── probe/                      ← 可复现探针与用法
-    │   └── 2026-11-03-client-concept-design/ ← 客户端概念设计（已冻结）
+    │   ├── 2026-11-03-client-concept-design/ ← 客户端概念设计（已冻结）
+    │   │   ├── brief.md
+    │   │   ├── design.md
+    │   │   └── result.md
+    │   └── 2026-11-04-scheduler-contract-proposal/ ← 调度器契约提案（审核通过，v0.4 已归档）
     │       ├── brief.md
-    │       ├── design.md
+    │       ├── proposal.md                   ← 7 契约面、SCH/CLT、ND/OB 处置
+    │       ├── review.md                     ← 两轮评审收口为「通过」
     │       └── result.md
     └── decisions/
         ├── 2026-11-03-bootstrap.md

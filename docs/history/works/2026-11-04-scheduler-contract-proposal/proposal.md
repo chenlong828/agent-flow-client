@@ -1,19 +1,21 @@
 ---
-layer: works
+layer: history
 module: global
-status: active
+status: frozen
 updated: 2026-11-07
 ---
 
 # 调度器契约提案：执行面客户端的接口依赖（v0.4）
 
+> **状态：审核通过（2026-11-07），提案定稿 v0.4。** 本文件归档为历史记录；契约字段的权威落盘在 M1。
+>
 > **权威在调度器侧。** 本稿是 client 消费端的需求提案，不是冻结契约；端点路径、字段名、状态码都可以谈，但 §7 的调度器责任、§8 的客户端承诺与 §6 的枚举闭集是 client 实现要依赖的语义，改动需要双侧确认。
 >
-> 上游依据：`../../../../agent-flow-orchaster/docs/works/2026-11-03-client-boundary/boundary-design.md`、同目录 `client-work.md`、`../../../../agent-flow-orchaster/docs/design/components/http-gateway/spec.md`；本仓库 `docs/design/architecture.md` §3/§4/§9、`CMP-executor` §3.4、`CMP-gateway`、`CMP-cli`、`CMP-assets`、`CMP-result`。
+> 上游依据：`../../../../../agent-flow-orchaster/docs/works/2026-11-03-client-boundary/boundary-design.md`、同目录 `client-work.md`、`../../../../../agent-flow-orchaster/docs/design/components/http-gateway/spec.md`；本仓库 `docs/design/architecture.md` §3/§4/§9、`CMP-executor` §3.4、`CMP-gateway`、`CMP-cli`、`CMP-assets`、`CMP-result`。
 >
 > 现状：9 个组件均为 `planned`，代码未落地；本稿把「端口签名」推进到「字段级 HTTP 契约 + 双侧责任 + 执行器承接」，供 M1 冻结。
 >
-> **评审状态（2026-11-05）**：调度器侧裁决「有条件通过」。RB-01～RB-04 四条 Blocker 已在本版修订；RD-01～RD-05 已按评审建议拍板。逐条处置见 [`review.md`](review.md)，评审原文见 `../../../../agent-flow-orchaster/docs/works/2026-11-05-scheduler-contract-review/review.md`。
+> **评审状态（2026-11-07）**：调度器侧确认**通过**。RB-01～RB-04、RD-01～RD-05、ND-01～ND-06 全部关闭；逐条处置见 [`review.md`](review.md)，评审原文见 `../../../../../agent-flow-orchaster/docs/works/2026-11-05-scheduler-contract-review/review.md`。
 
 ## 1. 一句话结论
 

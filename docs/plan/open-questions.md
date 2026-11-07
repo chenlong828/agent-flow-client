@@ -18,7 +18,7 @@ updated: 2026-11-07
 | OQ-007 | 目标平台范围？ | 脚本/路径/进程实现 | 先 macOS/Linux |
 | OQ-008 | client 与 DSH 的版本兼容窗口？ | 升级策略 | 实测 ACP v1、dsh 0.2.2-alpha.2；兼容窗口待 S1 契约冻结时定 |
 | OQ-009 | DSH_HOME 隔离粒度：一实例一 home 还是一 client 一 home？ | 会话可见性、凭据与磁盘占用 | 预研建议一实例一 home；S0-11 补充：崩溃后 lock 残留、`session/list` 会列出崩溃会话、孤儿进程需清理，隔离粒度需一并考虑回收策略；2026-11-03 会话记录调研：session 按 `DSH_HOME` 归属、profile 目录不含 session，共用 home 时 web/desktop `session/list` 实测返回 ACP 会话（首次初始化还会被 workspace bootstrap 采纳），ACP 反向也能列出 desktop 会话；因此必须一实例一 home，client 只展示/恢复本实例记录的 id（详见 `docs/works/2026-11-03-acp-session-records/result.md`） |
-| OQ-010 | 租约 TTL 与心跳长轮询超时？ | 离线判定与取消延迟 | 心跳间隔已定 30s（2026-11-03）；TTL 必须大于 30s。提案拆成客户端租约（90s）与尝试租约（120s），见 `docs/works/2026-11-04-scheduler-contract-proposal/proposal.md` §2.3/§15（Q8）；M1 定最终值。 |
+| OQ-010 | 租约 TTL 与心跳长轮询超时？ | 离线判定与取消延迟 | 心跳间隔已定 30s（2026-11-03）；TTL 必须大于 30s。提案拆成客户端租约（90s）与尝试租约（120s），见 `docs/history/works/2026-11-04-scheduler-contract-proposal/proposal.md` §2.3/§15（Q8）；M1 定最终值。 |
 | OQ-011 | 容量单位：实例数还是 session 数？ | `serve` 循环与领取 | M1 定；提案 §11 给 A/B/C 三候选，S1 推荐「实例数 + 同实例串行」（Q1），并由 `SCH-19` 钉死同实例单活跃 attempt（等价 Q1 选 A；选 B 须改 `SCH-19` 并升 `protocolVersion`）。当前按实例数设计。 |
 | OQ-012 | 崩溃后调度器如何识别并重派？同一 attemptId 还是新 attempt？ | 恢复触发、幂等与结果归属 | S1 契约冻结时定；提案建议重跑必须新 `attemptId`，同 attemptId 只做传输重放；已结算结果按 `clientId + attemptId` 重报（`SCH-11`）。client 只清理并重新注册，不自动重跑（`REQ-0002` R-04）。 |
 | OQ-013 | 取消/超时强杀前是否抓取已产生的部分输出？ | 结果完整性与排障 | 当前默认不抓，报 `cancelled`/`timeout`；若需要，M1 结果契约加 partial 字段（`REQ-0002` R-03）。提案维持不带；`message` 有输出就填，空串仅表示确实没有输出（`RD-04`）。 |

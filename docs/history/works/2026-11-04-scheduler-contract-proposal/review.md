@@ -1,15 +1,15 @@
 ---
-layer: works
+layer: history
 module: global
-status: active
+status: frozen
 updated: 2026-11-07
 ---
 
 # 调度器评审记录与 client 裁决
 
 > 评审对象：[`proposal.md`](proposal.md)（首轮 v0.1 997 行；2026-11-06 复核 v0.2；2026-11-07 复核 v0.4）。
-> 评审原文：`../../../../agent-flow-orchaster/docs/works/2026-11-05-scheduler-contract-review/review.md`（2026-11-05，P1）。
-> 评审结论：**有条件通过**；条件是四条 Blocker、五条 Decision now 必须先收口。client 侧已逐条裁决并落到 v0.4；待调度器复核后转「通过」。
+> 评审原文：`../../../../../agent-flow-orchaster/docs/works/2026-11-05-scheduler-contract-review/review.md`（2026-11-05，P1）。
+> 评审结论：**通过（2026-11-07）**。两轮评审的 Blocker/Decision now/Hold 全部关闭；本记录随提案归档。
 > 确认记录：调度器侧评审人见原文；client 侧裁决为本工序；最终确认待复核（P1 人工门未关闭）。
 
 ## 1. 总览
@@ -96,12 +96,12 @@ updated: 2026-11-07
 
 `ND-01`/`ND-02` 的落稿见 §6.1；至此复核条件全部有落点，等调度器侧把本文档收口为「通过」。
 
-## 7. 待复核
+## 7. 收口确认
 
-1. 调度器侧复核 `RB-01`–`RB-04` 的修订是否满足冻结条件；
-2. 确认 `Q13`–`Q16`（Blocker 结论）与 `Q18`（退出码 7）；
-3. 确认 `ND-01` 的 `cleanupPending`/`cleanupAcks`/`SCH-20` 与 `ND-02` 的 `SCH-19` 等价表述；
-4. 确认 `ND-03`–`ND-06` 四处补充（同刻作用域、幂等保留窗口、类型定义位置、三处簿记）可按现文并入 M1；
-5. 复核通过后，本 `review.md` 与调度器侧 `review.md` 收口为「通过」，本工序 `result.md` 更新为最终结论；M1 冻结另立工序。
+- [x] `RB-01`–`RB-04` 复核关闭；
+- [x] `RD-01`–`RD-05` 与 `Q13`–`Q20` 按提案建议拍板；
+- [x] `ND-01`/`ND-02` 落稿；
+- [x] `ND-03`–`ND-06` 并入本稿；
+- [x] 调度器侧 2026-11-07 确认**通过**。
 
-**决策与反对**：client 接受全部 Blocker/Decision now 修法，无反对意见；`RD-03` 的「退 0」备选未采纳（无法区分正常重跑与旧进程被顶掉，运维不可观测）。**开放**：调度器复核、`OQ-021` 结果保留窗口。**owner**：client 提案工序；调度器侧评审人。
+**决策与反对**：client 接受全部 Blocker/Decision now 修法，无反对意见；`RD-03` 的「退 0」备选未采纳（无法区分正常重跑与旧进程被顶掉，运维不可观测）。**开放**：`OQ-021` 结果保留窗口（M1 前关闭，不阻塞本提案归档）。**owner**：client 提案工序；已收口。
