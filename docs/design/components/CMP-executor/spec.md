@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-executor
 status: planned
-updated: 2026-11-04
+updated: 2026-11-07
 ---
 
 # CMP-executor 组件规格
@@ -176,22 +176,25 @@ claimed ──▶ bound ──▶ ready ──▶ running ──▶ settled ─�
 
 ### 3.4 端口定义
 
-> 签名只在 `CMP-executor` 定义。值类型字段是占位，M1 冻结后替换；L0 不得扩展字段或另立同名类型。
+> 签名只在 `CMP-executor` 定义。调度器相关值类型字段已按 [`contracts/executor-http-v1.md`](../../contracts/executor-http-v1.md) 冻结；L0 不得扩展字段或另立同名类型。
 
 #### `SchedulerPort`
 
 ```ts
 interface SchedulerPort {
-  register(info: ClientInfo): Promise<void>;
-  heartbeat(state: ClientState, ackSeq: number): Promise<ControlBatch>;
+  register(info: ClientInfo): Promise<Registration>;
+  heartbeat(request: HeartbeatRequest): Promise<HeartbeatResult>;
   claim(capacity: Capacity): Promise<NodeRequest | null>;
   renew(attemptId: AttemptId): Promise<Lease>;
-  bindSession(attemptId: AttemptId, sessionId: SessionId): Promise<SkillSet>;
+  bindSession(attemptId: AttemptId, sessionId: SessionId): Promise<SessionBinding>;
   reportResult(attemptId: AttemptId, result: NodeResult): Promise<Ack>;
 }
 ```
 
 - 不变量：`claim` 只返回绑定本 client 的请求；`bindSession` 只接受本 client 为本 attempt 创建且未关闭的 session；`reportResult` 同 attempt 幂等；版本不兼容拒绝领取。
+- `claim` 的 `claimRequestId` 由 gateway 生成并持有，不进入端口签名；`heartbeat` 的 `cleanupAcks` 在 `HeartbeatRequest` 里，由 CLI 对账后传入。
+- `SessionBinding` 不再含 `lease`；租约唯一来源是 `claim` / `renew`（`Q20`）。
+- `Registration` / `HeartbeatResult` / `HeartbeatRequest` / `SessionBinding` / `Assignment` / `CleanupPending` / `CleanupAck` 的字段定义见 [`contracts/executor-http-v1.md`](../../contracts/executor-http-v1.md) §6.6；本规格不复制，避免两套真相。
 - 消费方：`CMP-executor` 只用 `bindSession` / `reportResult`；`CMP-cli` 只用 `register` / `heartbeat` / `claim` / `renew`。方法集合固定，不按消费方拆端口。
 - 错误：`unreachable` / `timeout`（可重试）、`unauthorized`（停止）、`version_incompatible`（停止）、`lease_expired`（丢弃尝试）、`rate_limited`（退避）、`invalid_request`（记录并放弃）。
 
@@ -244,6 +247,8 @@ interface AssetPort {
 interface JournalPort {
   append(record: AttemptRecord): Promise<void>;
   pending(instanceId: InstanceId): Promise<AttemptRecord[]>;
+  pendingAll(): Promise<AttemptRecord[]>;
+  listInstances(): Promise<InstanceId[]>;
   mark(attemptId: AttemptId, state: AttemptState, patch?: Partial<AttemptRecord>): Promise<void>;
   lockInstance(instanceId: InstanceId): Promise<Unlock>;
   recordOrphan(record: OrphanRecord): Promise<void>;
@@ -253,10 +258,11 @@ interface JournalPort {
 ```
 
 - 不变量：追加不覆盖；同实例单写（锁）；状态可重建；损坏记录可降级跳过；孤儿记录不含敏感信息。
+- `pendingAll` / `listInstances` 只在没有 `assignments` 快照时用于恢复枚举；不是新增调度器契约（P2）。
 - 错误：`io_error`、`locked`、`corrupt`。
 - 孤儿方法：executor 只写 `recordOrphan` / `clearOrphan`；`listOrphans` 供 CLI 启动恢复使用。
 
-### 3.5 值类型（占位）
+### 3.5 值类型（冻结）
 
 ```ts
 type AttemptState =
@@ -274,9 +280,12 @@ type NodeRequest = {
   attemptId: AttemptId;
   instanceId: InstanceId;
   nodeId: NodeId;
+  attemptNo: number;        // 同一节点在本实例内的第几次尝试，从 1 开始
   prompt: string;
   workspacePath: string;
-  skillSet: SkillSet; // S0 内联；S1 可为引用，字段形态 M1 冻结
+  claimedAt: string;        // 服务端授予时间，控制事件作用域判定
+  timeoutMs: number;
+  lease: Lease;             // 尝试租约，claim 授予
 };
 
 type AttemptRecord = {
@@ -312,11 +321,25 @@ type ShutdownMode = "graceful" | "force";
 type CleanupPolicy = "keep" | "clean-skills" | "clean-client";
 ```
 
-`InstanceSpec`、`SessionRef`、`SessionOutcome`、`ControlBatch`、`Lease`、`SkillSet`、`ClientInfo`、`ClientState`、`Capacity`、`Ack` 的具体字段由 M1 冻结；本规格只依赖其语义，不依赖字段名。
+`InstanceSpec`、`SessionRef`、`SessionOutcome`、`Lease`、`SkillSet`、`ClientInfo`、`ClientState`、`Capacity`、`Ack` 的调度器相关字段以 [`contracts/executor-http-v1.md`](../../contracts/executor-http-v1.md) §6 为准；本规格只依赖语义，不依赖字段名。
 
 `CMP-runtime` 的 `InstanceHandle` 必须暴露 `pid` / `pgid`，供 executor 写孤儿记录与收尾清理。
 
-`NodeResult` / `SkillSet` / `ControlBatch` / `Lease` / `SessionOutcome` 的字段由 M1 冻结；本组件只依赖 `CMP-result` 提供的值类型名与不变量，不自行扩展。
+**凭据值类型归属（`ND-05`）**：`AuthProvider` / `SchedulerEndpoint` 定义在本节 `ports`，`CMP-gateway` 与 `CMP-assets` 各自实现/消费，组合根注入同一实例。共享策略只有一条：同 `scheduler.url` host 带 `Authorization`，跨 host 不带；`CMP-assets` 因此不需要 import gateway。
+
+```ts
+interface AuthProvider {
+  authorizationFor(url: string): Promise<string | null>;
+}
+
+type SchedulerEndpoint = {
+  baseUrl: string;
+};
+```
+
+字段若后续扩展，按 P1 版本规则走；当前只冻结“定义位置 + 策略归属”。
+
+`NodeResult` / `SkillSet` / `ControlBatch` / `Lease` / `SessionOutcome` 的字段已冻结；本组件只依赖 `CMP-result` 提供的值类型名与不变量，不自行扩展。
 
 ## 4. 依赖与分层
 
@@ -372,5 +395,5 @@ type CleanupPolicy = "keep" | "clean-skills" | "clean-client";
 
 - 去重窗口与结果缓存上限（R-01，M1）。
 - prompt 超时默认值与是否可被节点覆盖（M1）。
-- `NodeRequest` / `SkillSet` 字段形态（M1；client 不自定义）。
+- `NodeRequest` / `SkillSet` 字段已冻结（契约 §6.1/§6.3）；client 不扩展。
 - 同容器并发写同一仓库的产物冲突：当前由流程层避免，client 不做仓库锁。

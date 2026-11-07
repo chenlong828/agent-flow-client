@@ -16,6 +16,8 @@ docs/
 │   └── open-questions.md
 ├── design/                                 ← 真相：系统现在是什么
 │   ├── architecture.md                     ← 系统层：组件、依赖、契约、主流程
+│   ├── contracts/
+│   │   └── executor-http-v1.md             ← 调度器执行面 HTTP 契约 v1（frozen）
 │   ├── components/                         ← 组件规格（9 份，planned）
 │   │   ├── CMP-cli/spec.md
 │   │   ├── CMP-executor/spec.md
@@ -50,7 +52,7 @@ docs/
 │   │   ├── proposal.md                     ← /api/v1/observability：日志、SSE、DSH session 归档
 │   │   ├── review.md                       ← 调度器附评 OB-01～OB-09 处置
 │   │   └── result.md
-│   └── 2026-11-07-m1-contract-freeze/      ← M1 调度器契约冻结（进行中）
+│   └── 2026-11-07-m1-contract-freeze/      ← M1 调度器契约冻结（T1–T9 完成，T10 评审待做）
 │       ├── brief.md                        ← 冻结范围、决策基线、任务表
 │       └── freeze-checklist.md             ← 提案 §13 逐行落点清单
 └── history/                                ← 记忆：怎么走到这里的
@@ -81,11 +83,12 @@ docs/
 1. `requirements/`：为什么做；
 2. `plan/roadmap.md`：接下来做什么；
 3. `design/architecture.md`：系统层组件、依赖、契约与主流程；
-4. `design/components/`：逐组件规格（职责、内部功能、契约、数据、验证）；
-5. `design/scenarios/`：业务场景与验收；
-6. `works/` 最近的工序：正在做什么、验证过什么；
-7. `plan/open-questions.md`、`plan/risks.md`：未决与风险；
-8. `history/decisions/`：为什么这样开始。
+4. `design/contracts/`：字段级契约（当前为 `executor-http-v1.md`，frozen）；
+5. `design/components/`：逐组件规格（职责、内部功能、契约、数据、验证）；
+6. `design/scenarios/`：业务场景与验收；
+7. `works/` 最近的工序：正在做什么、验证过什么；
+8. `plan/open-questions.md`、`plan/risks.md`：未决与风险；
+9. `history/decisions/`：为什么这样开始。
 
 ## 上游依据
 

@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-result
 status: planned
-updated: 2026-11-04
+updated: 2026-11-07
 ---
 
 # CMP-result 组件规格
@@ -41,9 +41,10 @@ updated: 2026-11-04
 ### 2.1 组装规则
 
 - `outcome.error` 为空且 `stopReason` 正常 → `status: "succeeded"`，`message` = 最终消息（截断）。
-- `outcome.error.code === "cancelled"` → `status: "cancelled"`，不带部分输出（OQ-013）。
-- `outcome.error.code === "timeout"` → `status: "timeout"`，不带部分输出。
-- 其他 `outcome.error` → `status: "failed"`，`error` 由 `classify` 生成。
+- `outcome.error.code === "cancelled"` → `status: "cancelled"`；不额外抓取部分输出，但**已经产生的输出**按 `maxResultBytes` 截断后填入 `message`。
+- `outcome.error.code === "timeout"` → `status: "timeout"`；同上，有输出就填。
+- 其他 `outcome.error` → `status: "failed"`，`error` 由 `classify` 生成；有输出时 `message` 同样填最后一段可读输出。
+- `message` 空串**只表示确实没有输出**，不表示“失败/取消一律为空”（`RD-04`）。
 - `sessionId` 原样带出；`attemptId` 来自 `ResultContext`，不从 model 输出推断。
 - `usage` 缺失时省略字段，不写 `0`；`null` 与缺失等价。
 - `truncated` 由 `truncate` 结果决定；截断不得影响 `status` / `error` / `sessionId` 等控制字段。
@@ -68,14 +69,23 @@ updated: 2026-11-04
 | runtime | `timeout` | `timeout` | true |
 | gateway | `unreachable`、`rate_limited` | `scheduler` | true |
 | gateway | `unauthorized`、`version_incompatible`、`invalid_request` | `scheduler` | false |
-| gateway | `lease_expired` | `scheduler` | false（丢弃尝试） |
+| gateway | `lease_expired` | `scheduler` | false（丢弃尝试；`NodeResult` 的 `retryable` 见下） |
+| gateway | `invalid_session`、`run_superseded`、`stale_attempt` | `scheduler` | false |
 | 未知 | — | `internal` | false |
+
+取消/超时的 `retryable` 提示（`reason` 闭集）：
+
+| `reason` | `retryable` |
+|---|---|
+| `user_cancel` / `shutdown` / `superseded` / `signal` | false |
+| `paused` / `lease_expired` | **true**（是否重跑由调度器裁决） |
+| `prompt_timeout`（`status=timeout`） | true |
 
 `retryable` 只是**提示**，最终由调度器裁决；client 不据此自动重跑节点。
 
 ### 2.3 截断
 
-- 单位：UTF-8 字节；上限来自配置（M1，OQ-006）。
+- 单位：UTF-8 字节；上限来自 `limits.maxResultBytes`，v1 冻结为 **256 KiB**（Q9）。
 - 超过上限：在边界处回退到完整码点，追加 `\n…[truncated]`，`truncated: true`。
 - 不截断 `status`、`error`、`sessionId`、`attemptId`、`stopReason`。
 - 截断后仍是合法 JSON 字符串；不产生半个码点。
@@ -120,7 +130,7 @@ type ErrorMapping = {
 };
 ```
 
-`NodeResult` 字段由 M1 冻结；本组件只承诺上述语义，不承诺字段名以外的扩展。
+`NodeResult` 字段已按 [`contracts/executor-http-v1.md`](../../contracts/executor-http-v1.md) §6.2 冻结；本组件只承诺上述语义，不承诺字段名以外的扩展。
 
 ## 4. 依赖与分层
 
@@ -156,6 +166,6 @@ type ErrorMapping = {
 
 ## 9. 开放问题
 
-- `NodeResult` 字段与结果大小上限（M1，OQ-006）。
-- 取消/超时是否携带部分输出（OQ-013；当前默认不带）。
+- `NodeResult` 字段与结果大小上限已冻结（契约 §6.2；256 KiB）。
+- 取消/超时**不额外抓取**部分输出，但已产生的输出填入 `message`；不加 partial 字段（OQ-013 已关闭）。
 - `usage` 的单位与缺失语义（M1）。

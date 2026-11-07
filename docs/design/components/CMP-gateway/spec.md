@@ -3,12 +3,12 @@ layer: design
 module: execution-plane
 component: CMP-gateway
 status: planned
-updated: 2026-11-04
+updated: 2026-11-07
 ---
 
 # CMP-gateway 组件规格
 
-> 状态：`planned`。调度器 HTTP 契约的 client 侧防腐层；端点是占位名，字段级契约由 M1 冻结，权威在调度器。
+> 状态：`planned`。调度器 HTTP 契约的 client 侧防腐层。端点与字段已冻结在 [`contracts/executor-http-v1.md`](../../contracts/executor-http-v1.md)（v1，`protocolVersion = 2026-11-07.1`）；本规格只写内部结构与错误映射，不复述字段。
 >
 > 上游：`docs/design/architecture.md` §3.1、§9、§10；`SCN-0001` UC-19–23；`REQ-0002` R-01/R-02/R-08；ACP/租约预研见 `docs/history/works/2026-11-03-dsh-acp-preflight/result.md`。
 
@@ -22,7 +22,8 @@ updated: 2026-11-04
   - 鉴权头、版本协商；
   - 传输层重试、幂等键；
   - 租约计时与过期判定；
-  - 控制事件 `seq`/`ackSeq` 校验与去重。
+  - 控制事件 `seq`/`ackSeq` 校验与去重（按 `(clientId, runId)`）；
+  - `claimRequestId` 生成/重试复用；`cleanupAcks` 排队回执。
 - **不负责 Y**：
   - 业务判定（何时重试节点由调度器裁决）；
   - 结果内容（`CMP-result`）；
@@ -42,31 +43,36 @@ updated: 2026-11-04
 | `RetryPolicy` | 退避 + 抖动；可重试/不可重试分类；上限 |
 | `AuthProvider` | 凭据注入；只加请求头，不写日志 |
 | `VersionNegotiator` | client/DSH 版本上报；兼容窗口校验 |
-| `IdempotencyCache` | `attemptId` 短期去重；重复上报返回既有 ack |
+| `IdempotencyCache` | `claimRequestId` 与 `attemptId` 短期去重；重复上报返回既有 ack |
+| `ClaimIdempotency` | 为每次领取生成并持有 `claimRequestId`；重试复用、成功后换新 |
 | `LeaseTracker` | `expiresAt` 计时；续租；过期标记 |
-| `ControlSeq` | `seq` 单调校验、去重、累计 `ackSeq` |
+| `ControlSeq` | 按 `(clientId, runId)` 的 `seq` 单调校验、去重、累计 `ackSeq` |
+| `CleanupAckQueue` | 暂存待回执的 `CleanupAck`，随下一跳心跳发送 |
 
 ### 2.2 长轮询心跳
 
 - 形态：`heartbeat(state, ackSeq)` 一条常驻请求；服务端有事件立即返回，无事件挂起至 30s 返回空批。
 - 请求到达即续租；连接断开/超时是离线信号；最终以租约过期裁决。
 - 客户端超时 = 服务端挂起 + 余量（建议 35s）；超时后按退避重连，不视为业务失败。
-- 重连即重新 `register`（如需）并补发 `ackSeq`；事件按 `seq` 至少一次、幂等应用。
+- 传输重连**不重新 `register`**：同一 `runId` 直接重试 `heartbeat`/`claim`；只有新进程（新 `runId`）或调度器显式要求时重新注册。
+- 同 run 重连带 `ackSeq`，服务端从 `ackSeq + 1` 补发；新 `runId` 下旧 run 未 ack 事件由服务端丢弃，client 不补发。
 - 心跳循环独立于执行；prompt 长等不得阻塞它。
 
 ### 2.3 幂等与租约
 
-- `claim` / `reportResult` 以 `attemptId` 为幂等键。
+- `claim` 以 client 生成的 `claimRequestId` 为幂等键：响应丢失后的重试复用同一个值，服务端返回**同一个** attempt；`204` 或成功领取后的下一次领取换新值。`attemptId` 是响应值，不作为请求幂等键。
+- `bindSession` / `reportResult` / `renew` 以 `attemptId` 为幂等键。
 - 重复 `reportResult` 返回同一 `Ack`；迟到结果返回 `late_result`，只入审计，不推进流程。
 - `renew` 延长租约；租约过期由 `CMP-executor` 丢弃尝试，gateway 不自行重跑。
 - 幂等缓存有界（默认 256 条，可配）；淘汰后以服务端幂等为准。
 
 ### 2.4 控制事件
 
-- 事件闭集：`cancel` / `pause` / `resume` / `shutdown`。
-- 响应内联 `ControlBatch`；gateway 只做结构校验、`seq` 去重与排序，业务分派交给 CLI/executor。
+- 事件闭集：`cancel` / `pause` / `resume` / `shutdown`（`shutdown` 带 `releaseId`）。
+- 响应内联 `ControlBatch` 与 `cleanupPending`；gateway 只做结构校验、`seq` 去重与排序，业务分派交给 CLI/executor。
+- 事件只作用于 `claimedAt <= issuedAt` 的 attempt；同刻视为命中（取消优先）。超出作用域的事件 ack 并记 `stale`。
 - 已结算事件回 `stale` 并 ack；未知类型 ack + 记录，不崩溃。
-- 下一跳心跳带累计 `ackSeq`；断连补发。
+- 下一跳心跳带累计 `ackSeq` 与待发 `cleanupAcks`；同 run 断连补发。
 
 ### 2.5 版本与鉴权
 
@@ -81,14 +87,17 @@ updated: 2026-11-04
 
 签名见 `CMP-executor` §3.4；本组件补充：
 
-| 方法 | 传输语义 | 错误 |
-|---|---|---|
-| `register` | 幂等注册；鉴权；版本上报 | `unreachable`、`unauthorized`、`version_incompatible` |
-| `heartbeat` | 长轮询；返回 `ControlBatch`；续租 | `unreachable`、`timeout`、`rate_limited` |
-| `claim` | 取绑定本 client 的请求；无则 `null` | `lease_expired`、`rate_limited`、`invalid_request` |
-| `renew` | 延长租约 | `lease_expired`、`unreachable` |
-| `bindSession` | 上报 sessionId；返回技能集 | `stale_attempt`、`invalid_session`、`unreachable` |
-| `reportResult` | 幂等上报；返回 ack | `unreachable`、`late_result`、`invalid_request` |
+| 方法 | 传输语义 | 返回类型 | 错误 |
+|---|---|---|---|
+| `register` | 幂等注册；鉴权；版本上报；带回 `assignments`/`cleanupPending` | `Registration` | `unreachable`、`unauthorized`、`version_incompatible` |
+| `heartbeat` | 长轮询；返回控制与清理待办；续租 | `HeartbeatResult` | `unreachable`、`timeout`、`rate_limited`、`run_superseded` |
+| `claim` | 长轮询；取绑定本 client 的请求；无则 `null` | `NodeRequest \| null` | `lease_expired`、`rate_limited`、`invalid_request`、`run_superseded` |
+| `renew` | 延长尝试租约 | `Lease` | `lease_expired`、`unreachable`、`run_superseded` |
+| `bindSession` | 上报 sessionId；返回技能集（无 `lease`） | `SessionBinding` | `stale_attempt`、`invalid_session`、`unreachable` |
+| `reportResult` | 幂等上报；返回 ack | `Ack` | `unreachable`、`late_result`、`invalid_request` |
+
+- `run_superseded`：本 run 已被新 run 顶掉；停止一切领取与续租，由 CLI 收口后退出 7。
+- 返回类型字段见契约 §6.6；本表只标语义。
 
 ### 3.2 前置/后置/不变量
 
@@ -98,9 +107,11 @@ updated: 2026-11-04
   1. `claim` 只返回绑定本 client 的请求；不抢其他实例。
   2. `reportResult` 同 attempt 幂等；重复/迟到不覆盖。
   3. 心跳请求到达即续租；断开/超时是离线信号，最终以租约过期裁决。
-  4. 控制事件至少一次 + 按 `seq` 幂等；未知类型 ack。
-  5. 鉴权/版本失败停止领取，不无限重试。
-  6. 凭据不进日志/结果/prompt。
+  4. 控制事件按 `(clientId, runId)` 作用域、至少一次 + 按 `seq` 幂等；新 run 不补发旧 run 事件；未知类型 ack。
+  5. 事件只作用于 `claimedAt <= issuedAt` 的 attempt；同刻取消优先。
+  6. `claimRequestId` 在同一幂等窗口内复用；`204`/成功后换新。
+  7. 鉴权/版本失败停止领取，不无限重试；`run_superseded` 收口后退出 7。
+  8. 凭据不进日志/结果/prompt。
 
 ### 3.3 错误模式
 
@@ -115,6 +126,8 @@ updated: 2026-11-04
 | `invalid_request` | 400/422 | 否 | 记录并放弃，不重试 |
 | `stale_attempt` | 旧 attempt 绑定 | 否 | 丢弃该绑定 |
 | `late_result` | 租约过期后的上报 | 否 | 只入审计，不覆盖 |
+| `invalid_session` | session 不属于本 attempt/client 或已关闭 | 否 | 关 session，按 `failed(scheduler)` 收口 |
+| `run_superseded` | 同一 clientId 出现更新的 runId | 否 | 停止领取与续租，收口后退出 7 |
 
 - 传输重试只改变传输结果，不改变业务语义。
 - HTTP 状态码、SDK 类型不得出现在端口错误之外；上层只看到上表。
@@ -172,8 +185,11 @@ interface GatewayAdmin {
 
 ## 9. 开放问题
 
-- 端点/字段/鉴权/版本兼容窗口（M1）。
-- 租约 TTL 与心跳超时余量（OQ-010）。
-- 控制事件批大小与补发窗口（M1）。
+- 端点/字段/鉴权/版本兼容窗口已冻结（契约 v1；Bearer + TLS，兼容窗口 2 minor）。
+- 版本实现细节：`protocolVersion = 2026-11-07.1`，兼容窗口 2 minor。
+- 重连语义已冻结：传输重连不重新 `register`；仅新 `runId` 或调度器显式要求时注册。
+- 租约 TTL 已冻结：客户端 90s、尝试 120s、心跳挂起 30s（OQ-010 已关闭）。
+- `claimRequestId` 幂等保留窗口：`>= 尝试租约 TTL + 结果确认窗口`，建议 10min；属实现参数（OQ-023）。
+- 控制事件批大小与补发窗口未定（M1 观测后补）。
 - 调度器不可达的退出阈值（重试次数/时长，M1）。
-- 容量单位（OQ-011）与 `claim` 参数形态。
+- 容量单位已冻结：实例数 + 同实例串行（OQ-011 已关闭）。

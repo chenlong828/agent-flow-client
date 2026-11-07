@@ -35,7 +35,7 @@ updated: 2026-11-07
 | Q12 旧 run | 停领 + 取消活跃（`superseded`） |
 | Q13–Q20 | 按提案 §15 建议；`claimRequestId`、`SCH-19`、run 作用域、C-04 分档、共享 `AuthProvider`、退出 7、`message` 有输出就填、删除 `bindSession.lease` |
 
-冻结版本拟为 **`2026-11-07.1`**，T1 启动时确认；此后字段名/枚举/错误码变更按 §12 的兼容规则处理。
+冻结版本已定为 **`2026-11-07.1`**；此后字段名/枚举/错误码变更按 §12 的兼容规则处理。
 
 ## 3. 范围
 
@@ -69,15 +69,15 @@ updated: 2026-11-07
 
 | ID | 任务 | 对象 | 产出 | 依赖 | 装载清单 | 验收 | 状态 |
 |---|---|---|---|---|---|---|---|
-| T1 | 建冻结基线：确认 `protocolVersion`、把提案 §13 拆成逐行清单 | 本工序 | `freeze-checklist.md` | 提案 v0.4 | 提案 §13、review、本 brief | 每行有目标文档/章节/负责人 | 进行中 |
-| T2 | 写契约主文档：C-01…C-07、通用约定、错误码、`SCH-01…20`、`CLT-01…13`、七个请求/响应样例 | `design/contracts` | `executor-http-v1.md` | T1 | 本 brief §2、提案 §4–§8 | 七个端点字段齐全；枚举/错误码闭集；无“待定” | 待做 |
-| T3 | 更新 `architecture.md`：交互面、退出码 7、run 作用域、`cleanupPending`、依赖边、数据所有权 | `architecture.md` | §3.1/§3.2/§4.3/§6/§10 | T2 | T2 主文档、`architecture.md` | 与主文档无矛盾；只引用不复述 | 待做 |
-| T4 | 更新 `CMP-executor`：`SchedulerPort` 返回类型、`NodeRequest`、`JournalPort`、`CleanupPending`/`CleanupAck`、`AuthProvider` 定义位置 | `CMP-executor` | §3.4/§3.5 | T2 | T2、`CMP-executor` §3 | 端口签名与主文档一致；无 HTTP 类型泄漏 | 待做 |
-| T5 | 更新 `CMP-gateway`：HTTP 端点、长轮询、`claimRequestId`、错误表、run 作用域、`issuedAt <=`、`cleanupAcks` | `CMP-gateway` | §2/§3.3 | T2/T4 | T2、`CMP-gateway` §2–§3 | 每个错误码有映射；新 run 丢事件有例外说明 | 待做 |
-| T6 | 更新 `CMP-cli`：`serve` 循环、清理对账、`ackSeq` 空洞、退出 7 | `CMP-cli` | §2.4/§2.8 | T2/T5 | T2、`CMP-cli` §2.4/§2.8、提案 §9.3 | 循环顺序与 §9.3 恢复一致；退出码与架构一致 | 待做 |
-| T7 | 更新 `CMP-result`：`message`、错误映射、`retryable` | `CMP-result` | §2.1/§2.2 | T2 | T2、`CMP-result` §2 | 有输出就填；`late_result`/`invalid_session` 映射 | 待做 |
-| T8 | 更新 `CMP-assets`：`C-05`、304、跨 host 不带 token、共享凭据 | `CMP-assets` | §1/§3 | T2/T4 | T2、`CMP-assets` §1/§3 | 不 import gateway；凭据单一来源 | 待做 |
-| T9 | 跨文档一致性 + OQ/计划收口：关闭 OQ-006/010/011/012/013/021，记录 OQ-023 | `plan/` | OQ/roadmap/risks 更新 | T3–T8 | T3–T8、`plan/open-questions.md` | 无旧语义残留；OQ 状态可追溯 | 待做 |
+| T1 | 建冻结基线：确认 `protocolVersion`、把提案 §13 拆成逐行清单 | 本工序 | `freeze-checklist.md` | 提案 v0.4 | 提案 §13、review、本 brief | 每行有目标文档/章节/负责人 | 完成 |
+| T2 | 写契约主文档：C-01…C-07、通用约定、错误码、`SCH-01…20`、`CLT-01…13`、七个请求/响应样例 | `design/contracts` | `executor-http-v1.md` | T1 | 本 brief §2、提案 §4–§8 | 七个端点字段齐全；枚举/错误码闭集；无“待定” | 完成 |
+| T3 | 更新 `architecture.md`：交互面、退出码 7、run 作用域、`cleanupPending`、依赖边、数据所有权 | `architecture.md` | §3.1/§3.2/§4.3/§6/§10 | T2 | T2 主文档、`architecture.md` | 与主文档无矛盾；只引用不复述 | 完成 |
+| T4 | 更新 `CMP-executor`：`SchedulerPort` 返回类型、`NodeRequest`、`JournalPort`、`CleanupPending`/`CleanupAck`、`AuthProvider` 定义位置 | `CMP-executor` | §3.4/§3.5 | T2 | T2、`CMP-executor` §3 | 端口签名与主文档一致；无 HTTP 类型泄漏 | 完成 |
+| T5 | 更新 `CMP-gateway`：HTTP 端点、长轮询、`claimRequestId`、错误表、run 作用域、`issuedAt <=`、`cleanupAcks` | `CMP-gateway` | §2/§3.3 | T2/T4 | T2、`CMP-gateway` §2–§3 | 每个错误码有映射；新 run 丢事件有例外说明 | 完成 |
+| T6 | 更新 `CMP-cli`：`serve` 循环、清理对账、`ackSeq` 空洞、退出 7 | `CMP-cli` | §2.4/§2.8 | T2/T5 | T2、`CMP-cli` §2.4/§2.8、提案 §9.3 | 循环顺序与 §9.3 恢复一致；退出码与架构一致 | 完成 |
+| T7 | 更新 `CMP-result`：`message`、错误映射、`retryable` | `CMP-result` | §2.1/§2.2 | T2 | T2、`CMP-result` §2 | 有输出就填；`late_result`/`invalid_session` 映射 | 完成 |
+| T8 | 更新 `CMP-assets`：`C-05`、304、跨 host 不带 token、共享凭据 | `CMP-assets` | §1/§3 | T2/T4 | T2、`CMP-assets` §1/§3 | 不 import gateway；凭据单一来源 | 完成 |
+| T9 | 跨文档一致性 + OQ/计划收口：关闭 OQ-006/010/011/012/013，OQ-021 记账，记录 OQ-023 | `plan/` | OQ/roadmap/risks 更新 | T3–T8 | T3–T8、`plan/open-questions.md` | 无旧语义残留；OQ 状态可追溯 | 完成 |
 | T10 | 冻结评审：四档记录、人工签字、`bun run check`、归档本工序 | 本工序 | `review.md`/`result.md` | T1–T9 | 全量 + `freeze-checklist.md` | 评审通过；差异清单全绿 | 待做 |
 
 > 任务按文档边界拆，不按“字段批次”拆；同一事实只写在主文档，组件规格链接过去，避免两套真相。

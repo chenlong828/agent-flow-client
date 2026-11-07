@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-assets
 status: planned
-updated: 2026-11-04
+updated: 2026-11-07
 ---
 
 # CMP-assets 组件规格
@@ -17,7 +17,7 @@ updated: 2026-11-04
 - **单元 / 层 / 类型**：组件；L0 基础设施；技术边界（包格式、校验、文件替换）。
 - **业务价值**：保证模型只看到当前节点的技能组合，且失败不留半套；没有它，「替换不是叠加」会散进 executor。
 - **负责 X**：
-  - 技能包获取（本地路径 / HTTP，来源由配置注入）；
+  - 技能包获取（本地路径 / 调度器托管 HTTP，来源由 manifest 注入）；
   - 完整性校验（SHA-256）与安全解包（拒绝路径穿越/符号链接逃逸）；
   - 技能格式校验（顶层 bundle 或 flat `.md`，frontmatter `name`/`description`）；
   - 暂存 → 原子替换 → 回滚；
@@ -28,7 +28,7 @@ updated: 2026-11-04
   - 选择技能集（调度器）；
   - 执行脚本、判断脚本结果（模型/DSH）；
   - 工作区布局校验（`CMP-workspace`）；
-  - 调度器鉴权（下载鉴权走注入配置，不复用 gateway）。
+  - 调度器鉴权策略本身（只消费组合根注入的 `AuthProvider` / `SchedulerEndpoint`，见 §3.5）。
 - **变化轴**：包格式、来源与校验方式。
 - **删除测试**：删掉后「替换不是叠加」「失败不留半套」会散进 executor——真边界。
 
@@ -61,7 +61,10 @@ type SkillPackageRef = {
 ```
 
 - 来源与鉴权由组合根注入；assets 不依赖 `CMP-gateway`。
-- 大小上限可配（M1）；超限 `download_failed`。
+- `C-05` 走调度器托管端点：`GET /api/v1/executor/skill-packages/{packageId}/download`；请求带 `Authorization` 与 `X-Client-Run-Id`，条件请求用 `If-None-Match`（304 视为缓存命中）。
+- **跨 host 不带凭据**：只有 URL host 与 `SchedulerEndpoint.baseUrl` 相同才附 `Authorization`；外链必须短期签名且不带 client token。
+- `packageId` 不可变：同 id 的内容不可替换；内容变更必须换 id。
+- 大小上限取 `limits.maxSkillPackageBytes`（v1 默认 64 MiB）；超限 `download_failed`。
 - 不把包内容写进日志；只记录 name/digest/大小。
 
 ### 2.3 安全解包
@@ -120,7 +123,20 @@ type SkillPackageRef = {
 | `io_error` | 锁/rename/权限/磁盘 | 否（同机） | 节点失败；不 prompt |
 | `skill_set_conflict` | 同容器不同 digest 并发 | 否 | 显式失败；调度器换实例/重排 |
 
-### 3.4 `AssetAdmin`（L0 管理面）
+### 3.4 下载鉴权与共享值对象
+
+```ts
+// 定义在 CMP-executor 的 ports；组合根注入同一实例给 gateway 与 assets
+interface AuthProvider {
+  authorizationFor(url: string): Promise<string | null>;
+}
+```
+
+- token 单一来源：组合根注入同一个 `AuthProvider` / `SchedulerEndpoint`；`CMP-assets` 只读这两个值类型，不 import `CMP-gateway`。
+- 判断规则只有一条：同 `baseUrl` host 才带 `Authorization`；跨 host 一律不带，即使 manifest 给了 URL。
+- 凭据不进日志、不进错误 message、不写进容器。
+
+### 3.5 `AssetAdmin`（L0 管理面）
 
 ```ts
 interface AssetAdmin {
@@ -134,8 +150,8 @@ interface AssetAdmin {
 ## 4. 依赖与分层
 
 - 依赖：`AssetPort` 类型、`CMP-observability`、标准库 `fs` / `path` / `crypto` / `fetch`。
-- 禁止边：不得 import `CMP-cli`、`CMP-executor` 具体实现、`CMP-runtime`、`CMP-gateway`、`CMP-workspace` 具体实现；不得读 journal/store 业务数据。
-- 组合根注入：缓存根、来源凭据、大小上限、日志器。
+- 禁止边：不得 import `CMP-cli`、`CMP-executor` 具体实现、`CMP-runtime`、`CMP-gateway`、`CMP-workspace` 具体实现；只可只读导入 `CMP-executor` ports 的 `AuthProvider`/`SchedulerEndpoint` 值类型；不得读 journal/store 业务数据。
+- 组合根注入：缓存根、`AuthProvider` / `SchedulerEndpoint`、大小上限、日志器。
 
 ## 5. 数据所有权
 
@@ -173,8 +189,8 @@ interface AssetAdmin {
 
 ## 9. 开放问题
 
-- 技能包格式与分发形态（包 URL + 校验和 vs 清单 + 下载端点，M1）。
-- 包/解压大小与文件数上限（M1）。
+- 技能包分发形态已冻结：调度器托管 `C-05` 下载端点，`packageId` 不可变，`limits.maxSkillPackageBytes` 限制大小；外链仅作已评估备选。
+- 解压后文件数上限未定（M1 观测后补）；包大小上限已冻结。
 - 解包实现是否引入依赖；若引入，按 P2 依赖审批。
 - 缓存保留策略与磁盘上限（OQ-005）。
 - 脚本权限是否只限 `scripts/`，还是按 shebang 识别（当前只限 `scripts/`）。

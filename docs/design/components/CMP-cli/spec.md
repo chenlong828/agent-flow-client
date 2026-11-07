@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-cli
 status: planned
-updated: 2026-11-04
+updated: 2026-11-07
 ---
 
 # CMP-cli 组件规格
@@ -92,23 +92,25 @@ type AppConfig = Readonly<{
 
 1. 加载配置、组合根装配。
 2. 清理孤儿：`store.listOrphans()` → `runtime.reapOrphan(orphan)` → `store.clearOrphan(pid)`。
-3. `scheduler.register`；失败按错误类别退避/退出。
-4. 恢复：`executor.recover(instanceId)`：未结算的标记 `abandoned`，已产生结果的按 `attemptId` 幂等重报；重报失败保留 `settled`，下次重试。
-5. 启动**独立**心跳任务：`heartbeat(state, ackSeq)` 长轮询；请求到达即续租；响应内联 `ControlBatch`；下次带累计 `ackSeq`。
-6. 领取循环：有容量时 `claim(capacity)`；无请求则等待下一次心跳/短退避。
-7. 对每个请求：绑定实例 → `executor.executeNode`（异步）；同一实例同一时刻只执行一个 attempt。
-8. 控制事件分派：`cancel` → `executor.cancelInstance`；`pause` → 停止领取 + 取消活跃；`resume` → 恢复领取；`shutdown` → 优雅停。
-9. 实例结束/取消/关闭：`runtime.shutdownInstance` + `workspace.cleanup`（按策略）。
-10. 信号：第一次 SIGINT/SIGTERM → 停止领取 → 取消活跃 → flush journal → 关 session/进程 → 退出；第二次 → 强杀并记录未收口 attempt。
+3. `scheduler.register`（新 `runId`）；返回 `assignments`（可选）与 `cleanupPending`；失败按错误类别退避/退出。
+4. **清理对账**：按 `releaseId` 执行 `cleanupPending`，结果暂存到下一跳 `cleanupAcks`；cleanup 完成前该实例不领取（见契约 `SCH-20`）。
+5. 恢复：`executor.recover(...)`：未结算的标记 `abandoned`，已产生结果的按 `attemptId` 幂等重报；无 `assignments` 时用 `JournalPort.listInstances()` / `pendingAll()` 枚举；重报失败保留 `settled`，下次重试。
+6. 启动**独立**心跳任务：`heartbeat(HeartbeatRequest)` 长轮询；请求到达即续租；响应内联 `ControlBatch` + `cleanupPending`；下次带累计 `ackSeq` 与 `cleanupAcks`。
+7. 领取循环：有容量时 `claim(capacity)`（`claimRequestId` 由 gateway 生成/复用）；无请求则等待下一次心跳/短退避。
+8. 对每个请求：绑定实例 → `executor.executeNode`（异步）；同一 `instanceId` 同一时刻只执行一个 attempt（`SCH-19`）。
+9. 控制事件分派：`cancel` → `executor.cancelInstance`；`pause` → 停止领取 + 取消活跃；`resume` → 恢复领取；`shutdown(instanceId, cleanup, releaseId)` → 取消活跃、释放、清理并按 `releaseId` 回执；无 `instanceId` → 优雅停整个 client。
+10. 实例结束/取消/关闭：`runtime.shutdownInstance` + `workspace.cleanup`（按策略）。
+11. 信号：第一次 SIGINT/SIGTERM → 停止领取 → 取消活跃 → flush journal → 关 session/进程 → 退出；第二次 → 强杀并记录未收口 attempt。
 
 - 心跳与执行**不共享定时器/队列**；prompt 再长也不阻塞心跳。
-- 容量单位：实例数（OQ-011；M1 再确认）。
-- 同一实例不并发执行；client 可承载多实例，受容量限制。
+- 容量单位：实例数 + 同实例串行（契约 §11 方案 A，`SCH-19`）。
+- 同一实例不并发执行；client 可承载多实例，受 `maxInstances` 限制。
+- `409 run_superseded`：停止领取、取消活跃、收口后退出 7，不再重连。
 
 ### 2.5 `run` 单次
 
 1. 读取 `--request <file>` JSON，最小校验 `attemptId` / `instanceId` / `workspacePath` / `prompt` / `skillSet`；非法退出 2。
-2. 用 `LocalSchedulerAdapter` 实现 `SchedulerPort`：`bindSession` 返回请求内联的技能集；`reportResult` 捕获结果；其余方法不用。
+2. 用 `LocalSchedulerAdapter` 实现 `SchedulerPort`：`bindSession` 返回请求内联的技能集；`reportResult` 捕获结果；`register`/`heartbeat` 返回最小合法值；`claim` 只返回一次本地请求；不产生调度器 I/O。
 3. 调用 `executor.executeNode`；stdout 输出一份 `NodeResult` JSON；日志只走 stderr。
 4. 退出码：结果 `succeeded` → 0；`failed` / `cancelled` / `timeout` → 1；配置/用法 2；运行时 4；工作区/资产 5。
 
@@ -153,6 +155,7 @@ config → observability → store → workspace → assets → runtime → gate
 | `4` | DSH/运行时失败（含 home 不可创建/不可写） |
 | `5` | 工作区或资产失败 |
 | `6` | 调度器不可达（持续重试后） |
+| `7` | `run_superseded`：本 run 被更新 run 顶掉 |
 | `130` | SIGINT 优雅退出 |
 | `143` | SIGTERM 优雅退出 |
 
@@ -167,11 +170,11 @@ config → observability → store → workspace → assets → runtime → gate
 - **前置**：无。
 - **后置**：按命令产生 stdout/stderr 与退出码；`run` 的 stdout 必须是单个可解析的 `NodeResult` JSON；日志不混入 stdout。
 - **不变量**：配置启动时一次加载并冻结；`serve` 与 `run` 共用执行内核；`doctor` 不依赖网络（S0）。
-- **错误模式**：配置错误 2、鉴权/版本 3、运行时 4、工作区/资产 5、调度器不可达 6；不静默回退。
+- **错误模式**：配置错误 2、鉴权/版本 3、运行时 4、工作区/资产 5、调度器不可达 6、`run_superseded` 7；不静默回退。
 
 ### 3.2 对 `CMP-executor` 的调用
 
-- 只调用 `executeNode`、`cancelInstance`、`recover`。
+- 只调用 `executeNode`、`cancelInstance`、`recover`；`cleanupPending` 由 CLI 对账，不穿透 executor。
 - 不直接调用 L0 组件完成执行；L0 只在组合根与 `doctor` 编排中出现。
 - `serve` 不解释 `NodeResult` 业务含义；`run` 原样输出。
 
@@ -232,7 +235,7 @@ config → observability → store → workspace → assets → runtime → gate
 ## 9. 开放问题
 
 - 除 `[acp].dsh_home` 外的配置键与优先级（OQ-014，M1）。
-- 容量单位：实例数还是 session 数（OQ-011）。
+- 容量单位已冻结：实例数 + 同实例串行（OQ-011 已关闭，契约 §11）。
 - `run` 的退出码 `1` 与 SIGTERM `143` 需在架构 §3.2 同步（本次已补，待确认）。
 - 打包态 `process.execPath` 与源码态包根解析需在 S0 实测（REQ-0001 待确认项）。
 - 权限策略默认值（`allow` / `deny`）与是否可配置，需在 S0 定。
