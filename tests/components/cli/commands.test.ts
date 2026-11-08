@@ -56,10 +56,10 @@ describe("cli 命令面", () => {
     expect(result.err).toContain("未知选项");
   });
 
-  test("serve 校验配置后返回 S1 未实现", async () => {
+  test("serve 缺 scheduler.url 时返回 2 并提示", async () => {
     const result = await run(["serve"]);
     expect(result.code).toBe(2);
-    expect(result.err).toContain("S1");
+    expect(result.err).toContain("[scheduler].url");
   });
 
   test("run 缺 --request 返回 2", async () => {

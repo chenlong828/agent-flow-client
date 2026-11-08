@@ -158,3 +158,73 @@ describe("TC-CONFIG-004 非法配置不回退", () => {
     await chmod(path, 0o700);
   });
 });
+
+describe("S1 scheduler 配置", () => {
+  test("https url 与 token 解析；url 归一化去尾斜杠", async () => {
+    const { runDir, homeDir } = await fixture(`
+[scheduler]
+url = "https://sched.example.com/"
+token = "t-from-config"
+`);
+    const config = await loadConfig({ runDir, env: {}, homeDir });
+    expect(config.scheduler.url).toBe("https://sched.example.com");
+    expect(config.scheduler.token).toBe("t-from-config");
+    expect(config.scheduler.tokenSource).toBe("config");
+    expect(config.scheduler.protocolVersion).toBe("2026-11-07.1");
+  });
+
+  test("AF_SCHEDULER_TOKEN 覆盖配置 token", async () => {
+    const { runDir, homeDir } = await fixture(`
+[scheduler]
+url = "https://sched.example.com"
+token = "from-config"
+`);
+    const config = await loadConfig({ runDir, env: { AF_SCHEDULER_TOKEN: "from-env" }, homeDir });
+    expect(config.scheduler.token).toBe("from-env");
+    expect(config.scheduler.tokenSource).toBe("env");
+  });
+
+  test("loopback 允许 http 且 token 可空", async () => {
+    const { runDir, homeDir } = await fixture(`
+[scheduler]
+url = "http://127.0.0.1:8080"
+`);
+    const config = await loadConfig({ runDir, env: {}, homeDir });
+    expect(config.scheduler.url).toBe("http://127.0.0.1:8080");
+    expect(config.scheduler.token).toBeNull();
+  });
+
+  test("非 loopback 的 http 退出 2", async () => {
+    const { runDir, homeDir } = await fixture(`
+[scheduler]
+url = "http://sched.example.com"
+`);
+    const error = await loadConfig({ runDir, env: {}, homeDir }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ConfigError);
+    expect((error as ConfigError).code).toBe("scheduler_insecure_url");
+    expect((error as ConfigError).exitCode).toBe(2);
+  });
+
+  test("非 loopback 缺 token 退出 2", async () => {
+    const { runDir, homeDir } = await fixture(`
+[scheduler]
+url = "https://sched.example.com"
+`);
+    const error = await loadConfig({ runDir, env: {}, homeDir }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ConfigError);
+    expect((error as ConfigError).code).toBe("scheduler_token_missing");
+    expect((error as ConfigError).exitCode).toBe(2);
+  });
+
+  test("非法 url 退出 2", async () => {
+    const { runDir, homeDir } = await fixture(`
+[scheduler]
+url = "not a url"
+token = "t"
+`);
+    const error = await loadConfig({ runDir, env: {}, homeDir }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ConfigError);
+    expect((error as ConfigError).code).toBe("config_invalid");
+    expect((error as ConfigError).exitCode).toBe(2);
+  });
+});

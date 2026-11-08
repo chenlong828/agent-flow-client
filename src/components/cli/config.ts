@@ -20,6 +20,12 @@ export type AppConfig = Readonly<{
   state: Readonly<{ root: string; source: Extract<ConfigSource, "cli" | "config" | "default"> }>;
   logging: Readonly<{ level: LogLevel; source: Extract<ConfigSource, "cli" | "config" | "default"> }>;
   capacity: Readonly<{ maxInstances: number; source: "config" | "default" }>;
+  scheduler: Readonly<{
+    url: string | null;
+    token: string | null;
+    tokenSource: "env" | "config" | "none";
+    protocolVersion: string;
+  }>;
 }>;
 
 export type ConfigFlags = {
@@ -186,6 +192,45 @@ function validatePaths(acp: AppConfig["acp"], state: AppConfig["state"], homeDir
   }
 }
 
+const PROTOCOL_VERSION = "2026-11-07.1";
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]);
+
+function isLoopbackUrl(url: URL): boolean {
+  return LOOPBACK_HOSTS.has(url.hostname);
+}
+
+function resolveScheduler(table: RawTable, env: Record<string, string | undefined>): AppConfig["scheduler"] {
+  const rawUrl = readString(table, "url", "[scheduler].url");
+  const configToken = readString(table, "token", "[scheduler].token");
+  const envToken = env.AF_SCHEDULER_TOKEN !== undefined && env.AF_SCHEDULER_TOKEN.trim() !== "" ? env.AF_SCHEDULER_TOKEN : undefined;
+  const token = envToken ?? configToken ?? null;
+  const tokenSource = envToken !== undefined ? "env" : configToken !== undefined ? "config" : "none";
+
+  if (rawUrl === undefined) {
+    if (token !== null) throw new ConfigError("config_invalid", "[scheduler].token 已配置但 [scheduler].url 为空", 2);
+    return { url: null, token: null, tokenSource: "none", protocolVersion: PROTOCOL_VERSION };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new ConfigError("config_invalid", `[scheduler].url 不是合法 URL：${rawUrl}`, 2);
+  }
+  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLoopbackUrl(parsed))) {
+    throw new ConfigError("scheduler_insecure_url", "scheduler.url 必须 HTTPS（http 仅允许 loopback）", 2);
+  }
+  if (token === null && !isLoopbackUrl(parsed)) {
+    throw new ConfigError("scheduler_token_missing", "非 loopback 的 scheduler 必须配置 token（AF_SCHEDULER_TOKEN 或 [scheduler].token）", 2);
+  }
+  return {
+    url: parsed.toString().replace(/\/$/, ""),
+    token,
+    tokenSource,
+    protocolVersion: PROTOCOL_VERSION,
+  };
+}
+
 function resolveFlags(flags: ConfigFlags): { permission?: PermissionMode } {
   if (flags.permission === undefined) return {};
   if (!PERMISSIONS.includes(flags.permission as PermissionMode)) {
@@ -217,6 +262,7 @@ export async function loadConfig(options: {
   const state = resolveState(asTable(parsed.state, "[state]"), flags, runDir);
   const logging = resolveLogging(asTable(parsed.logging, "[logging]"), flags);
   const capacity = resolveCapacity(asTable(parsed.capacity, "[capacity]"));
+  const scheduler = resolveScheduler(asTable(parsed.scheduler, "[scheduler]"), env);
 
   validatePaths(acp, state, homeDir);
   await ensureDirectory(acp.dshHome, "home_create_failed", "DSH_HOME");
@@ -229,6 +275,7 @@ export async function loadConfig(options: {
     state: Object.freeze(state),
     logging: Object.freeze(logging),
     capacity: Object.freeze(capacity),
+    scheduler: Object.freeze(scheduler),
   });
 }
 

@@ -38,7 +38,7 @@ updated: 2026-11-08
 
 ## 下一步工作计划
 
-> 当前活跃工序：`docs/works/2026-11-06-observability-http/`（观测 HTTP P1 设计稿，独立轨道）；S0 已收口归档（`docs/history/works/2026-11-08-s0-local-loop/`），M1 已归档。
+> 当前活跃工序：`docs/works/2026-11-08-s1-contract-skeleton/`（S1 契约骨架，批次 2）；观测 HTTP P1 设计稿独立轨道；S0/M1 已归档。
 
 ### 批次 1：S0 本地执行闭环（已完成，2026-11-08）
 
@@ -59,7 +59,7 @@ updated: 2026-11-08
 
 收口：6 个任务全部落地，`SCN-0002` 3+1 与 `SCN-0001` 的 S0 用例通过，R-03/R-04 通过，真机 prompt 成功；`TC-EXEC-002`（顺序两节点）与 `serve` 转 S1。见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
 
-### 批次 2：S1 契约骨架（与批次 1 并行）
+### 批次 2：S1 契约骨架（进行中，2026-11-08）
 
 目标：接桩调度器，跑通单节点全链路。
 

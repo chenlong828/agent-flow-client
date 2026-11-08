@@ -112,7 +112,11 @@ export async function main(argv: readonly string[], deps: CliDeps): Promise<numb
 
     if (args.command === "doctor") return await doctorCommand(args, config, deps);
     if (args.command === "serve") {
-      io.err("serve 尚未实现：S0 只校验配置，S1 接入调度器与租约。");
+      if (config.scheduler.url === null) {
+        io.err("serve 需要 [scheduler].url；参考 docs/works/2026-11-08-s1-contract-skeleton/brief.md");
+        return ExitCode.usage;
+      }
+      io.err("serve 主循环尚未接入（T6）。");
       return ExitCode.usage;
     }
     if (args.command === "run") return await runCommand(args, config, deps);

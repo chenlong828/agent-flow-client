@@ -77,6 +77,18 @@ function configChecks(config: AppConfig, homeDir: string): CheckResult[] {
       status: "pass",
       detail: `${config.logging.level}（来源 ${config.logging.source}）`,
     },
+    {
+      id: "config.scheduler",
+      title: "调度器地址",
+      status: config.scheduler.url === null ? "warn" : "pass",
+      detail: config.scheduler.url ?? "未配置（serve 需要）",
+    },
+    {
+      id: "scheduler.token",
+      title: "调度器 token",
+      status: config.scheduler.token === null ? "warn" : "pass",
+      detail: config.scheduler.token === null ? "未配置（仅 loopback 开发可用）" : `已配置（来源 ${config.scheduler.tokenSource}）`,
+    },
   ];
 }
 
