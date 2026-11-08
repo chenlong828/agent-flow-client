@@ -2,13 +2,13 @@
 layer: design
 module: execution-plane
 component: CMP-gateway
-status: planned
+status: active
 updated: 2026-11-07
 ---
 
 # CMP-gateway 组件规格
 
-> 状态：`planned`。调度器 HTTP 契约的 client 侧防腐层。端点与字段已冻结在 [`contracts/executor-http-v1.md`](../../contracts/executor-http-v1.md)（v1，`protocolVersion = 2026-11-07.1`）；本规格只写内部结构与错误映射，不复述字段。
+> 状态：`active`（2026-11-08，S1 落地）。传输、鉴权、版本、重试、claim 幂等、ackSeq、清理回执与错误映射已实现；真实调度器联调待调度器侧可用。端点与字段已冻结在 [`contracts/executor-http-v1.md`](../../contracts/executor-http-v1.md)（v1，`protocolVersion = 2026-11-07.1`）；本规格只写内部结构与错误映射，不复述字段。
 >
 > 上游：`docs/design/architecture.md` §3.1、§9、§10；`SCN-0001` UC-19–23；`REQ-0002` R-01/R-02/R-08；ACP/租约预研见 `docs/history/works/2026-11-03-dsh-acp-preflight/result.md`。
 
@@ -181,8 +181,9 @@ interface GatewayAdmin {
 ## 8. 预算与单独运行
 
 - 预算：目标 ≤30k token，上限 120k。
-- 单独运行：`bun test tests/components/gateway/`（落地后创建）；用 Bun `serve` 桩调度器，不连真实服务。
-- 状态：`planned`；无入口符号；S1 才需要实现，S0 用 `LocalSchedulerAdapter`。
+- 单独运行：`bun test tests/components/gateway/`；用 `tests/support/stub-scheduler.ts` 桩，不连真实服务。
+- 实现入口（S1）：`src/components/gateway/gateway.ts#HttpScheduler`、`transport.ts#HttpTransport`、`errors.ts`、`retry.ts`、`state.ts`、`wire.ts`、`identity.ts`；测试 `tests/components/gateway/`、`tests/scenarios/s1-serve.test.ts`。
+- 状态：`active`（真实调度器联调待调度器侧）。
 
 ## 9. 开放问题
 

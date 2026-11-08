@@ -48,8 +48,6 @@ docs/
 │   │   ├── brief.md
 │   │   ├── result.md
 │   │   └── probe/                          ← 空会话探针
-│   ├── 2026-11-08-s1-contract-skeleton/     ← S1 契约骨架（进行中）
-│   │   └── brief.md
 │   ├── 2026-11-06-observability-http/      ← 只读观测 HTTP（P1 设计稿，附评已处置）
 │   │   ├── brief.md
 │   │   ├── proposal.md                     ← /api/v1/observability：日志、SSE、DSH session 归档
@@ -57,6 +55,9 @@ docs/
 │   │   └── result.md
 └── history/                                ← 记忆：怎么走到这里的
     ├── works/                              ← 已归档工序（frozen）
+    │   ├── 2026-11-08-s1-contract-skeleton/ ← S1 契约骨架（已收口）
+    │   │   ├── brief.md
+    │   │   └── result.md
     │   ├── 2026-11-08-s0-local-loop/       ← S0 本地执行闭环（已收口）
     │   │   ├── brief.md
     │   │   └── result.md

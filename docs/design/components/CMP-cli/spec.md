@@ -8,7 +8,7 @@ updated: 2026-11-08
 
 # CMP-cli 组件规格
 
-> 状态：`active`（2026-11-08，T1 落地）。命令面、配置加载/冻结、退出码、组合根骨架与 `doctor` 已实现；`serve` 循环与执行内核在 S1/T5 接入。
+> 状态：`active`（2026-11-08，S1 落地）。命令面、配置、`run`、`doctor`、`serve` 主循环与退出码已实现；真实调度器联调待调度器侧。
 >
 > 上游：`docs/design/architecture.md` §3、§4、§10；`SCN-0002`；`REQ-0001`；`REQ-0002` R-04/R-09/R-10；配置键清单见 OQ-014。
 
@@ -247,8 +247,8 @@ config → observability → store → workspace → assets → runtime → gate
 
 - 预算：目标 ≤35k token，上限 120k。
 - 单独运行：`bun test tests/components/cli/`；用临时目录 + 假 L0 端口。
-- 实现入口（T1）：`src/components/cli/main.ts#main`、`config.ts#loadConfig`、`run-dir.ts#resolveRunDir`、`args.ts#parseArgs`、`doctor-checks.ts#collectDoctorChecks`、`exit-codes.ts#ExitCode`；测试 `tests/components/cli/`。
-- 状态：`active`（`serve` 循环与执行接线待 S1/T5）。
+- 实现入口（T1/S1）：`src/components/cli/main.ts#main`、`config.ts#loadConfig`、`run-dir.ts#resolveRunDir`、`args.ts#parseArgs`、`doctor-checks.ts#collectDoctorChecks`、`exit-codes.ts#ExitCode`、`run.ts#runOnce`、`serve.ts#ServeRunner`、`serve-compose.ts#composeForServe`；测试 `tests/components/cli/`、`tests/scenarios/s1-serve.test.ts`。
+- 状态：`active`。
 
 ## 9. 开放问题
 

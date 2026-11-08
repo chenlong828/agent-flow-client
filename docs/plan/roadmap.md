@@ -10,7 +10,7 @@ updated: 2026-11-08
 ## 当前状态
 
 - S0 本地执行闭环已落地（2026-11-08）：`run`/`doctor`/`version` 可用，`serve` 待 S1；9 个组件除 `CMP-gateway` 外均已 `active`。见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
-- 当前目标：S1 契约骨架（桩调度器 + `CMP-gateway` + `serve` 主循环）；`TC-EXEC-002`（顺序两节点）随 S1 一起补。
+- 当前目标：S2 线性多节点与并发；真实调度器联调与 `TC-EXEC-002`（顺序两节点）一并补。
 - 已完成 DSH ACP 对接预研并归档：启动方式、协议序列、权限/取消/关闭边界与本机版本基线，见 `docs/history/works/2026-11-03-dsh-acp-preflight/result.md`。
 - 已完成 S0 P0 阻断项验证（12 项 11 通过）：技能根/格式、写入时机、每节点替换、根隔离、脚本权限、并发、项目根均成立；崩溃遗留孤儿进程（S0-11）未通过，见 `docs/works/2026-11-03-s0-acp-verification/result.md`。
 - 已完成 ACP 会话记录与跨 profile 可见性调研：session 记录按 `DSH_HOME` 归属、不按 profile；共用 home 会被 web/desktop 的 `session/list` 读取，首次初始化还会被 workspace bootstrap 采纳；专用 home 才能满足「desktop/web 看不到」，见 `docs/works/2026-11-03-acp-session-records/result.md`。
@@ -38,7 +38,7 @@ updated: 2026-11-08
 
 ## 下一步工作计划
 
-> 当前活跃工序：`docs/works/2026-11-08-s1-contract-skeleton/`（S1 契约骨架，批次 2）；观测 HTTP P1 设计稿独立轨道；S0/M1 已归档。
+> 当前活跃工序：`docs/works/2026-11-06-observability-http/`（观测 HTTP P1 设计稿，独立轨道）；S0/S1/M1 已归档。
 
 ### 批次 1：S0 本地执行闭环（已完成，2026-11-08）
 
@@ -59,7 +59,9 @@ updated: 2026-11-08
 
 收口：6 个任务全部落地，`SCN-0002` 3+1 与 `SCN-0001` 的 S0 用例通过，R-03/R-04 通过，真机 prompt 成功；`TC-EXEC-002`（顺序两节点）与 `serve` 转 S1。见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
 
-### 批次 2：S1 契约骨架（进行中，2026-11-08）
+S1 收口（2026-11-08）：7 个任务全部落地，`serve` 接桩调度器单节点全链路通过，S1 门禁 8 条有测试；真实调度器联调与 `TC-EXEC-002` 留 S2。见 `docs/history/works/2026-11-08-s1-contract-skeleton/result.md`。
+
+### 批次 2：S1 契约骨架（已完成，2026-11-08）
 
 目标：接桩调度器，跑通单节点全链路。
 

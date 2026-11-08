@@ -34,7 +34,7 @@ async function fixture(options: { stubToken?: string; configToken?: string } = {
   const stub = new StubScheduler({ token: stubToken });
   await writeFile(
     join(runDir, ".config"),
-    `[acp]\ndsh_home = "dsh-home"\npermission = "allow"\n[state]\nroot = "state"\n[logging]\nlevel = "error"\n[scheduler]\nurl = "${stub.url}"\ntoken = "${configToken}"\n`,
+    `[acp]\ndsh_home = "${join(runDir, "dsh-home")}"\npermission = "allow"\n[state]\nroot = "${join(runDir, "state")}"\n[logging]\nlevel = "error"\n[scheduler]\nurl = "${stub.url}"\ntoken = "${configToken}"\n`,
   );
   const request: NodeRequest = {
     attemptId: "01930000-0000-7000-8000-000000000401",
@@ -81,9 +81,9 @@ function spawnServe(runDir: string, env: Record<string, string | undefined>) {
   );
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 15_000): Promise<void> {
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 15_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (!predicate() && Date.now() < deadline) await Bun.sleep(25);
+  while (!(await predicate()) && Date.now() < deadline) await Bun.sleep(25);
 }
 
 describe("S1 serve 主循环（桩调度器）", () => {
@@ -170,10 +170,16 @@ describe("S1 serve 主循环（桩调度器）", () => {
       AF_NODE_BIN: process.execPath,
       HUNDSUN_PUBLIC_API_KEY: "k",
     });
-    await waitFor(() => stub.requests.some((item) => item.path.endsWith("/lease")) || stub.requests.some((item) => item.path.endsWith("/session")));
+    await waitFor(() => stub.requests.some((item) => item.path.endsWith("/session")));
     stub.enqueueEvent({ type: "cancel", instanceId: request.instanceId, reason: "user_cancel", issuedAt: new Date().toISOString() });
-    await waitFor(() => stub.requests.some((item) => item.path.endsWith("/result")));
-    const report = stub.requests.find((item) => item.path.endsWith("/result"));
+    await waitFor(() =>
+      stub.requests.some(
+        (item) => item.path.endsWith("/result") && (item.body.result as { status?: string } | undefined)?.status === "cancelled",
+      ),
+    );
+    const report = stub.requests.find(
+      (item) => item.path.endsWith("/result") && (item.body.result as { status?: string } | undefined)?.status === "cancelled",
+    );
     expect((report?.body.result as { status: string } | undefined)?.status).toBe("cancelled");
     stub.enqueueEvent({ type: "shutdown", issuedAt: new Date().toISOString() });
     expect(await child.exited).toBe(0);
@@ -193,6 +199,49 @@ describe("S1 serve 主循环（桩调度器）", () => {
     await waitFor(() => stub.requests.some((item) => Array.isArray(item.body.cleanupAcks) && (item.body.cleanupAcks as unknown[]).length > 0));
     const heartbeat = stub.requests.find((item) => Array.isArray(item.body.cleanupAcks) && (item.body.cleanupAcks as unknown[]).length > 0);
     expect((heartbeat?.body.cleanupAcks as { releaseId: string }[])[0]?.releaseId).toBe("release-1");
+    stub.enqueueEvent({ type: "shutdown", issuedAt: new Date().toISOString() });
+    expect(await child.exited).toBe(0);
+    stub.server.stop(true);
+  }, 30_000);
+});
+
+describe("S1 恢复与重报", () => {
+  test("server 已有 settled 未上报：重启后 recover 重报 accepted", async () => {
+    const { runDir, stub, request } = await fixture();
+    const { FileStore } = await import("../../src/components/store/store.ts");
+    const store = new FileStore({ stateRoot: join(runDir, "state") });
+    await store.init();
+    await store.append({
+      v: 1,
+      ts: "2026-11-08T00:00:00.000Z",
+      attemptId: request.attemptId,
+      instanceId: request.instanceId,
+      nodeId: request.nodeId,
+      state: "settled",
+      result: {
+        attemptId: request.attemptId,
+        status: "succeeded",
+        message: "RECOVERED",
+        truncated: false,
+        stopReason: "end_turn",
+        usage: null,
+        error: null,
+      },
+    });
+    const child = spawnServe(runDir, {
+      DSH_BIN: fakeAcp,
+      AF_NODE_BIN: process.execPath,
+      HUNDSUN_PUBLIC_API_KEY: "k",
+    });
+    await waitFor(() => stub.requests.some((item) => item.path.endsWith("/result")));
+    const report = stub.requests.find((item) => item.path.endsWith("/result"));
+    expect((report?.body.result as { message: string } | undefined)?.message).toBe("RECOVERED");
+    await waitFor(async () => {
+      const journal = await readFile(join(runDir, "state", "journal.jsonl"), "utf8").catch(() => "");
+      return journal.includes('"state":"reported"');
+    });
+    const journal = await readFile(join(runDir, "state", "journal.jsonl"), "utf8");
+    expect(journal).toContain('"state":"reported"');
     stub.enqueueEvent({ type: "shutdown", issuedAt: new Date().toISOString() });
     expect(await child.exited).toBe(0);
     stub.server.stop(true);

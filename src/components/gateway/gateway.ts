@@ -146,10 +146,10 @@ export class HttpScheduler implements SchedulerPort {
         { timeoutMs: this.#heartbeat.clientTimeoutMs },
       );
       const parsed = parseHeartbeat(result.body);
-      this.#control.apply(parsed.control.seq);
+      const events = this.#control.accept(parsed.control.seq, parsed.control.events);
       this.#assignmentsVersion = parsed.assignmentsVersion;
       if (parsed.nextPollAfterMs > 0) this.#heartbeat.nextPollAfterMs = parsed.nextPollAfterMs;
-      return parsed;
+      return { ...parsed, control: { seq: parsed.control.seq, events } };
     } catch (error) {
       this.#queue.requeue(pending);
       throw error;

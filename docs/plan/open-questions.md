@@ -24,11 +24,11 @@ updated: 2026-11-08
 | OQ-013 | 取消/超时强杀前是否抓取已产生的部分输出？ | 结果完整性与排障 | **已关闭**（2026-11-07 冻结）：不额外抓取，但已产生的输出填入 `message`（截断）；空串只表示确实没有输出；不加 partial 字段（`RD-04`）。 |
 | OQ-014 | 除 `[acp].dsh_home` 外，配置键清单与优先级何时冻结？ | `SCN-0002` 的范围、`CMP-cli` 规格与部署文档 | **已关闭**（2026-11-08）：`[acp].dsh_home`/`permission`、`[state].root`、`[logging].level`、`[capacity].max_instances`；优先级 CLI flag > `DSH_HOME` > config > default。`stateRoot` 默认 `<runDir>/.agent-flow-client`，不可写退出 4，不静默回退。见 `CMP-cli` §2.3。 |
 | OQ-015 | `run` 的非成功节点结果是否用退出码 `1`，SIGTERM 是否用 `143`？ | CLI 契约、S0 测试与 CI 判定 | **已关闭**（2026-11-08 用户确认）：按 `architecture.md` §3.2 冻结 `0/1/2/3/4/5/6/7/130/143`；`run` 非成功 `NodeResult` 用 `1`，SIGINT `130`、SIGTERM `143`。见 `docs/history/works/2026-11-08-s0-local-loop/brief.md` §2.2。 |
-| OQ-016 | 迟到结果用 `409 late_result` 还是 `200 disposition=late`？ | 结果重试、审计与调度器状态推进 | 提案推荐 `409`（与 `CMP-gateway` 现有错误表一致），client 按终态处理、只审计；见提案 §15 Q3。 |
-| OQ-017 | 启动恢复是否由调度器下发实例绑定（`register.assignments`）？ | 崩溃后容器校验/清理与恢复路径 | 提案推荐可选下发；client 无则按 journal 恢复，不阻塞领取；见提案 §5.1/§15 Q4。 |
-| OQ-018 | 技能包分发通道：调度器托管端点还是签名外链？ | 下载鉴权、缓存与凭据泄漏 | 提案推荐调度器托管 `GET /api/v1/executor/skill-packages/{packageId}/download`；外链必须短期签名且不带 client token；见提案 §5.5/§15 Q6。 |
-| OQ-019 | `claim` 是否长轮询？空闲客户端的轮询形态？ | 领取延迟、服务端连接数与空转 | 提案推荐 `claim` 长轮询 20s，`204` 可带 `Retry-After`；见提案 §4.6/§15 Q5。 |
-| OQ-020 | 客户端认证方式与轮换；`run_superseded` 的退出码？ | 安全、双跑 fencing 与 CLI 契约 | 提案推荐 Bearer + TLS、轮换下一版；`run_superseded` 按评审建议新增退出码 7（不复用 2），待 M1 确认；见提案 §4.2/§15 Q7、Q18。 |
+| OQ-016 | 迟到结果用 `409 late_result` 还是 `200 disposition=late`？ | 结果重试、审计与调度器状态推进 | **已关闭**（S1 实现按 `409`）：`HttpScheduler.reportResult` 收到 `late_result`/`stale_attempt` 返回 closed ack 并审计，不重试；见 `docs/history/works/2026-11-08-s1-contract-skeleton/result.md`。 |
+| OQ-017 | 启动恢复是否由调度器下发实例绑定（`register.assignments`）？ | 崩溃后容器校验/清理与恢复路径 | **已关闭**（S1）：`assignments` 可选，client 无则按 journal 恢复；`cleanupPending` 独立处理。 |
+| OQ-018 | 技能包分发通道：调度器托管端点还是签名外链？ | 下载鉴权、缓存与凭据泄漏 | **已关闭**（S1）：`C-05` 托管端点已实现；支持相对/绝对 URL，跨 host 不带 token，按 digest 缓存；见 `CMP-assets` 实现入口。 |
+| OQ-019 | `claim` 是否长轮询？空闲客户端的轮询形态？ | 领取延迟、服务端连接数与空转 | **已关闭**（S1）：`claim` 20s 长轮询、客户端 25s 超时、`204` 视为无活；实现见 `CMP-gateway`。 |
+| OQ-020 | 客户端认证方式与轮换；`run_superseded` 的退出码？ | 安全、双跑 fencing 与 CLI 契约 | **已关闭**（S1）：Bearer + TLS 校验；`run_superseded` 退出 7（注册/心跳/领取均收口）；轮换留下一版。 |
 | OQ-021 | 「已上报但服务端未确认」的结果在 journal 保留多久？ | 磁盘占用、凭据吊销后的滞留与可重报窗口 | 评审 `H-01` 提出；属 client 内部存储策略，不改调度器契约。M1 后仍开放：S1 按「attempt 未重派且未关闭即可重报」实现，保留窗口在 S1 期间按实测磁盘占用定；不阻塞契约。 |
 | OQ-022 | 只读观测 HTTP 的绑定地址、端口、token 与调度器发现方式？ | 调度器能否访问、原始 session 暴露面、部署方式 | P1 设计稿：默认 `0.0.0.0:17890`（CLI 可改）；token 可选，空则不鉴权并告警；v1 调度器侧静态配置 base URL，不自动发现。调度器附评 `OB-01` 建议 v1 只 loopback；当前按产品决策保留 `0.0.0.0` 并记为已接受风险，P1 确认门签字。见 `docs/works/2026-11-06-observability-http/review.md`。 |
 | OQ-023 | `claimRequestId` 幂等记录的保留窗口取多少？ | 窗口过短会产生影子租约（丢包重试多租一个 attempt） | **已定（实现参数，不进对外契约）**：`>= 尝试租约 TTL + 结果确认窗口`，建议 10min。M1 起写入 `CMP-gateway` 实现说明；调度器侧同步。 |

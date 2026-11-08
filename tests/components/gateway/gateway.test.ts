@@ -102,6 +102,16 @@ describe("心跳与控制", () => {
     await stub.close();
   });
 
+  test("控制 seq 去重：重复批不再应用", async () => {
+    const { ControlSeq } = await import("../../../src/components/gateway/state.ts");
+    const seq = new ControlSeq();
+    const event = { type: "cancel" as const, instanceId: "i-1", reason: "user_cancel" as const, issuedAt: "2026-11-08T00:00:00Z" };
+    expect(seq.accept(1, [event])).toEqual([event]);
+    expect(seq.accept(1, [event])).toEqual([]);
+    expect(seq.ackSeq).toBe(1);
+    expect(seq.accept(0, [])).toEqual([]);
+  });
+
   test("心跳失败时 cleanupAcks 重发", async () => {
     const { stub, gateway } = setup({ heartbeatHoldMs: 5 });
     await gateway.register(clientInfo);
@@ -186,6 +196,15 @@ describe("续租与上报", () => {
     const second = await gateway.reportResult(result.attemptId, result);
     expect(second.disposition).toBe("duplicate");
     expect(stub.requests.filter((request) => request.path.endsWith("/result"))).toHaveLength(1);
+    await stub.close();
+  });
+
+  test("上报 5xx 退避重试后 accepted", async () => {
+    const { stub, gateway } = setup();
+    await gateway.register(clientInfo);
+    stub.failNext(`POST /api/v1/executor/attempts/${result.attemptId}/result`, { status: 500, code: "internal", times: 1 });
+    const ack = await gateway.reportResult(result.attemptId, result);
+    expect(ack.disposition).toBe("accepted");
     await stub.close();
   });
 

@@ -24,9 +24,11 @@ export class ControlSeq {
     return this.#ackSeq;
   }
 
-  /** 记录本批最大连续 seq；空批 `seq = ackSeq`。 */
-  apply(maxSeq: number): void {
-    if (maxSeq > this.#ackSeq) this.#ackSeq = maxSeq;
+  /** 过滤已应用的批（seq <= ackSeq），否则推进并返回本批事件。 */
+  accept<T>(maxSeq: number, events: T[]): T[] {
+    if (maxSeq <= this.#ackSeq) return [];
+    this.#ackSeq = maxSeq;
+    return events;
   }
 }
 

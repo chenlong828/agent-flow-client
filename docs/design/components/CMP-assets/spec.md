@@ -8,7 +8,7 @@ updated: 2026-11-07
 
 # CMP-assets 组件规格
 
-> 状态：`active`（2026-11-08，T3 落地）。S0 本地目录来源的校验、原子替换、脚本权限与失败回滚已实现；HTTP 下载/缓存留 S1。
+> 状态：`active`（2026-11-08，S1 补 `C-05`）。本地目录与 HTTP zip 来源、校验、解包、缓存、原子替换与回滚已实现；Windows 解包留 S3。
 >
 > 上游：`docs/design/architecture.md` §5、§8、§10；`SCN-0001` UC-04/06/25；`REQ-0002` R-05/R-10；决策 D9（同容器并发同集）。
 
@@ -186,13 +186,13 @@ interface AssetAdmin {
 
 - 预算：目标 ≤30k token，上限 120k。
 - 单独运行：`bun test tests/components/assets/`；用本地夹具包，不联网。
-- 实现入口（T3）：`src/components/assets/assets.ts#LocalAssets`、`digest.ts#digestDirectory`、`format.ts#validateSkillsTree`、`copy.ts#copyTree`、`local-source.ts#resolveLocalSource`、`admin.ts#AssetAdmin`；测试 `tests/components/assets/`。
-- 状态：`active`（S0 本地目录来源；HTTP 下载/缓存待 S1）。
+- 实现入口（T3/S1）：`src/components/assets/assets.ts#LocalAssets`、`digest.ts#digestDirectory`、`format.ts#validateSkillsTree`、`copy.ts#copyTree`、`local-source.ts#resolveLocalSource`、`download.ts#fetchPackage`、`unpack.ts#unpackZip`、`package-source.ts#materializePackage`、`package-cache.ts#installRemotePackage`；测试 `tests/components/assets/`。
+- 状态：`active`（`C-05` 已实现；Windows 解包待 S3）。
 
 ## 9. 开放问题
 
 - 技能包分发形态已冻结：调度器托管 `C-05` 下载端点，`packageId` 不可变，`limits.maxSkillPackageBytes` 限制大小；外链仅作已评估备选。
 - 解压后文件数上限未定（M1 观测后补）；包大小上限已冻结。
-- 解包实现是否引入依赖；若引入，按 P2 依赖审批。
+- 解包依赖系统 `unzip`（macOS/Linux）；Windows 需另选实现（OQ-007）。
 - 缓存保留策略与磁盘上限（OQ-005）。
 - 脚本权限是否只限 `scripts/`，还是按 shebang 识别（当前只限 `scripts/`）。

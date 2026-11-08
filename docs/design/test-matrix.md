@@ -32,11 +32,11 @@ updated: 2026-11-08
 | UC-16 | 孤儿进程 | S0 | runtime | `tests/components/runtime/runtime.test.ts`、`tests/scenarios/s0-exec.test.ts` | TBD | existing |
 | UC-17 | 崩溃 session/lock | S0 | runtime/store | `tests/components/runtime/runtime.test.ts`、`tests/components/store/locks.test.ts` | TBD | existing |
 | UC-18 | 重跑幂等 | S0.1/S1 | executor | `tests/components/executor/state-machine.test.ts` | TBD | planned |
-| UC-19 | 调度器不可达 | S1 | gateway/cli | `tests/components/gateway/transport.test.ts` | TBD | planned |
-| UC-20 | 心跳长轮询断开 | S1 | gateway | `tests/components/gateway/long-poll.test.ts` | TBD | planned |
-| UC-21 | 租约过期/迟到结果 | S1 | gateway/executor | `tests/components/gateway/long-poll.test.ts`、`tests/components/executor/state-machine.test.ts` | TBD | planned |
-| UC-22 | 重复投递/上报 | S1 | gateway/executor | `tests/components/gateway/transport.test.ts`、`tests/components/executor/state-machine.test.ts` | TBD | planned |
-| UC-23 | 版本/鉴权失败 | S1 | gateway/cli | `tests/components/gateway/transport.test.ts` | TBD | planned |
+| UC-19 | 调度器不可达 | S1 | gateway/cli | `tests/components/gateway/transport.test.ts` | TBD | existing |
+| UC-20 | 心跳长轮询断开 | S1 | gateway | `tests/components/gateway/gateway.test.ts`、`tests/scenarios/s1-serve.test.ts` | TBD | existing |
+| UC-21 | 租约过期/迟到结果 | S1 | gateway/executor | `tests/components/gateway/transport.test.ts`、`tests/components/gateway/gateway.test.ts` | TBD | existing |
+| UC-22 | 重复投递/上报 | S1 | gateway/executor | `tests/components/gateway/gateway.test.ts`、`tests/components/executor/execute.test.ts` | TBD | existing |
+| UC-23 | 版本/鉴权失败 | S1 | gateway/cli | `tests/components/gateway/transport.test.ts`、`tests/scenarios/s1-serve.test.ts` | TBD | existing |
 | UC-24 | 同容器同技能集并发 | S2 | executor | `tests/components/executor/fanout.test.ts` | TBD | planned |
 | UC-25 | 不同技能集并发 | S2 | executor/assets | `tests/components/executor/fanout.test.ts`、`tests/components/assets/install.test.ts` | TBD | planned |
 | UC-26 | 多实例/容量上限 | S1/S2 | cli | `tests/components/cli/serve-loop.test.ts` | TBD | planned |

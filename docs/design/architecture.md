@@ -334,4 +334,5 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 - **M1 契约冻结（2026-11-07，T1–T10，已收口）**：`protocolVersion = 2026-11-07.1`；`C-01`…`C-07`、`SCH-01`…`SCH-20`、`CLT-01`…`CLT-13`、`cleanupPending`、退出码 7、`run` 作用域控制事件全部落盘；字段权威见 `contracts/executor-http-v1.md`。
 - **配置键已冻结（2026-11-08，OQ-014 关闭）**：`[acp].dsh_home`/`permission`、`[state].root`、`[logging].level`、`[capacity].max_instances`；`stateRoot` 默认 `<runDir>/.agent-flow-client`。
 - **退出码已冻结（2026-11-08，OQ-015 关闭）**：`run` 非成功 `NodeResult` 用 `1`，SIGINT `130`、SIGTERM `143`；其余按 §3.2。
-- **S0 已落地（2026-11-08）**：8 个组件转 `active`（`CMP-gateway` 仍 `planned`，S1 实现）；`run`/`doctor` 可用，`SCN-0002` 3+1 与 `SCN-0001` S0 用例通过；`SCN-0001`/`SCN-0002` 保持 `designed`（`TC-EXEC-002` 待 S0.1）。见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
+- **S0 已落地（2026-11-08）**：8 个组件转 `active`；`run`/`doctor` 可用，`SCN-0002` 3+1 与 `SCN-0001` S0 用例通过；见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
+- **S1 已落地（2026-11-08）**：`CMP-gateway` 转 `active`；`serve` 接桩调度器跑通注册/心跳/领取/绑定/`C-05`/上报/清理；S1 门禁 8 条有测试；见 `docs/history/works/2026-11-08-s1-contract-skeleton/result.md`。真实调度器联调与 `TC-EXEC-002`（顺序两节点）留 S2。
