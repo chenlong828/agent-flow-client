@@ -12,30 +12,20 @@ import { AssetError } from "./errors.ts";
 import { digestDirectory } from "./digest.ts";
 import { copyTree, type CopyLimits } from "./copy.ts";
 import { validateSkillsTree } from "./format.ts";
+import { digestSlug, exists, installedNames } from "./installed.ts";
+import { materializePackage } from "./package-source.ts";
 import { resolveLocalSource } from "./local-source.ts";
 
 const DEFAULT_LIMITS: CopyLimits = { maxBytes: 64 * 1024 * 1024, maxFiles: 10_000 };
+
+export type AssetOptions = {
+  cacheRoot?: string;
+  baseUrl?: string;
+  token?: string | null;
+  fetchImpl?: typeof fetch;
+};
 const LOCK_STALE_MS = 60_000;
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
-
-function digestSlug(digest: string): string {
-  return digest.replace(/^sha256:/, "").slice(0, 20) || "empty";
-}
-
-async function exists(path: string): Promise<boolean> {
-  return await stat(path).then(() => true).catch(() => false);
-}
-
-async function installedNames(skillRoot: string): Promise<string[]> {
-  try {
-    const entries = await readdir(skillRoot, { withFileTypes: true });
-    return entries
-      .filter((entry) => !entry.name.startsWith("."))
-      .map((entry) => (entry.isDirectory() ? entry.name : entry.name.replace(/\.md$/, "")));
-  } catch {
-    return [];
-  }
-}
 
 /**
  * 技能集安装（CMP-assets）：S0 支持本地目录来源；替换不叠加、原子生效、
@@ -43,9 +33,11 @@ async function installedNames(skillRoot: string): Promise<string[]> {
  */
 export class LocalAssets implements AssetPort {
   readonly #limits: CopyLimits;
+  readonly #options: AssetOptions;
 
-  constructor(limits: Partial<CopyLimits> = {}) {
+  constructor(limits: Partial<CopyLimits> = {}, options: AssetOptions = {}) {
     this.#limits = { ...DEFAULT_LIMITS, ...limits };
+    this.#options = options;
   }
 
   async install(skillSet: SkillSet, container: ContainerPaths): Promise<InstalledSkills> {
@@ -59,14 +51,7 @@ export class LocalAssets implements AssetPort {
     try {
       await rm(staging, { recursive: true, force: true });
       for (const pkg of skillSet.packages) {
-        const source = await resolveLocalSource(pkg.downloadUrl);
-        if (DIGEST_PATTERN.test(pkg.digest)) {
-          const actual = await digestDirectory(source);
-          if (actual !== pkg.digest) {
-            throw new AssetError("checksum_mismatch", `技能包摘要不符：${pkg.name}`);
-          }
-        }
-        await copyTree(source, staging, this.#limits);
+        await materializePackage(pkg, staging, this.#limits, this.#options);
       }
       const report = await validateSkillsTree(staging);
       await this.#swap(container, staging, skillSet.digest);
