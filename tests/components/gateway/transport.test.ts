@@ -40,6 +40,9 @@ describe("HTTP 传输", () => {
     expect(version.terminalAuthFailure).toBe(true);
     const superseded = mapHttpError(409, { error: { code: "run_superseded" } }, new Headers());
     expect(superseded.code).toBe("run_superseded");
+    const expired = mapHttpError(409, { error: { code: "lease_expired" } }, new Headers());
+    expect(expired.code).toBe("lease_expired");
+    expect(expired.retryable).toBe(false);
     await stub.close();
   });
 

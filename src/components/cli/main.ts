@@ -7,6 +7,7 @@ import { collectDoctorChecks } from "./doctor-checks.ts";
 import { render, collect, exitCode } from "../observability/doctor.ts";
 import { loadLocalRequest, RequestError } from "./request.ts";
 import { runOnce } from "./run.ts";
+import { serveCommand } from "./serve.ts";
 
 export type CliIo = {
   out(message: string): void;
@@ -116,8 +117,7 @@ export async function main(argv: readonly string[], deps: CliDeps): Promise<numb
         io.err("serve 需要 [scheduler].url；参考 docs/works/2026-11-08-s1-contract-skeleton/brief.md");
         return ExitCode.usage;
       }
-      io.err("serve 主循环尚未接入（T6）。");
-      return ExitCode.usage;
+      return await serveCommand(config, env, io);
     }
     if (args.command === "run") return await runCommand(args, config, deps);
 

@@ -88,6 +88,10 @@ export class NodeExecutor {
     return await promise;
   }
 
+  setMaxResultBytes(maxResultBytes: number): void {
+    this.#options.maxResultBytes = maxResultBytes;
+  }
+
   async cancelInstance(instanceId: string, _reason = "user_cancel"): Promise<void> {
     for (const [attemptId, active] of this.#active) {
       if (active.instanceId !== instanceId) continue;
@@ -189,15 +193,21 @@ export class NodeExecutor {
         host: this.#host,
       });
       session = await this.#options.runtime.newSession(handle, container.root);
-      this.#markActive(request.attemptId, "bound", session.sessionId);
+      const boundActive = this.#active.get(request.attemptId);
+      if (boundActive !== undefined) {
+        boundActive.phase = "bound";
+        boundActive.sessionId = session.sessionId;
+      }
       await this.#options.journal.mark(request.attemptId, "bound", { sessionId: session.sessionId });
 
       const skillSet = await this.#options.scheduler.bindSession(request.attemptId, session.sessionId);
       await this.#options.assets.install(skillSet, container);
-      this.#markActive(request.attemptId, "ready");
+      const readyActive = this.#active.get(request.attemptId);
+      if (readyActive !== undefined) readyActive.phase = "ready";
       await this.#options.journal.mark(request.attemptId, "ready");
 
-      this.#markActive(request.attemptId, "running");
+      const runningActive = this.#active.get(request.attemptId);
+      if (runningActive !== undefined) runningActive.phase = "running";
       await this.#options.journal.mark(request.attemptId, "running");
       outcome = await this.#options.runtime.prompt(session, request.prompt, {
         signal: controller.signal,
@@ -236,14 +246,6 @@ export class NodeExecutor {
     if (session !== undefined) await this.#options.runtime.closeSession(session).catch(() => undefined);
     await this.#options.journal.mark(request.attemptId, "closed");
     return result;
-  }
-
-  #markActive(attemptId: string, phase: AttemptState, sessionId?: string): void {
-    const active = this.#active.get(attemptId);
-    if (active !== undefined) {
-      active.phase = phase;
-      if (sessionId !== undefined) active.sessionId = sessionId;
-    }
   }
 
   #remember(attemptId: string, result: NodeResult): void {

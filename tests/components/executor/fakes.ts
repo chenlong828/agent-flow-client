@@ -58,6 +58,7 @@ export class FakeRuntime {
   cancelled: string[] = [];
   shutdowns: string[] = [];
   behavior: "ok" | "hang" | "fail" = "ok";
+  finalText = "OK";
   async ensureInstance(instance: { instanceId: string }): Promise<InstanceHandle> {
     return { instanceId: instance.instanceId, pid: 1234, pgid: 1234 };
   }
@@ -66,7 +67,7 @@ export class FakeRuntime {
   }
   async prompt(session: SessionRef, text: string, opts: PromptOptions): Promise<SessionOutcome> {
     this.prompts.push(text);
-    if (this.behavior === "ok") return { sessionId: session.sessionId, finalText: "OK", stopReason: "end_turn", usage: null };
+    if (this.behavior === "ok") return { sessionId: session.sessionId, finalText: this.finalText, stopReason: "end_turn", usage: null };
     if (this.behavior === "fail") {
       return { sessionId: session.sessionId, finalText: "", stopReason: null, usage: null, error: { code: "spawn_failed", message: "x", class: "runtime" } };
     }

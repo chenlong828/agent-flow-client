@@ -68,6 +68,17 @@ describe("执行序列", () => {
     expect(journal.states.at(-1)).toBe("closed");
   });
 
+  test("registered limits 生效：超长结果按上限截断且可解析", async () => {
+    const { runtime, executor } = setup();
+    runtime.finalText = "x".repeat(200);
+    executor.setMaxResultBytes(20);
+    const result = await executor.executeNode(request, { signal: signal() });
+    expect(result.truncated).toBe(true);
+    expect(Buffer.byteLength(result.message, "utf8")).toBeLessThanOrEqual(20);
+    expect(result.message.endsWith("…[truncated]")).toBe(true);
+    expect(JSON.parse(JSON.stringify(result)).status).toBe("succeeded");
+  });
+
   test("取消把 prompt 结算为 cancelled 并 close session", async () => {
     const { runtime, executor } = setup();
     runtime.behavior = "hang";
