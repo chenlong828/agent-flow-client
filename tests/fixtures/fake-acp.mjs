@@ -59,6 +59,10 @@ function handlePrompt(id, params) {
     return;
   }
   if (text.includes("SLOW")) {
+    if (process.env.FAKE_ACP_PROMPT_FILE) {
+      const { writeFileSync } = require("node:fs");
+      writeFileSync(process.env.FAKE_ACP_PROMPT_FILE, text);
+    }
     sessions.set(sessionId, { pending: { id, cancelled: false } });
     return;
   }

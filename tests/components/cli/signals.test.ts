@@ -23,6 +23,7 @@ describe("UC-14 信号收口", () => {
     const container = join(runDir, "workspace");
     const pkg = join(runDir, "pkg");
     const pidFile = join(runDir, "child.pid");
+    const promptFile = join(runDir, "prompt-started.txt");
     await mkdir(container, { recursive: true });
     await mkdir(join(pkg, "alpha"), { recursive: true });
     await writeFile(join(pkg, "alpha", "SKILL.md"), "---\nname: alpha\ndescription: a\n---\n");
@@ -51,7 +52,14 @@ describe("UC-14 信号收口", () => {
       }),
     );
 
-    const env = { ...process.env, DSH_BIN: fakeAcp, AF_NODE_BIN: process.execPath, FAKE_ACP_PID_FILE: pidFile, HUNDSUN_PUBLIC_API_KEY: "k" };
+    const env = {
+      ...process.env,
+      DSH_BIN: fakeAcp,
+      AF_NODE_BIN: process.execPath,
+      FAKE_ACP_PID_FILE: pidFile,
+      FAKE_ACP_PROMPT_FILE: promptFile,
+      HUNDSUN_PUBLIC_API_KEY: "k",
+    };
     delete (env as Record<string, string | undefined>).DSH_HOME;
     const child = Bun.spawn([process.execPath, "src/cli.ts", "run", "--request", requestPath], {
       cwd: repoRoot,
@@ -61,7 +69,7 @@ describe("UC-14 信号收口", () => {
     });
 
     const deadline = Date.now() + 10_000;
-    while (!(await Bun.file(pidFile).exists()) && Date.now() < deadline) await Bun.sleep(50);
+    while (!(await Bun.file(promptFile).exists()) && Date.now() < deadline) await Bun.sleep(20);
     const groupPid = Number((await Bun.file(pidFile).text()).trim());
     child.kill("SIGINT");
     const code = await child.exited;
