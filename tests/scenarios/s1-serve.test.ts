@@ -103,9 +103,13 @@ describe("S1 serve 主循环（桩调度器）", () => {
     expect(body?.message).toContain("OK-HELLO");
     expect(body?.sessionId).toBe("s-1");
 
-    const journal = await readFile(join(runDir, "state", "journal.jsonl"), "utf8");
-    const states = journal.trim().split("\n").map((line) => JSON.parse(line).state);
-    expect(states.at(-1)).toBe("closed");
+    const statesOf = async (): Promise<string[]> => {
+      const journal = await readFile(join(runDir, "state", "journal.jsonl"), "utf8").catch(() => "");
+      return journal.trim().split("\n").filter((line) => line !== "").map((line) => JSON.parse(line).state);
+    };
+    await waitFor(async () => (await statesOf()).at(-1) === "closed");
+    const states = await statesOf();
+    expect(states).toEqual(["claimed", "bound", "ready", "running", "settled", "reported", "closed"]);
 
     stub.enqueueEvent({ type: "shutdown", issuedAt: new Date().toISOString() });
     const code = await child.exited;
@@ -164,13 +168,15 @@ describe("S1 serve 主循环（桩调度器）", () => {
 
   test("cancel 控制事件终止活跃 prompt 并上报 cancelled", async () => {
     const { runDir, stub, request } = await fixture();
+    const promptFile = join(runDir, "prompt-started.txt");
     stub.enqueueRequest({ ...request, prompt: "SLOW", timeoutMs: 30_000 });
     const child = spawnServe(runDir, {
       DSH_BIN: fakeAcp,
       AF_NODE_BIN: process.execPath,
+      FAKE_ACP_PROMPT_FILE: promptFile,
       HUNDSUN_PUBLIC_API_KEY: "k",
     });
-    await waitFor(() => stub.requests.some((item) => item.path.endsWith("/session")));
+    await waitFor(async () => await Bun.file(promptFile).exists());
     stub.enqueueEvent({ type: "cancel", instanceId: request.instanceId, reason: "user_cancel", issuedAt: new Date().toISOString() });
     await waitFor(() =>
       stub.requests.some(

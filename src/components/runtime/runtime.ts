@@ -61,6 +61,15 @@ export class AcpRuntime implements RuntimePort {
     const state = this.#state.session(session.sessionId);
     const acp = this.#state.connection(session.instanceId);
     if (acp === undefined) throw new RuntimeError("spawn_failed", `实例没有活跃 DSH 进程：${session.instanceId}`);
+    if (opts.signal.aborted) {
+      return {
+        sessionId: session.sessionId,
+        finalText: "",
+        stopReason: null,
+        usage: null,
+        error: { code: "cancelled", message: "prompt 被取消", class: "cancelled" },
+      };
+    }
     state.finalText = "";
     state.usage = null;
     state.stopReason = null;

@@ -209,10 +209,12 @@ export class NodeExecutor {
       const runningActive = this.#active.get(request.attemptId);
       if (runningActive !== undefined) runningActive.phase = "running";
       await this.#options.journal.mark(request.attemptId, "running");
-      outcome = await this.#options.runtime.prompt(session, request.prompt, {
-        signal: controller.signal,
-        timeoutMs: request.timeoutMs,
-      });
+      outcome = controller.signal.aborted
+        ? { sessionId: session.sessionId, finalText: "", stopReason: null, usage: null, error: { code: "cancelled", message: "prompt 被取消", class: "cancelled" } }
+        : await this.#options.runtime.prompt(session, request.prompt, {
+            signal: controller.signal,
+            timeoutMs: request.timeoutMs,
+          });
     } catch (error) {
       const failure: RuntimeFailure = {
         code: codeOf(error),
