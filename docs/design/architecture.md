@@ -335,4 +335,5 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 - **配置键已冻结（2026-11-08，OQ-014 关闭）**：`[acp].dsh_home`/`permission`、`[state].root`、`[logging].level`、`[capacity].max_instances`；`stateRoot` 默认 `<runDir>/.agent-flow-client`。
 - **退出码已冻结（2026-11-08，OQ-015 关闭）**：`run` 非成功 `NodeResult` 用 `1`，SIGINT `130`、SIGTERM `143`；其余按 §3.2。
 - **S0 已落地（2026-11-08）**：8 个组件转 `active`；`run`/`doctor` 可用，`SCN-0002` 3+1 与 `SCN-0001` S0 用例通过；见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
-- **S1 已落地（2026-11-08）**：`CMP-gateway` 转 `active`；`serve` 接桩调度器跑通注册/心跳/领取/绑定/`C-05`/上报/清理；S1 门禁 8 条有测试；见 `docs/history/works/2026-11-08-s1-contract-skeleton/result.md`。真实调度器联调与 `TC-EXEC-002`（顺序两节点）留 S2。
+- **S1 已落地（2026-11-08）**：`CMP-gateway` 转 `active`；`serve` 接桩调度器跑通注册/心跳/领取/绑定/`C-05`/上报/清理；S1 门禁 8 条有测试；见 `docs/history/works/2026-11-08-s1-contract-skeleton/result.md`。
+- **S2 已落地（2026-11-09，A 方案内）**：顺序两节点、技能切换、同 attempt 幂等、同容器技能集冲突守卫、清理幂等；Q1 保持 A，不升协议版本；fan-out 真并发留 B 决策。见 `docs/history/works/2026-11-09-s2-linear-and-recovery/result.md`。

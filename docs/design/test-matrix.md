@@ -15,9 +15,9 @@ updated: 2026-11-08
 | UC | 场景 | 阶段 | 主责组件 | 计划测试文件 | 测试 ID | 状态 |
 |---|---|---|---|---|---|---|
 | UC-01 | 单节点执行 | S0 | executor/result | `tests/scenarios/s0-exec.test.ts` | `TC-EXEC-001` | existing |
-| UC-02 | 顺序多节点 | S0.1/S2 | executor | `tests/components/executor/sequential-nodes.test.ts` | `TC-EXEC-002` | planned |
+| UC-02 | 顺序多节点 | S0.1/S2 | executor | `tests/components/executor/sequential-nodes.test.ts`、`tests/scenarios/s2-linear.test.ts` | `TC-EXEC-002` | existing |
 | UC-03 | fan-out 并发 | S2 | executor | `tests/components/executor/fanout.test.ts` | TBD | planned |
-| UC-04 | 技能切换 | S0.1/S2 | assets/executor | `tests/components/assets/install.test.ts` | TBD | planned |
+| UC-04 | 技能切换 | S0.1/S2 | assets/executor | `tests/components/executor/sequential-nodes.test.ts`、`tests/components/assets/assets.test.ts` | TBD | existing |
 | UC-05 | 容器非法 | S0 | workspace | `tests/components/workspace/workspace.test.ts` | TBD | existing |
 | UC-06 | 技能包异常 | S0 | assets | `tests/scenarios/s0-exec.test.ts` | `TC-EXEC-004` | existing |
 | UC-07 | 运行时不可用 | S0/S1 | runtime | `tests/components/runtime/runtime.test.ts` | TBD | existing |
@@ -31,14 +31,14 @@ updated: 2026-11-08
 | UC-15 | client 崩溃重启 | S0（仅清理）/S2 | cli/executor/store | `tests/components/executor/execute.test.ts`（`recover`）、`tests/components/store/journal.test.ts` | TBD | existing |
 | UC-16 | 孤儿进程 | S0 | runtime | `tests/components/runtime/runtime.test.ts`、`tests/scenarios/s0-exec.test.ts` | TBD | existing |
 | UC-17 | 崩溃 session/lock | S0 | runtime/store | `tests/components/runtime/runtime.test.ts`、`tests/components/store/locks.test.ts` | TBD | existing |
-| UC-18 | 重跑幂等 | S0.1/S1 | executor | `tests/components/executor/state-machine.test.ts` | TBD | planned |
+| UC-18 | 重跑幂等 | S0.1/S1 | executor | `tests/components/executor/sequential-nodes.test.ts` | TBD | existing |
 | UC-19 | 调度器不可达 | S1 | gateway/cli | `tests/components/gateway/transport.test.ts` | TBD | existing |
 | UC-20 | 心跳长轮询断开 | S1 | gateway | `tests/components/gateway/gateway.test.ts`、`tests/scenarios/s1-serve.test.ts` | TBD | existing |
 | UC-21 | 租约过期/迟到结果 | S1 | gateway/executor | `tests/components/gateway/transport.test.ts`、`tests/components/gateway/gateway.test.ts` | TBD | existing |
 | UC-22 | 重复投递/上报 | S1 | gateway/executor | `tests/components/gateway/gateway.test.ts`、`tests/components/executor/execute.test.ts` | TBD | existing |
 | UC-23 | 版本/鉴权失败 | S1 | gateway/cli | `tests/components/gateway/transport.test.ts`、`tests/scenarios/s1-serve.test.ts` | TBD | existing |
 | UC-24 | 同容器同技能集并发 | S2 | executor | `tests/components/executor/fanout.test.ts` | TBD | planned |
-| UC-25 | 不同技能集并发 | S2 | executor/assets | `tests/components/executor/fanout.test.ts`、`tests/components/assets/install.test.ts` | TBD | planned |
+| UC-25 | 不同技能集并发 | S2 | executor/assets | `tests/components/executor/execute.test.ts`（A 形态冲突守卫） | TBD | existing |
 | UC-26 | 多实例/容量上限 | S1/S2 | cli | `tests/components/cli/serve-loop.test.ts` | TBD | planned |
 | UC-27 | 日志/结果/磁盘上限 | S1/S3 | result/observability/store | `tests/components/result/truncate.test.ts`、`tests/components/observability/logging.test.ts` | TBD | planned |
 | UC-28 | 不可信路径 | S0 | workspace | `tests/components/workspace/workspace.test.ts` | TBD | existing |
