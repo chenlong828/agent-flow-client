@@ -57,9 +57,11 @@ export class FakeRuntime {
   closed: string[] = [];
   cancelled: string[] = [];
   shutdowns: string[] = [];
+  ensureCalls = 0;
   behavior: "ok" | "hang" | "fail" = "ok";
   finalText = "OK";
   async ensureInstance(instance: { instanceId: string }): Promise<InstanceHandle> {
+    this.ensureCalls += 1;
     return { instanceId: instance.instanceId, pid: 1234, pgid: 1234 };
   }
   async newSession(instance: InstanceHandle): Promise<SessionRef> {
@@ -120,6 +122,7 @@ export class FakeAssets implements AssetPort {
 export class FakeScheduler implements SchedulerPort {
   bound: string[] = [];
   bindDigests = new Map<string, string>();
+  bindSkillSets = new Map<string, SkillSet>();
   reported: NodeResult[] = [];
   reportFails = false;
   async register() {
@@ -136,6 +139,8 @@ export class FakeScheduler implements SchedulerPort {
   }
   async bindSession(attemptId: string): Promise<SkillSet> {
     this.bound.push(attemptId);
+    const explicit = this.bindSkillSets.get(attemptId);
+    if (explicit !== undefined) return explicit;
     return { digest: this.bindDigests.get(attemptId) ?? "sha256:test", packages: [] };
   }
   async reportResult(_attemptId: string, result: NodeResult): Promise<Ack> {

@@ -1,4 +1,4 @@
-import { open, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   AssetPort,
@@ -50,6 +50,7 @@ export class LocalAssets implements AssetPort {
     const staging = join(container.stagingRoot, digestSlug(skillSet.digest));
     try {
       await rm(staging, { recursive: true, force: true });
+      await mkdir(staging, { recursive: true, mode: 0o700 });
       for (const pkg of skillSet.packages) {
         await materializePackage(pkg, staging, this.#limits, this.#options);
       }

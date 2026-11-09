@@ -13,6 +13,11 @@ let buffer = "";
 let nextServerRequestId = 1000;
 let counter = 0;
 
+if (process.env.FAKE_ACP_PROC_LOG) {
+  const { appendFileSync } = await import("node:fs");
+  appendFileSync(process.env.FAKE_ACP_PROC_LOG, `${process.pid}\n`);
+}
+
 if (process.env.FAKE_ACP_PID_FILE) {
   const child = spawn("sleep", ["60"], { stdio: "ignore" });
   writeFileSync(process.env.FAKE_ACP_PID_FILE, String(child.pid));

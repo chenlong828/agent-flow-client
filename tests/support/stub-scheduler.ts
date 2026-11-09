@@ -38,6 +38,9 @@ export class StubScheduler {
   #registerCompatibility = "compatible";
   #reportLate = false;
   #bindAttemptId: string | null = null;
+  readonly #skillSets = new Map<string, SkillSet>();
+  readonly #activeInstances = new Set<string>();
+  readonly #attemptInstances = new Map<string, string>();
 
   constructor(options: { token?: string; heartbeatHoldMs?: number; claimHoldMs?: number; limits?: Partial<Limits>; skillSet?: SkillSet } = {}) {
     this.#token = options.token ?? null;
@@ -78,6 +81,10 @@ export class StubScheduler {
 
   setBindAttemptId(attemptId: string): void {
     this.#bindAttemptId = attemptId;
+  }
+
+  setSkillSetFor(attemptId: string, skillSet: SkillSet): void {
+    this.#skillSets.set(attemptId, skillSet);
   }
 
   async close(): Promise<void> {
@@ -152,12 +159,23 @@ export class StubScheduler {
 
   async #claim(): Promise<Response> {
     const started = Date.now();
-    while (this.#claims.length === 0 && Date.now() - started < this.#claimHoldMs) {
+    while (Date.now() - started < this.#claimHoldMs) {
+      const head = this.#claims[0];
+      if (head !== undefined && !this.#activeInstances.has(head.instanceId)) {
+        this.#claims.shift();
+        this.#activeInstances.add(head.instanceId);
+        this.#attemptInstances.set(head.attemptId, head.instanceId);
+        return Response.json(head);
+      }
+      if (head === undefined && this.#claims.length === 0) {
+        // 没有待领取请求；等待短窗口后返回 204。
+        await Bun.sleep(5);
+        if (Date.now() - started >= this.#claimHoldMs) break;
+        continue;
+      }
       await Bun.sleep(5);
     }
-    const request = this.#claims.shift();
-    if (request === undefined) return new Response(null, { status: 204 });
-    return Response.json(request);
+    return new Response(null, { status: 204 });
   }
 
   #renew(): Response {
@@ -168,7 +186,11 @@ export class StubScheduler {
   }
 
   #bind(attemptId: string, body: Record<string, unknown>): Response {
-    return Response.json({ attemptId: this.#bindAttemptId ?? attemptId, sessionId: body.sessionId, skillSet: this.skillSet });
+    return Response.json({
+      attemptId: this.#bindAttemptId ?? attemptId,
+      sessionId: body.sessionId,
+      skillSet: this.#skillSets.get(attemptId) ?? this.skillSet,
+    });
   }
 
   #report(attemptId: string, body: Record<string, unknown>): Response {
@@ -177,7 +199,12 @@ export class StubScheduler {
       return this.#error(409, "late_result");
     }
     const duplicate = this.#reports.has(attemptId);
-    if (result !== undefined) this.#reports.set(attemptId, result);
+    if (result !== undefined) {
+      this.#reports.set(attemptId, result);
+      const instanceId = this.#attemptInstances.get(attemptId);
+      if (instanceId !== undefined) this.#activeInstances.delete(instanceId);
+      this.#attemptInstances.delete(attemptId);
+    }
     const ack: Ack = {
       attemptId,
       disposition: duplicate ? "duplicate" : "accepted",
