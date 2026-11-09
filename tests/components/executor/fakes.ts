@@ -119,6 +119,7 @@ export class FakeAssets implements AssetPort {
 
 export class FakeScheduler implements SchedulerPort {
   bound: string[] = [];
+  bindDigests = new Map<string, string>();
   reported: NodeResult[] = [];
   reportFails = false;
   async register() {
@@ -135,7 +136,7 @@ export class FakeScheduler implements SchedulerPort {
   }
   async bindSession(attemptId: string): Promise<SkillSet> {
     this.bound.push(attemptId);
-    return { digest: "sha256:test", packages: [] };
+    return { digest: this.bindDigests.get(attemptId) ?? "sha256:test", packages: [] };
   }
   async reportResult(_attemptId: string, result: NodeResult): Promise<Ack> {
     if (this.reportFails) throw new Error("unreachable");

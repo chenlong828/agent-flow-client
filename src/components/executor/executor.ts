@@ -16,6 +16,7 @@ import type {
 } from "./ports.ts";
 import type { CleanupAck, CleanupPending, SchedulerPort } from "./scheduler-port.ts";
 import { assemble, classify } from "../result/result.ts";
+import { claimContainer, releaseContainer } from "./container-guard.ts";
 
 export type ExecutionContext = {
   signal: AbortSignal;
@@ -59,6 +60,8 @@ export class NodeExecutor {
   readonly #active = new Map<string, ActiveAttempt>();
   readonly #results = new Map<string, NodeResult>();
   readonly #handles = new Map<string, InstanceHandle>();
+  readonly #containers = new Map<string, { digest: string; attempts: Set<string> }>();
+  readonly #cleanupAcks = new Map<string, CleanupAck>();
 
   constructor(options: NodeExecutorOptions) {
     this.#options = options;
@@ -136,6 +139,11 @@ export class NodeExecutor {
   async reconcileCleanup(pending: CleanupPending[]): Promise<CleanupAck[]> {
     const acks: CleanupAck[] = [];
     for (const item of pending) {
+      const cached = this.#cleanupAcks.get(item.releaseId);
+      if (cached !== undefined) {
+        acks.push(cached);
+        continue;
+      }
       try {
         await this.cancelInstance(item.instanceId);
         const handle = this.#handles.get(item.instanceId);
@@ -147,15 +155,19 @@ export class NodeExecutor {
         for (const orphan of await this.#options.journal.listOrphans(item.instanceId)) {
           await this.#options.journal.clearOrphan(orphan.pid);
         }
-        acks.push({ releaseId: item.releaseId, status: "done", completedAt: this.#now().toISOString() });
+        const ack: CleanupAck = { releaseId: item.releaseId, status: "done", completedAt: this.#now().toISOString() };
+        this.#cleanupAcks.set(item.releaseId, ack);
+        acks.push(ack);
       } catch (error) {
-        acks.push({
+        const ack: CleanupAck = {
           releaseId: item.releaseId,
           status: "failed",
           completedAt: this.#now().toISOString(),
           errorClass: classify({ code: codeOf(error), message: (error as Error).message }).class,
           retryable: false,
-        });
+        };
+        this.#cleanupAcks.set(item.releaseId, ack);
+        acks.push(ack);
       }
     }
     return acks;
@@ -164,6 +176,7 @@ export class NodeExecutor {
   async #runAttempt(request: NodeRequest, controller: AbortController): Promise<NodeResult> {
     const startedAt = this.#now().toISOString();
     let session: SessionRef | undefined;
+    let containerRoot: string | undefined;
     let outcome: Parameters<typeof assemble>[0];
     try {
       await this.#options.journal.append({
@@ -201,6 +214,8 @@ export class NodeExecutor {
       await this.#options.journal.mark(request.attemptId, "bound", { sessionId: session.sessionId });
 
       const skillSet = await this.#options.scheduler.bindSession(request.attemptId, session.sessionId);
+      containerRoot = container.root;
+      claimContainer(this.#containers, containerRoot, request.attemptId, skillSet.digest);
       await this.#options.assets.install(skillSet, container);
       const readyActive = this.#active.get(request.attemptId);
       if (readyActive !== undefined) readyActive.phase = "ready";
@@ -223,7 +238,11 @@ export class NodeExecutor {
       };
       outcome = { sessionId: session?.sessionId ?? "", finalText: "", stopReason: null, usage: null, error: failure };
     }
-    return await this.#finish(request, session, outcome, startedAt);
+    try {
+      return await this.#finish(request, session, outcome, startedAt);
+    } finally {
+      if (containerRoot !== undefined) releaseContainer(this.#containers, containerRoot, request.attemptId);
+    }
   }
 
   async #finish(

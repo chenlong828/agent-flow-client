@@ -91,6 +91,34 @@ describe("执行序列", () => {
   });
 });
 
+describe("同容器技能集守卫", () => {
+  test("同容器存在活跃 attempt 且 digest 不同时判 asset_skill_set_conflict", async () => {
+    const { runtime, scheduler, executor } = setup();
+    runtime.behavior = "hang";
+    const first = executor.executeNode({ ...request, attemptId: "a-10" }, { signal: signal() });
+    const deadline = Date.now() + 2000;
+    while (!scheduler.bound.includes("a-10") && Date.now() < deadline) await Bun.sleep(5);
+    scheduler.bindDigests.set("a-11", "sha256:other");
+    const conflict = await executor.executeNode({ ...request, attemptId: "a-11" }, { signal: signal() });
+    expect(conflict.status).toBe("failed");
+    expect(conflict.error).toMatchObject({ class: "asset", code: "asset_skill_set_conflict", retryable: false });
+    await executor.cancelInstance("i-1");
+    await first;
+  });
+
+  test("同容器同 digest 可串行执行", async () => {
+    const { runtime, executor } = setup();
+    runtime.behavior = "hang";
+    const first = executor.executeNode({ ...request, attemptId: "a-20" }, { signal: signal() });
+    await Bun.sleep(10);
+    await executor.cancelInstance("i-1");
+    await first;
+    runtime.behavior = "ok";
+    const second = await executor.executeNode({ ...request, attemptId: "a-21" }, { signal: signal() });
+    expect(second.status).toBe("succeeded");
+  });
+});
+
 describe("恢复与清理", () => {
   test("有结果的 settled 重报并 closed；无结果的 running 标 abandoned", async () => {
     const { journal, scheduler, executor } = setup();
@@ -119,5 +147,11 @@ describe("恢复与清理", () => {
     expect(runtime.shutdowns).toEqual(["i-1"]);
     expect(workspace.cleaned).toEqual(["clean-skills"]);
     expect(journal.orphans).toHaveLength(0);
+
+    const again = await executor.reconcileCleanup([
+      { releaseId: "r-1", instanceId: "i-1", cleanup: "clean-skills", releasedAt: "" },
+    ]);
+    expect(again).toEqual(acks);
+    expect(runtime.shutdowns).toEqual(["i-1"]);
   });
 });
