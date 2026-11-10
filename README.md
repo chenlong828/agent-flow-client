@@ -4,12 +4,14 @@ AgentFlow 执行面客户端：在本机准备实例工作区、技能与 DSH �
 
 ## 当前状态
 
-项目骨架已初始化，尚未接入调度器与 DSH。当前可运行：
+已按执行面契约 **v2**（三端点、at-least-once）实现：
 
-- `bun run src/cli.ts --help` / `--version`
-- `bun test`
+- `serve`：常驻 `poll` 循环，取任务、执行、上报结果、收 `stop`/`cancelInstances`；
+- `run --request`：本地单任务，stdout 输出 `TaskResult` JSON；
+- `doctor`：配置、DSH、凭据、容器与残留检查；
+- `version`：client 版本与 ACP/DSH 基线。
 
-`serve`、`run`、`doctor` 只保留命令入口，尚未实现；实现顺序见 [docs/plan/roadmap.md](docs/plan/roadmap.md)。
+契约权威：[docs/design/contracts/executor-http-v2.md](docs/design/contracts/executor-http-v2.md)；里程碑见 [docs/plan/roadmap.md](docs/plan/roadmap.md)。真实调度器联调与 S3（凭据/打包/平台）仍待推进。
 
 ## 快速开始
 
