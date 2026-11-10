@@ -42,7 +42,7 @@ function request(attemptId: string, prompt: string, workspacePath: string): Node
 }
 
 describe("TC-EXEC-002 顺序多节点", () => {
-  test("两节点顺序执行：各自技能集、替换不叠加、进程复用", async () => {
+  test("TC-EXEC-002 两节点顺序执行：各自技能集、替换不叠加、进程复用", async () => {
     const container = await mkdtemp(join(tmpdir(), "afc-linear-ws-"));
     await mkdir(join(container, "repo-a"), { recursive: true });
     await writeFile(join(container, "repo-a", "artifact.txt"), "from-node-1\n");
