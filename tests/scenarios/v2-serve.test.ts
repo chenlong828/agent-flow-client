@@ -139,3 +139,50 @@ describe("v2 serve：poll 单循环", () => {
     void child;
   }, 30_000);
 });
+
+describe("v2 恢复", () => {
+  test("启动时 journal 中 settled 结果补报", async () => {
+    const { FileStore } = await import("../../src/components/store/store.ts");
+    const runDir = await mkdtemp(join(tmpdir(), "afc-v2-recover-"));
+    const container = join(runDir, "workspace");
+    await mkdir(container, { recursive: true });
+    const stub = new StubScheduler({ token: "stub-token" });
+    await writeFile(
+      join(runDir, ".config"),
+      `[acp]\ndsh_home = "${join(runDir, "dsh-home")}"\npermission = "allow"\n[state]\nroot = "${join(runDir, "state")}"\n[logging]\nlevel = "error"\n[scheduler]\nurl = "${stub.url}"\ntoken = "stub-token"\n`,
+    );
+    const store = new FileStore({ stateRoot: join(runDir, "state") });
+    await store.init();
+    const taskId = "01930000-0000-7000-8000-000000000801";
+    await store.append({
+      v: 2,
+      ts: "2026-11-10T00:00:00.000Z",
+      taskId,
+      attempt: 1,
+      instanceId: "01930000-0000-7000-8000-000000000802",
+      nodeId: "n",
+      state: "settled",
+      result: {
+        taskId,
+        attempt: 1,
+        status: "succeeded",
+        message: "RECOVERED",
+        truncated: false,
+        stopReason: "end_turn",
+        usage: null,
+        error: null,
+      },
+    });
+    const env = { ...process.env, DSH_BIN: fakeAcp, AF_NODE_BIN: process.execPath, HUNDSUN_PUBLIC_API_KEY: "k" } as Record<string, string>;
+    delete (env as Record<string, string | undefined>).DSH_HOME;
+    const child = Bun.spawn(
+      [process.execPath, "src/cli.ts", "serve", "--config", join(runDir, ".config"), "--state-root", join(runDir, "state")],
+      { cwd: repoRoot, env, stdout: "pipe", stderr: "pipe" },
+    );
+    await waitFor(() => stub.results().some((result) => result.taskId === taskId));
+    expect(stub.results().find((result) => result.taskId === taskId)?.message).toBe("RECOVERED");
+    stub.setStop(true);
+    expect(await child.exited).toBe(0);
+    stub.server.stop(true);
+  }, 30_000);
+});
