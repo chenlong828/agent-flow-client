@@ -27,6 +27,22 @@ bun run typecheck
 
 Bun 已安装在 `~/.bun/bin` 并加入 `PATH`；项目不携带本地 Bun。
 
+## 与调度器联调
+
+`serve` 按 executor contract v2 对接三个端点：`POST /api/v1/executor/poll`、`POST /api/v1/executor/tasks/{taskId}/result`、`GET /api/v1/executor/skill-packages/{packageId}`。
+
+本机自测可直接用桩调度器：
+
+```bash
+# 1. 准备任务 JSON（TaskRequest）与配置文件（[scheduler] url/token、[capacity] max_concurrent）
+# 2. 启动桩（端口固定、首份结果为准、--stop-after N 在收到 N 份结果后下发 stop）
+bun run scripts/mock-scheduler.ts --token dev-token --task ./task.json --port 17999 --stop-after 1
+# 3. 另一个终端启动 client
+DSH_BIN=/path/to/dsh bun run src/cli.ts serve --config /path/to/.config
+```
+
+`serve` 的日志在 `state/logs/client.jsonl`，任务状态在 `state/journal.jsonl`；`stop` 或 SIGINT/SIGTERM 会收口在跑任务后退出。
+
 ## 文档
 
 先读 [docs/README.md](docs/README.md)。上游边界与职责设计在 `../agent-flow-orchaster/docs/works/2026-11-03-client-boundary/`。

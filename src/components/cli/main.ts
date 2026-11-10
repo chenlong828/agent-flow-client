@@ -114,7 +114,7 @@ export async function main(argv: readonly string[], deps: CliDeps): Promise<numb
     if (args.command === "doctor") return await doctorCommand(args, config, deps);
     if (args.command === "serve") {
       if (config.scheduler.url === null) {
-        io.err("serve 需要 [scheduler].url；参考 docs/works/2026-11-08-s1-contract-skeleton/brief.md");
+        io.err("serve 需要 [scheduler].url；参考 docs/design/contracts/executor-http-v2.md 与 docs/plan/roadmap.md");
         return ExitCode.usage;
       }
       return await serveCommand(config, env, io);

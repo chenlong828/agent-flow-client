@@ -21,6 +21,11 @@ export class ServeRunner {
   async run(): Promise<number> {
     await this.#bootstrap();
     await pollLoop(this.#ctx);
+    // 收口：等待在飞任务结算/上报（最多 5s），再回收实例进程。
+    await Promise.race([
+      Promise.allSettled([...this.#ctx.inflight]),
+      new Promise((resolve) => setTimeout(resolve, 5000)),
+    ]);
     await this.#ctx.deps.executor.shutdownInstances().catch(() => undefined);
     return this.#ctx.stopCode ?? ExitCode.ok;
   }

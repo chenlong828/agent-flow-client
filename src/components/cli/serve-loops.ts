@@ -10,11 +10,15 @@ export async function pollLoop(ctx: ServeContext): Promise<void> {
   const { gateway, logger } = ctx.deps;
   while (!ctx.controller.signal.aborted) {
     await flushFinished(ctx);
+    if (ctx.controller.signal.aborted) return;
     try {
       const response = await gateway.poll(buildPollRequest(ctx));
       ctx.unreachable = 0;
       await applyResponse(ctx, response);
-      if (ctx.stopRequested && ctx.running.size === 0) return;
+      if (ctx.stopRequested && ctx.running.size === 0) {
+        await flushFinished(ctx);
+        return;
+      }
       await delay(Math.max(POLL_FLOOR_MS, response.nextPollAfterMs), ctx.controller.signal);
     } catch (error) {
       if (ctx.controller.signal.aborted) return;
@@ -48,6 +52,13 @@ async function applyResponse(ctx: ServeContext, response: PollResponse): Promise
 function launchTask(ctx: ServeContext, task: TaskRequest): void {
   const startedAt = new Date().toISOString();
   ctx.running.set(task.taskId, { task, startedAt });
+  ctx.deps.logger.log({
+    level: "info",
+    event: "task.received",
+    attemptId: task.taskId,
+    instanceId: task.instanceId,
+    msg: `attempt=${task.attempt} timeoutMs=${task.timeoutMs} skill=${task.skillSet.digest}`,
+  });
   const taskPromise = runTask(ctx, task)
     .then((result) => {
       ctx.running.delete(task.taskId);
@@ -58,7 +69,8 @@ function launchTask(ctx: ServeContext, task: TaskRequest): void {
       ctx.deps.logger.log({ level: "error", event: "task.crashed", attemptId: task.taskId, msg: (error as Error).message });
       ctx.running.delete(task.taskId);
     });
-  void taskPromise;
+  ctx.inflight.add(taskPromise);
+  void taskPromise.finally(() => ctx.inflight.delete(taskPromise));
 }
 
 async function runTask(ctx: ServeContext, task: TaskRequest): Promise<TaskResult> {
@@ -97,10 +109,12 @@ async function reportOne(ctx: ServeContext, taskId: string): Promise<void> {
     if (ack.accepted) {
       await ctx.deps.store.mark(taskId, "reported");
       ctx.finished.delete(taskId);
+      ctx.deps.logger.log({ level: "info", event: "task.reported", attemptId: taskId, msg: `status=${entry.result.status}` });
       return;
     }
     await ctx.deps.store.mark(taskId, "reported");
     ctx.finished.delete(taskId);
+    ctx.deps.logger.log({ level: "info", event: "task.rejected", attemptId: taskId, msg: "accepted=false，丢弃本地副本" });
   } catch (error) {
     if (error instanceof GatewayError && error.terminal) {
       stop(ctx, ExitCode.auth);

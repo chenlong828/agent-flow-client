@@ -13,6 +13,7 @@ export type ServeContext = {
   running: Map<string, RunningEntry>;
   finished: Map<string, FinishedEntry>;
   reporting: Set<string>;
+  inflight: Set<Promise<void>>;
   stopRequested: boolean;
   stopCode: number | null;
   unreachable: number;
@@ -25,6 +26,7 @@ export function createContext(deps: ServeDeps): ServeContext {
     running: new Map(),
     finished: new Map(),
     reporting: new Set(),
+    inflight: new Set(),
     stopRequested: false,
     stopCode: null,
     unreachable: 0,
