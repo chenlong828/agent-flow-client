@@ -8,7 +8,7 @@ updated: 2026-11-04
 
 # CMP-runtime 组件规格
 
-> 状态：`active`（2026-11-08，T4 落地）。实例进程、profile 补丁、session/prompt/update/permission/cancel/close 与进程组回收已实现；多实例 home 派生留 S1。
+> 状态：`active`（executor contract v2，2026-11-10）。实例进程、profile 补丁、多 session 并发、prompt/update/permission、超时与 idle 看门狗已实现；单任务超时只关自己的 session，同实例无其它 session 时才回收进程组。
 >
 > 上游：`docs/design/architecture.md` §2、§5、§8、§10；`SCN-0001` UC-07/09/11/13/16/17/31；`REQ-0002` R-03/R-06/R-10；ACP 预研结论见 `docs/history/works/2026-11-03-dsh-acp-preflight/result.md`。
 
@@ -104,7 +104,8 @@ opening ──▶ open ──▶ prompting ──▶ open
 
 ### 2.6 取消、关闭与回收
 
-- `cancel(session)`：发送 `session/cancel` → 立即 `session/close` → 进程组强杀（POSIX `kill(-pgid)`）；**不等待 prompt 自然结算**。
+- `cancel(session)`：发送 `session/cancel` → `session/close`；仅当该实例已无其它 session 时才回收进程组，避免 v2 同实例并发任务被连带终止；**不等待 prompt 自然结算**。
+- `prompt` 支持 `idleTimeoutMs`（默认关闭）：连续无 ACP 事件到阈值按 `idle_timeout` 终止。
 - 取消后 2s 内做残留检查（`kill -0` 为假）；2s 是检查窗口，不是等待时间。
 - `shutdownInstance(instance, mode)`：
   - `graceful`：关闭所有 session → stdin EOF → 等退出（上限 5s）→ 超时杀进程组；

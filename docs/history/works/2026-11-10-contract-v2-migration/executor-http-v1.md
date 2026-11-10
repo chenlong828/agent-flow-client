@@ -1,11 +1,13 @@
 ---
 layer: design
 module: global
-status: current
+status: frozen
 updated: 2026-11-07
 ---
 
-# 执行面客户端 HTTP 契约 v1（调度器 ↔ client）
+# 执行面客户端 HTTP 契约 v1（已归档）
+
+> 归档于 2026-11-10：调度器侧发布 v2（三端点、at-least-once）替换本版；本文件只作历史记录，不是设计依据。
 
 > **状态：frozen（M1 T1–T10 已收口，2026-11-07）**，`protocolVersion = 2026-11-07.1`。本文件是调度器与 client 执行面之间的**唯一字段级权威**；组件规格只写本组件的端口/消费/失败收口，字段一律链接到本文件。
 >

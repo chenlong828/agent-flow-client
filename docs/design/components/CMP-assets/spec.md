@@ -8,7 +8,7 @@ updated: 2026-11-07
 
 # CMP-assets 组件规格
 
-> 状态：`active`（2026-11-08，S1 补 `C-05`）。本地目录与 HTTP zip 来源、校验、解包、缓存、原子替换与回滚已实现；Windows 解包留 S3。
+> 状态：`active`（executor contract v2，2026-11-10）。技能集随 `TaskRequest` 下发，无 `bindSession`；`P-03` 下载器由组合根注入；保留 digest 短路、原子替换与安装临界区。
 >
 > 上游：`docs/design/architecture.md` §5、§8、§10；`SCN-0001` UC-04/06/25；`REQ-0002` R-05/R-10；决策 D9（同容器并发同集）。
 
@@ -61,7 +61,7 @@ type SkillPackageRef = {
 ```
 
 - 来源与鉴权由组合根注入；assets 不依赖 `CMP-gateway`。
-- `C-05` 走调度器托管端点：`GET /api/v1/executor/skill-packages/{packageId}/download`；请求带 `Authorization` 与 `X-Client-Run-Id`，条件请求用 `If-None-Match`（304 视为缓存命中）。
+- `C-05` 走调度器托管端点：`GET /api/v1/executor/skill-packages/{packageId}`；请求带 `Authorization` 与 `X-Client-Run-Id`，条件请求用 `If-None-Match`（304 视为缓存命中）。
 - **跨 host 不带凭据**：只有 URL host 与 `SchedulerEndpoint.baseUrl` 相同才附 `Authorization`；外链必须短期签名且不带 client token。
 - `packageId` 不可变：同 id 的内容不可替换；内容变更必须换 id。
 - 大小上限取 `limits.maxSkillPackageBytes`（v1 默认 64 MiB）；超限 `download_failed`。

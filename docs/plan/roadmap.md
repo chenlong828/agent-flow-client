@@ -9,8 +9,9 @@ updated: 2026-11-08
 
 ## 当前状态
 
-- S0 本地执行闭环已落地（2026-11-08）：`run`/`doctor`/`version` 可用，`serve` 待 S1；9 个组件除 `CMP-gateway` 外均已 `active`。见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
-- 当前目标：S2 线性多节点与并发；真实调度器联调与 `TC-EXEC-002`（顺序两节点）一并补。
+- **契约已升级到 v2**（2026-11-10，at-least-once、三端点）：client 已按 v2 完成迁移；v1 归档于 `docs/history/works/2026-11-10-contract-v2-migration/`，现行权威 `docs/design/contracts/executor-http-v2.md`。
+- S0 本地执行闭环已落地（2026-11-08）：`run`/`doctor`/`version` 可用。见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
+- 当前目标：S3 安全与交付；真实调度器联调等到调度器侧有实现。
 - 已完成 DSH ACP 对接预研并归档：启动方式、协议序列、权限/取消/关闭边界与本机版本基线，见 `docs/history/works/2026-11-03-dsh-acp-preflight/result.md`。
 - 已完成 S0 P0 阻断项验证（12 项 11 通过）：技能根/格式、写入时机、每节点替换、根隔离、脚本权限、并发、项目根均成立；崩溃遗留孤儿进程（S0-11）未通过，见 `docs/works/2026-11-03-s0-acp-verification/result.md`。
 - 已完成 ACP 会话记录与跨 profile 可见性调研：session 记录按 `DSH_HOME` 归属、不按 profile；共用 home 会被 web/desktop 的 `session/list` 读取，首次初始化还会被 workspace bootstrap 采纳；专用 home 才能满足「desktop/web 看不到」，见 `docs/works/2026-11-03-acp-session-records/result.md`。
@@ -19,7 +20,7 @@ updated: 2026-11-08
 - 已建 `SCN-0002`（配置 client 并完成自检）与 `SCN-0001`（执行节点并回传结果）：配置/自检 3+1 与执行 31 用例；`REQ-0002` R-03（取消立即强杀）与 R-04（崩溃等调度器重派）已锁定，其余阈值留 M1。见 `docs/design/scenarios/execution-plane/run-preparation/configure-and-self-check/scenario.md`、`docs/design/scenarios/execution-plane/node-execution/execute-node-and-report/scenario.md` 与 `docs/requirements/REQ-0002-execution-reliability.md`。
 - 已完成调度器契约提案并归档（2026-11-07，审核通过）：7 个契约面、20 条 `SCH`、13 条 `CLT`、`cleanupPending`/`SCH-20` 等全部收口；见 `docs/history/works/2026-11-04-scheduler-contract-proposal/result.md`。
 - 已完成组件级规格（2026-11-04；2026-11-07 评审通过）：9 份 `docs/design/components/<id>/spec.md`，覆盖组件内部功能、端口签名、状态机、错误分类、数据所有权与验证计划；评审处置见 `docs/history/works/2026-11-07-m1-contract-freeze/review.md`。
-- 已完成 M1 契约冻结并归档（2026-11-07）：`docs/design/contracts/executor-http-v1.md`（frozen，`protocolVersion = 2026-11-07.1`）；字段级权威唯一，组件规格只写端口与失败收口。
+- M1 v1 契约冻结已完成并归档（2026-11-07）；v1 已于 2026-11-10 被 v2 替换，归档在 `docs/history/works/2026-11-10-contract-v2-migration/`。
 
 ## 里程碑
 
@@ -33,7 +34,7 @@ updated: 2026-11-08
 ## 依赖
 
 - S0 不依赖调度器，可独立开始。
-- S1 依赖的字段级契约已于 2026-11-07 冻结（`design/contracts/executor-http-v1.md`），S1 可直接按它实现与建桩。
+- S1 依赖的字段级契约已升级为 v2（`design/contracts/executor-http-v2.md`），client 已按 v2 实现。
 - 上游边界设计：`../../../agent-flow-orchaster/docs/works/2026-11-03-client-boundary/boundary-design.md`。
 
 ## 下一步工作计划
@@ -61,7 +62,9 @@ updated: 2026-11-08
 
 S1 收口（2026-11-08）：7 个任务全部落地，`serve` 接桩调度器单节点全链路通过，S1 门禁 8 条有测试；真实调度器联调与 `TC-EXEC-002` 留 S2。见 `docs/history/works/2026-11-08-s1-contract-skeleton/result.md`。
 
-### 批次 2：S1 契约骨架（已完成，2026-11-08）
+### 批次 2：S1 契约骨架（已完成，2026-11-08；v1 语义，已被 2026-11-10 的 v2 取代）
+
+> 下表是 v1 时期的计划，保留作历史；当前契约与实现以 `design/contracts/executor-http-v2.md` 为准。
 
 目标：接桩调度器，跑通单节点全链路。
 

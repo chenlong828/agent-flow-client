@@ -17,7 +17,7 @@ docs/
 ├── design/                                 ← 真相：系统现在是什么
 │   ├── architecture.md                     ← 系统层：组件、依赖、契约、主流程
 │   ├── contracts/
-│   │   └── executor-http-v1.md             ← 调度器执行面 HTTP 契约 v1（frozen）
+│   │   └── executor-http-v2.md             ← 调度器执行面契约 v2（三端点、at-least-once）
 │   ├── test-matrix.md                      ← SCN UC → 测试文件映射
 │   ├── components/                         ← 组件规格（9 份，planned）
 │   │   ├── CMP-cli/spec.md
@@ -58,6 +58,11 @@ docs/
 │   │   └── result.md
 └── history/                                ← 记忆：怎么走到这里的
     ├── works/                              ← 已归档工序（frozen）
+    │   ├── 2026-11-10-execution-semantics-proposal/ ← 执行容错语义提议（已被 v2 取代）
+    │   ├── 2026-11-10-contract-v2-migration/ ← 执行面契约 v2 迁移（已收口）
+    │   │   ├── brief.md
+    │   │   ├── result.md
+    │   │   └── executor-http-v1.md         ← v1 归档
     │   ├── 2026-11-09-s2-linear-and-recovery/ ← S2 线性多节点与恢复（已收口）
     │   │   ├── brief.md
     │   │   └── result.md
@@ -98,7 +103,7 @@ docs/
 1. `requirements/`：为什么做；
 2. `plan/roadmap.md`：接下来做什么；
 3. `design/architecture.md`：系统层组件、依赖、契约与主流程；
-4. `design/contracts/`：字段级契约（当前为 `executor-http-v1.md`，frozen）；
+4. `design/contracts/`：字段级契约（当前为 `executor-http-v2.md`）；
 5. `design/components/`：逐组件规格（职责、内部功能、契约、数据、验证）；
 6. `design/scenarios/`：业务场景与验收；
 7. `works/` 最近的工序：正在做什么、验证过什么；

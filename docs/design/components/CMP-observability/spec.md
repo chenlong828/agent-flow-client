@@ -45,7 +45,8 @@ type LogRecord = {
   pid?: number;
   instanceId?: string;
   nodeId?: string;
-  attemptId?: string;
+  taskId?: string;
+  attempt?: number;
   sessionId?: string;
   phase?: string;
   errorClass?: string;

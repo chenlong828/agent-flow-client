@@ -65,7 +65,7 @@ async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 
 }
 
 describe("v2 serve：poll 单循环", () => {
-  test("并发两任务：同一 DSH 进程、各自结果、running 如实上报", async () => {
+  test("TC-EXEC-002 并发两任务：同一 DSH 进程、各自结果、running 如实上报", async () => {
     const { container, procLog, stub, child } = await fixture({ tasks: 2 });
     await waitFor(() => stub.results().length >= 2);
     expect(stub.results().map((result) => result.status)).toEqual(["succeeded", "succeeded"]);

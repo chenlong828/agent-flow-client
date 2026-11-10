@@ -9,7 +9,7 @@ updated: 2026-11-08
 
 > 范围：client 的对外接口面、组件切分、主流程、数据所有权与关键不变量。字段级契约、DSH/ACP 细节与实现细节不在本文。
 >
-> 调度器契约的字段级权威：[`contracts/executor-http-v1.md`](contracts/executor-http-v1.md)（frozen，`protocolVersion = 2026-11-07.1`）。本文只定接口面与跨组件关系，**不复述字段**。
+> 调度器契约的字段级权威：[`contracts/executor-http-v2.md`](contracts/executor-http-v2.md)（v2，2026-11-10，三端点、at-least-once）。本文只定接口面与跨组件关系，**不复述字段**。
 >
 > 设计过程与取舍见 `docs/history/works/2026-11-03-client-concept-design/`（历史记录，不作为现行依据）。
 >
@@ -26,13 +26,13 @@ updated: 2026-11-08
 | 维度 | 规则 |
 |---|---|
 | 进程 | 一个 client 进程；`serve` 常驻，`run` 单次；同一执行内核 |
-| 实例 | 一个实例一个 DSH 进程；client 可同时承载多个实例，受容量限制 |
-| session | 一个可执行节点一个 session；建 session → 上报 id → 取技能集 → prompt；用完即关，不复用 |
-| 工作区 | 一实例一个**容器**：准备阶段预置，含 0..N 个带 `.git` 的仓库；顺序节点共享；fan-out 分支共享同一容器与同一技能集 |
-| 技能 | 节点级集合；落地在容器根 `.dsh/skills`；刷新是替换，按 digest 幂等 |
-| 容量 | 按**实例数**上报（`maxInstances` / `activeInstances`）；同一实例同一时刻只跑一个 attempt，fan-out 在 client 侧串行（契约 §11 方案 A，`SCH-19`） |
-| 心跳 | 30s 长轮询，兼作控制事件通道；请求到达即续租，租约过期裁决离线 |
-| 取消 | 实例级整体取消（含整个 fan-out），立即终止，不等跑完 |
+| 实例 | 一实例一个 DSH 进程；同一实例允许多个任务并发（共享容器与同一技能集 digest） |
+| 任务 | 一个 `taskId` 一个 session；技能集随任务下发；任务结束关 session，不复用 |
+| 工作区 | 一实例一个**容器**：准备阶段预置，含 0..N 个带 `.git` 的仓库；任务共享；产物默认保留 |
+| 技能 | 任务级集合；落地在容器根 `.dsh/skills`；替换不叠加、按 digest 幂等；同容器安装串行 |
+| 容量 | 本地 `maxConcurrent`；`poll` 上报 `capacity.free`；调度器不超卖 |
+| 判活 | `poll` 长轮询（服务端挂起 30s、客户端 40s 超时）；没有独立心跳端点 |
+| 控制 | `stop` / `cancelInstances` 电平信号；实例级取消，立即终止 |
 
 ## 3. 对外接口面
 
@@ -40,19 +40,15 @@ updated: 2026-11-08
 
 | 契约面 | 操作 | 目的 |
 |---|---|---|
-| `C-01` 注册 | `register` | 身份、版本、容量、`limits`；可选 `assignments`；`cleanupPending` |
-| `C-02` 心跳 + 控制 | `heartbeat`（长轮询） | 续租、上报状态、收控制事件、`cleanupAcks` |
-| `C-03` 领取 | `claim`（长轮询） | 取绑定本 client 的 `NodeRequest`；`claimRequestId` 幂等 |
-| `C-04` 会话绑定 | `bindSession` | 上报 `sessionId`；返回该节点技能集（不含租约） |
-| `C-05` 技能包 | `GET …/download` | `CMP-assets` 直连下载（不经 gateway） |
-| `C-06` 续租 | `renew` | 尝试租约，TTL/3 一次 |
-| `C-07` 结果上报 | `reportResult` | 少量结果与错误类别，按 `attemptId` 幂等 |
+| `P-01` 取任务 | `POST /poll`（长轮询） | 取任务、上报 `running[]`/`finished[]`、收 `stop`/`cancelInstances` |
+| `P-02` 交结果 | `POST /tasks/{taskId}/result` | 交 `TaskResult`；首份为准，`accepted` 确认 |
+| `P-03` 技能包 | `GET /skill-packages/{packageId}` | 取 zip；304 命中缓存 |
 
-字段、状态码、错误码、枚举、幂等规则全部以 [`contracts/executor-http-v1.md`](contracts/executor-http-v1.md) 为准；client 只实现消费端，不自定义字段。控制面只出站，调度器不主动连 client。
+字段、错误码、容量与超时全部以 [`contracts/executor-http-v2.md`](contracts/executor-http-v2.md) 为准；client 只实现消费端，不自定义字段。控制面只出站，调度器不主动连 client。
 
 ### 3.2 CLI 操作面
 
-`serve` / `run` / `doctor` / `version`；配置启动时一次性加载、校验、冻结。退出码：`0` 成功、`1` `run` 产生非成功节点结果（failed/cancelled/timeout）、`2` 用法/配置、`3` 鉴权或版本不兼容、`4` DSH/运行时、`5` 工作区或资产、`6` 调度器不可达、`7` `run_superseded`（本 run 被更新 run 顶掉）、`130` SIGINT、`143` SIGTERM。`run` 的 stdout 只输出 `NodeResult` JSON，日志走 stderr。SIGINT/SIGTERM：停止领取 → 取消活跃尝试 → flush journal → 关 session/进程 → 退出；第二次信号强杀并记录未收口尝试。
+`serve` / `run` / `doctor` / `version`；配置启动时一次性加载、校验、冻结。退出码：`0` 成功、`1` `run` 产生非成功任务结果（failed/cancelled/timeout）、`2` 用法/配置、`3` 鉴权或协议版本不兼容、`4` DSH/运行时、`5` 工作区或资产、`6` 调度器不可达、`130` SIGINT、`143` SIGTERM。`run` 的 stdout 只输出 `TaskResult` JSON，日志走 stderr。SIGINT/SIGTERM：停止领取 → 取消活跃任务 → flush journal → 关 session/进程 → 退出；第二次信号强杀并记录未收口任务。
 
 ## 4. 组件与分层
 
@@ -90,32 +86,30 @@ updated: 2026-11-08
 
 | 端口 | 定义方 | 实现方 | 消费方 | 目的 |
 |---|---|---|---|---|
-| `SchedulerPort` | `CMP-executor` | `CMP-gateway` | executor（`bindSession`/`reportResult`）、CLI（`register`/`heartbeat`/`claim`/`renew`） | 调度器协议防腐层 |
+| `SchedulerPort` | `CMP-executor` | `CMP-gateway` | CLI（`poll`/`reportResult`/`downloadPackage`） | 调度器协议防腐层 |
 | `RuntimePort` | `CMP-executor` | `CMP-runtime` | executor | DSH 进程与 ACP 会话 |
-| `WorkspacePort` | `CMP-executor` | `CMP-workspace` | executor | 容器校验、路径解析、清理 |
+| `WorkspacePort` | `CMP-executor` | `CMP-workspace` | executor | 容器校验、路径解析 |
 | `AssetPort` | `CMP-executor` | `CMP-assets` | executor | 技能集安装与 digest |
-| `JournalPort` | `CMP-executor` | `CMP-store` | executor（journal/orphan 写）、CLI（pending/list/锁） | 本地恢复事实 |
+| `JournalPort` | `CMP-executor` | `CMP-store` | executor/CLI | 任务状态、结果与孤儿记录 |
 
 **端口方法速查**（完整签名见 `CMP-executor` §3.4）：
 
 | 端口 | 方法 | 方向/幂等 |
 |---|---|---|
-| `SchedulerPort` | `register`、`heartbeat`、`claim`、`renew`、`bindSession`、`reportResult` | client → 调度器；`claim` 按 `claimRequestId`、其余按 `attemptId` 幂等；心跳/领取长轮询 |
-| `RuntimePort` | `ensureInstance`、`newSession`、`prompt`、`cancel`、`closeSession`、`shutdownInstance` | executor → DSH；`ensureInstance`/`closeSession` 幂等；prompt 受取消/超时 |
-| `WorkspacePort` | `ensureContainer`、`validate`、`resolve`、`cleanup` | executor → 文件系统；`ensureContainer`/`cleanup` 幂等；路径不越界 |
+| `SchedulerPort` | `poll`、`reportResult`、`downloadPackage` | client → 调度器；结果按 `taskId` 首份为准；poll 长轮询 |
+| `RuntimePort` | `ensureInstance`、`newSession`、`prompt`、`cancel`、`closeSession`、`shutdownInstance`、`activeSessions` | executor → DSH；`ensureInstance`/`closeSession` 幂等；prompt 受取消/超时 |
+| `WorkspacePort` | `ensureContainer`、`validate`、`resolve` | executor → 文件系统；容器预置；路径不越界 |
 | `AssetPort` | `install`、`verify`、`currentDigest` | executor → 技能包；同 digest `install` 为空操作；失败回滚 |
-| `JournalPort` | 见 `CMP-executor` §3.4（9 个方法，含 `pendingAll`/`listInstances`） | executor/CLI → 本地存储；追加不覆盖；同实例单写 |
+| `JournalPort` | `append`、`mark`、`settled`、`recordOrphan`、`listOrphans`、`clearOrphan` | executor/CLI → 本地存储；追加不覆盖 |
 
-值类型：`NodeRequest`、`NodeResult`、`SkillSet`、`ControlBatch`、`Lease`、`ClientState`、`HeartbeatOutcome`、`RegistrationOutcome`、`SessionBinding`、`Assignment`、`CleanupPending`、`CleanupAck`、`SessionOutcome`、`ContainerPaths`、`InstalledSkills`、`AttemptRecord`、`OrphanRecord`。调度器相关字段见 [`contracts/executor-http-v1.md`](contracts/executor-http-v1.md) §6；组件只依赖语义，不自行扩展字段。
-
-`AuthProvider` / `SchedulerEndpoint` 也是 `CMP-executor` ports 里的值类型：组合根注入同一个实例给 `CMP-gateway` 与 `CMP-assets`，这样 assets 复用凭据策略而不 import gateway。
+值类型：`TaskRequest`、`TaskResult`、`TaskRecord`、`SkillSet`、`PollRequest`、`PollResponse`、`ResultAck`、`RunningTask`、`FinishedTask`、`SessionOutcome`、`ContainerPaths`、`InstalledSkills`、`OrphanRecord`。字段见 [`contracts/executor-http-v2.md`](contracts/executor-http-v2.md) §5；组件只依赖语义，不自行扩展字段。
 
 契约规则：
 
-1. **只出现稳定概念**：签名只用我方值类型；HTTP、JSON-RPC、SDK、ORM、文件路径格式不得进入端口。字段名以 M1 冻结为准。
-2. **能力 ID**：公开操作以 `CMP-xxx#op` 引用（如 `CMP-executor#executeNode`、`CMP-runtime#prompt`）；场景与测试只引用 ID，不写行号。代码入口在任务落地后回填 `CMP-xxx/file#symbol`。
-3. **幂等**：跨进程写操作以 `attemptId` 为幂等键；重复投递/上报返回既有结果，不重复执行。
-4. **错误模式**：错误码是契约的一部分；组件内部错误先归一为稳定码，再由 `CMP-result` 映射为 `ErrorClass` + `retryable`。
+1. **只出现稳定概念**：签名只用我方值类型；HTTP、JSON-RPC、SDK、ORM、文件路径格式不得进入端口。字段名以 v2 冻结为准。
+2. **能力 ID**：公开操作以 `CMP-xxx#op` 引用；场景与测试只引用 ID，不写行号。
+3. **幂等**：结果按 `taskId` 首份为准；`finished[]` 保证「结果已算出、响应丢失」不被重发；同一任务重派只递增 `attempt`。
+4. **错误模式**：错误码是契约的一部分；组件内部错误先归一为稳定码，再由 `CMP-result` 映射为 `ErrorClass`（无 `retryable`）。
 5. **超时/取消**：热/跨进程调用必须声明超时与取消；未声明视为契约缺陷。
 6. **数据单家**：每份共享数据只有一个写入口；组件之间不互相读存储，跨组件数据只走端口。
 7. **无泄漏**：`CMP-result` 不依赖端口；L0 不 import L1/L2 业务代码；L1/L2 不 import L0 具体类型（组合根例外）。
@@ -124,26 +118,26 @@ updated: 2026-11-08
 
 | 契约 | 版本 | 兼容规则 | 废弃/迁移 |
 |---|---|---|---|
-| 5 个端口 | v1 | 只做加法（新方法/新可选字段）；破坏性变更升主版本 | 旧版本保留一个里程碑；调用方按版本注入 |
+| 5 个端口 | v2 | 只做加法（新方法/新可选字段）；破坏性变更升主版本 | 旧版本保留一个里程碑；调用方按版本注入 |
 | CLI 操作面 | v1 | 新命令/新 flag 可加；退出码语义稳定 | 旧命令保留别名；删除需 P2 |
-| 配置 `.config` | v1 | 未知键忽略；新键可加；非法值不回退 | 键名变更需迁移说明（OQ-014） |
-| journal | v1 | 读取方忽略未知字段；写入方保留 `v` | 格式升级写新文件 + 快照迁移 |
+| 配置 `.config` | v2 | 未知键忽略；新键可加；非法值不回退 | 键名变更需迁移说明 |
+| journal | v2 | 读取方忽略未知字段；写入方保留 `v` | v1 记录忽略 |
 | 日志/`doctor` JSON | v1 | 字段可加；已有字段语义不变 | 消费方忽略未知字段 |
 | ACP | v1 | 按 DSH 基线；升级前复跑关键用例 | 版本不兼容退出 3 |
-| 技能包/digest | v1（M1 冻结） | digest 覆盖内容；格式变更换 digest | 旧包缓存可失效 |
-| 调度器契约 | **v1 frozen（2026-11-07.1）** | 字段/枚举/错误码加法兼容；删字段、改语义、改必填性升 `protocolVersion` | 不兼容停止领取，退出 3；`run_superseded` 退出 7 |
+| 技能包/digest | v1 | digest 覆盖内容；格式变更换 digest | 旧包缓存可失效 |
+| 调度器契约 | **v2（2026-11-10）** | 三端点、at-least-once；`X-Executor-Protocol: 2` | 不兼容 `400 unsupported_protocol`，停止并退出 |
 
 ### 4.3 依赖矩阵与禁止边
 
 | 调用方 | 被调方 | 契约 | 方式 | 冷热 | 失败处理 |
 |---|---|---|---|---|---|
-| `CMP-cli` | `CMP-executor` | `executeNode` / `cancelInstance` / `recover` / `snapshotAttempts` / `reconcileCleanup` | 同步 | 冷 | 节点失败，按错误类别上报；快照失败按空集合；对账失败保留 pending |
-| `CMP-cli` | `CMP-gateway` | `SchedulerPort` lease 组（`register`/`heartbeat`/`claim`/`renew`） | 同步 | **热** | 退避重试；心跳不可停 |
+| `CMP-cli` | `CMP-executor` | `executeTask` / `cancelInstance` / `cancelAll` / `snapshotRunning` | 同步 | 冷 | 任务失败按错误类别上报；快照只用于 `running[]` |
+| `CMP-cli` | `CMP-gateway` | `SchedulerPort`（`poll`/`reportResult`/`downloadPackage`） | 同步 | **热** | 退避重试；poll 不可停 |
 | `CMP-cli` | `CMP-store` | `JournalPort` / `StoreAdmin` | 同步 | 冷 | 降级：跳过坏记录并告警 |
 | `CMP-cli` | `CMP-runtime` | `RuntimeAdmin`（doctor/reap） | 同步 | 冷 | 记录并继续 |
 | `CMP-cli` | `CMP-workspace` / `CMP-assets` | `*Admin.diagnose` | 同步 | 冷 | 记录并继续 |
 | `CMP-executor` | `CMP-result` | `assemble` / `classify` | 同步（纯函数） | 冷 | 不可失败 |
-| `CMP-executor` | `SchedulerPort` | `bindSession` / `reportResult` | 同步 | 冷 | 传输重试；失败则节点失败 |
+| `CMP-executor` | `SchedulerPort` | 不直接依赖（由 CLI 上报） | — | — | — |
 | `CMP-executor` | `RuntimePort` | `ensureInstance` / `newSession` / `prompt` / `cancel` / `closeSession` / `shutdownInstance` | 同步（长等） | 冷 | 关坏 session；节点失败 |
 | `CMP-executor` | `WorkspacePort` | `ensureContainer` / `validate` / `resolve` / `cleanup` | 同步 | 冷 | 节点失败 |
 | `CMP-executor` | `AssetPort` | `install` / `verify` / `currentDigest` | 同步（下载/解压） | 冷 | 回滚；不 prompt；节点失败 |
@@ -169,13 +163,13 @@ updated: 2026-11-08
 | 组件 | 内部功能 | 关键状态/不变量 |
 |---|---|---|
 | `CMP-cli` | `main`、`resolveRunDir`、`loadConfig`、`runServe`、`runOnce`、`runDoctor`、`runVersion`、组合根、信号 | 配置冻结；心跳独立于执行；退出码 |
-| `CMP-executor` | `AttemptRegistry`、`AttemptRunner`、`CancellationScope`、`SkillDigestGuard`、`RecoveryPlanner`、`CleanupReconciler`、`ports` | 状态机 `claimed→bound→ready→running→settled→reported→closed`；attempt 单飞；清理对账单点 |
+| `CMP-executor` | `TaskRunner`、`CancellationScope`、`ports` | 状态 `received→running→settled`；同 taskId 单飞；结果先落盘 |
 | `CMP-result` | `assemble`、`classify`、`truncate`、`mapStopReason` | 纯函数；错误分类单点；UTF-8 安全截断 |
-| `CMP-gateway` | `HttpTransport`、`LongPollLoop`、`RetryPolicy`、`AuthProvider`、`VersionNegotiator`、`IdempotencyCache`、`LeaseTracker`、`ControlSeq` | 长轮询续租；`seq` 幂等；迟到只审计 |
+| `CMP-gateway` | `HttpTransport`、`RetryPolicy` | `poll` 长轮询；结果首份为准；`X-Executor-Protocol: 2` |
 | `CMP-runtime` | `InstanceSupervisor`、`ProfilePatcher`、`AcpConnection`、`SessionRegistry`、`ProcessReaper`、`PermissionPolicy` | 一实例一进程；一 session 单 prompt；取消立即强杀 |
 | `CMP-workspace` | `ensureContainer`、`validate`、`resolve`、`cleanup`、`diagnose` | 容器根即技能根；路径不越界；清理幂等 |
 | `CMP-assets` | `install`、`verify`、`currentDigest`、原子替换、格式校验、缓存 | 替换不叠加；失败回滚；digest 幂等 |
-| `CMP-store` | `append`、`pending`、`mark`、`lockInstance`、孤儿记录、压缩 | 追加不覆盖；同实例单写；可降级读取 |
+| `CMP-store` | `append`、`mark`、`settled`、孤儿记录 | 追加不覆盖；结果先落盘；可降级读取 |
 | `CMP-observability` | `log`、`child`、脱敏、`collect`、`render`、`exitCode`、`progress` | 日志不阻塞；不泄漏凭据/原文 |
 
 ### 4.5 需求/场景到组件的追溯
@@ -192,8 +186,8 @@ S0 不接调度器：`SCN-0001` 的触发用 `CMP-cli` 的 `run` + `LocalSchedul
 
 | 路径 | 热/冷 | 触发/频率 | 经过组件与契约 | 同步依赖 | 失败/降级 | 资源隔离 | 一致性/观测 |
 |---|---|---|---|---|---|---|---|
-| 租约循环 | **热** | 注册/心跳 30s 长轮询/领取/续约 | CLI → `SchedulerPort` → gateway | 1 | 退避重连；鉴权/版本失败停领；持续不可达退出 6 | 独立定时器，不占执行队列 | 请求到达即续租；`seq`/`ackSeq`；观测延迟/错误率 |
-| 节点执行 | 冷 | 每节点一次；分钟级 | executor → workspace / runtime / assets / result / `SchedulerPort` | 5 | 分类失败；结果先落 journal；可幂等重报 | 每实例独立进程/容器/home | `settled` 后可重放；观测 phase/attempt/session |
+| poll 循环 | **热** | 常驻 30s 长轮询（兼判活） | CLI → `SchedulerPort` → gateway | 1 | 退避重连；鉴权/协议失败退出 3；持续不可达退出 6 | 独立任务，不占执行队列 | `running[]`/`finished[]`；观测延迟/错误率 |
+| 任务执行 | 冷 | 每任务一次；分钟级 | executor → workspace / runtime / assets / result | 4 | 分类失败；结果先落 journal；未 accepted 前留在 finished | 每实例独立进程/容器/home | `settled` 后可重报；观测 taskId/session |
 | 技能安装 | 冷 | 每节点/技能集变化 | executor → `AssetPort` → assets | 0（assets 自持下载） | 原子回滚；不 prompt；失败 asset 类 | 独立 staging/cache；大小上限 | digest + 原子替换；观测包名/大小/耗时 |
 | 恢复/`doctor` | 冷 | 启动/手动 | CLI → store / runtime / workspace / assets `*Admin` | 0（S0 不查网络） | 降级跳过坏记录；检查失败不阻塞启动 | 实例串行清理；不与执行共享锁 | `pending`/orphan/检查项；脱敏 |
 
@@ -217,55 +211,49 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 
 ## 5. 主流程
 
-1. 领取（租约）：`claim` 取绑定本实例的 `NodeRequest`（含容器路径、技能集引用与 prompt）；领取成功后 `journal.lockInstance(instanceId)`，`closed`/`abandoned` 后释放。取锁失败不执行，报 `failed(workspace)`。
-2. 准备：`CMP-workspace` 校验预置容器；`CMP-runtime` 确保实例 DSH 进程（独立 `DSH_HOME`，profile 补丁写入技能可见性配置）。
-3. 建 session：`session/new`，`cwd` 固定为容器根；上报 `sessionId`。
-4. 取技能集：`bindSession` 返回该节点技能集。
-5. 刷技能：`CMP-assets` 原子替换容器根 `.dsh/skills`（按 digest 幂等），脚本赋权。
-6. 执行：下发 prompt，消费 ACP 事件，累积最终消息、停止原因与用量。
-7. 结算：`CMP-result` 组装 `NodeResult` → journal 记 `settled` → `CMP-gateway` 上报（同 attempt 幂等）→ journal 记 `reported`。
-8. 收尾：关 session；journal 记 `closed`；实例结束或取消时由 executor 调 `runtime.shutdownInstance`（关闭并删除 `DSH_HOME`）与 `workspace.cleanup`（按策略）。
+1. 取任务：`poll` 常驻长轮询，带 `capacity.free`、`running[]`、`finished[]`；服务端返回 `tasks[]`/`stop`/`cancelInstances`。
+2. 登记：收到任务先登记到本地 in-flight，再发起下一次 `poll`（`C-01`）。
+3. 准备：`CMP-workspace` 校验预置容器；`CMP-runtime` 确保实例 DSH 进程。
+4. 建 session：`session/new`，`cwd` 固定为容器根。
+5. 刷技能：`CMP-assets` 原子替换容器根 `.dsh/skills`；同 digest 直接短路；同容器安装串行。
+6. 执行：下发 prompt，消费 ACP 事件，强制 `timeoutMs` 与可选 idle 看门狗。
+7. 结算：`CMP-result` 组装 `TaskResult` → journal 记 `settled`（结果先落盘）→ `reportResult` → `accepted` 后记 `reported`；未 accepted 前保留在 `finished[]`。
+8. 收尾：关 session；实例进程保留供后续任务；`stop` 时跑完手上任务退出 0；`cancelInstances` 立即中止并上报 `cancelled`。
 
-技能刷新失败不降级执行；刷新失败、容器校验失败、DSH 启动失败都按节点失败上报。
+技能刷新失败不降级执行；刷新失败、容器校验失败、DSH 启动失败都按任务失败上报。
 
 ## 6. 关键不变量
 
-1. 同一 `instanceId` 同一时刻只执行一个 attempt（`SCH-19`）；不同实例可并行，受 `maxInstances` 限制。`attemptId` 去重，重复领取不重复执行。
-2. 先建 session、再取技能集、再刷新、再 prompt；顺序不交换。
-3. 技能刷新是替换不是叠加；失败不留半套，不 prompt。
-4. 一个可执行节点一个 session；session 不复用。
-5. 取消是实例级整体终止：v1 A 方案下同一实例至多一个活跃 session（`SCH-19`），关闭它并杀进程组，attempt 报 `cancelled`；B 方案（S2）下扩为所有活跃 session。
-6. 跨边界只传控制信息；产物、完整会话记录、日志不出本机。
-7. 工作区单写；路径限制在容器内，拒绝越界与跟随越界符号链接。
-8. 容器预置：client 不 clone、不检出、不建仓库。
-9. 容器根即技能根：session `cwd` 固定为容器根，不指向子仓库。
-10. 容器根不建 `.git`，且位于任何仓库之外；`doctor` 校验 `findProjectRoot(容器根) === 容器根`。
-11. 同一容器的并发节点由调度器保证同一技能集；client 按 digest 幂等安装，违约显式失败。该条在 v1 A 方案下不可达，S2/B 方案才生效。
-12. 心跳是长轮询：请求到达即续租，断开/超时是离线信号，最终以租约过期裁决；心跳与领取是两个独立任务。
-13. 控制事件按 `(clientId, runId)` 作用域、至少一次投递、按 `seq` 幂等应用；新 run 丢弃旧 run 未 ack 事件；事件只作用于 `claimedAt <= issuedAt` 的 attempt，已结算的只 ack。
-14. 结果先落 journal（`settled`）再上报（`reported`）；上报失败只重试传输，不重复执行。
-15. 同一 `attemptId` 重复投递返回既有结果；去重以进程内单飞 + journal 为准，不以 session 复用代替。
-16. 取消/超时不等待 prompt 自然结算；已先结算的结果按实际上报，已上报的只 ack。
-17. 实例释放/清理以 `cleanupPending` 幂等状态为准，`shutdown` 事件只做在线加速；重启后按 `releaseId` 对账，cleanup 完成前该实例不再领取。
-18. 同一 `attemptId` 的结果只归属 `(clientId, attemptId)`，不因 `runId` 变化而失效；重跑必须换新 `attemptId`。
+1. **at-least-once**：同一 `taskId` 可能被执行多次；调度器以第一份被接受的结果为准（`S-08`），client 不承诺 exactly-once。
+2. 一个任务一个 session；session 不复用。
+3. 先装技能再 prompt；技能刷新是替换不是叠加；失败不留半套，不 prompt。
+4. 同一容器上并发任务由调度器保证同一 `skillSet.digest`（`S-06`）；client 只保证安装临界区串行。
+5. 结果先落 journal（`settled`）再上报；未 accepted 前任务一直留在 `finished[]`；重启后补报。
+6. 取消是实例级：`cancelInstances` 命中该实例全部在跑任务，立即终止，结果 `cancelled`。
+7. 跨边界只传控制信息；产物、完整会话记录、日志不出本机。
+8. 路径限制在容器内，拒绝越界与跟随越界符号链接；容器根即技能根。
+9. 容器预置：client 不 clone、不检出、不建仓库；容器根不建 `.git`，位于任何仓库之外。
+10. 工作区默认保留；v2 没有清理指令，回收由运维按 `instanceId` 处理。
+11. `poll` 的 `running[]` 必须包含全部在跑任务；`finished[]` 必须包含全部「有结果未确认」任务。
+12. `stop` 后停止领取，跑完手上任务退出 0；第二次信号强杀。
+13. 任务超时只终止该任务：`session/cancel` → `session/close`；同实例无其它 session 时才回收进程组，避免连带杀死并发任务。
 
 ## 7. 数据所有权
 
 | 数据/状态 | 唯一写入口 | 一致性/保留 |
 |---|---|---|
-| 工作区容器与产物（根 + 子仓库工作树 + `.dsh/skills`） | `CMP-workspace` | 本地强一致；预置仓库按策略保留，默认不删 |
-| 技能缓存与落地 | `CMP-assets` | 原子替换；缓存可失效 |
-| DSH 进程 / session | `CMP-runtime` | 进程退出即回收；一实例一 home |
-| `DSH_HOME`（实例） | CLI 创建/校验；`CMP-runtime` 独占写入 | 运行时使用；`shutdownInstance` 内删除，失败记录留给 `doctor`；不指向 `~/.dsh` |
-| `<stateRoot>/journal.jsonl` / `locks/` / `orphans/` | `CMP-store` | 追加写；崩溃可重建；`stateRoot` 由 CLI 注入 |
-| `<stateRoot>/cache/` | `CMP-assets` | 技能包缓存；可失效；不得读写其他子树 |
-| `<stateRoot>/logs/` | `CMP-observability` | 日志轮转；不得读写其他子树 |
-| 尝试状态 | `CMP-executor` | 仅运行期；可从 journal 重建 |
-| 释放/清理意图 `cleanupPending`/`releaseId` | 调度器（权威）；client 只缓存已处理 `releaseId` | 跨 `runId` 保留到 ack `done`；client 清账后可删本地缓存 |
+| 工作区容器与产物 | `CMP-workspace` | 本地强一致；默认保留 |
+| 技能缓存与落地 | `CMP-assets` | 原子替换；digest 幂等；缓存可失效 |
+| DSH 进程 / session | `CMP-runtime` | 进程退出即回收；一实例一进程 |
+| `DSH_HOME`（实例） | CLI 创建/校验；`CMP-runtime` 独占写入 | 运行期使用；S3 再定回收 |
+| `<stateRoot>/journal.jsonl` / `orphans/` | `CMP-store` | 追加写；崩溃可重建 |
+| `<stateRoot>/cache/` | `CMP-assets` | 技能包缓存；可失效 |
+| `<stateRoot>/logs/` | `CMP-observability` | 日志轮转 |
+| 任务在跑/已结算状态 | `CMP-executor` | 运行期；可从 journal 重建 |
+| 结果确认（`accepted`） | 调度器（权威）；client 只记本地 `reported` | 未确认结果保留到 accepted |
 | 配置 | `CMP-cli` | 启动校验；运行期不变 |
-| 日志 | `CMP-observability` | 本地、脱敏、轮转 |
 
-规则：每份数据只有一个写入口；client 本地记录只用于恢复，不是第二真相；session 绑定语义以调度器为准。`<stateRoot>` 由 CLI 注入同一根，但按子树分区（store / assets / observability），组件不得读写对方子树；新增子树必须在 `architecture.md` 登记。
+规则：每份数据只有一个写入口；client 本地记录只用于恢复与补报，不是第二真相；结果归属以 `taskId` 为准。
 
 ## 8. 工作区与技能可见性
 
@@ -276,32 +264,31 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 └── repo-b/    (.git)
 ```
 
-- 容器由准备阶段预置，`NodeRequest` 带容器路径（编排层参数）；仓库清单由目录本身表达。
+- 容器由准备阶段预置，`TaskRequest.workspacePath` 带容器路径（编排层参数）；仓库清单由目录本身表达。
 - 容器根不建 `.git`，且必须位于任何仓库之外；否则 `projectRoot` 上浮，`.dsh/skills` 不可见。
 - DSH 的项目根取 `cwd` 向上最近的 `.git`，否则 `cwd`；因此 cwd 必须是容器根。
 - 技能可见性：实例 profile 保留 `includeDefaultRoots: true`，把 `dshHome` / `agentsHome` / `bundledSkillDir` 指向三个真实空目录；**只屏蔽全局根，保留项目 `.dsh` / `.agents`**。项目自带 `.agents/skills` 仍可见，同名时 `.dsh` 优先（rank 100 < 200）。
 - 不要用 `DSH_HOME` 环境变量关技能；它同时影响 settings、credentials 等插件。
 - `skill-filesystem` 的补丁是整份替换 config，不与默认配置深合并；未写字段回落 schema 默认值。
 
-## 9. 控制事件（调度器 → client）
+## 9. 控制信号（调度器 → client）
 
-- 通道：心跳长轮询 `heartbeat(state, ackSeq, cleanupAcks?) → ControlBatch`；有事件立即返回，无事件挂起 30s 返回空批；不新增独立通知端点，不做 WebSocket/SSE。
-- 事件闭集：`cancel(instanceId, reason)`、`pause(instanceId)`、`resume(instanceId)`、`shutdown(instanceId?, cleanup?, releaseId?)`。
-- 流转：调度器按 `(clientId, runId)` 单调 `seq` 入队 → 心跳响应内联 `ControlBatch` + `cleanupPending` → `CMP-gateway` 校验 → `CMP-cli` 分派；`cleanupPending` 交 `CMP-executor.reconcileCleanup` → 下次心跳带 `ackSeq` 与 `cleanupAcks`。
-- 语义：至少一次 + 按 `seq` 幂等；同 run 断连补发；新 run 丢弃旧 run 未 ack 事件；事件只作用于 `claimedAt <= issuedAt` 的 attempt（同刻取消优先）；已结算/未知实例只 ack + 审计。
-- `shutdown(instanceId, cleanup)` 的清理意图同时进 `cleanupPending`（§7）；事件丢失不丢清理，`releaseId` 幂等。
-- `cancel` 立即终止、不等 prompt 自然结算；未知类型 ack 并记录。
-- 权限请求的人工审批不在本通道：当前由 client 本地策略裁决；若编排要参与，需新增同步交互面（契约变更）。
+- 通道：`poll` 响应内联 `stop` 与 `cancelInstances[]`；没有独立控制端点，不做 WebSocket/SSE。
+- `stop`：停止领取；跑完手上任务后退出 0。
+- `cancelInstances[]`：中止这些实例的全部在跑任务，丢弃同批任务中属于这些实例的条目；结果报 `cancelled`。
+- 两者都是**电平信号**：调度器持续下发，直到 client 的 `running[]` 不再包含对应任务（`S-07`）。
+- 没有 `pause`/`resume`：暂停 = 调度器不下发新任务；没有 `seq`/`ackSeq`/补发。
+- 权限请求仍由 client 本地策略裁决，不在该通道。
 
 ## 10. 失败与恢复
 
-- 网络/租约：传输退避重试；租约过期丢弃尝试，迟到结果只入审计；`409 run_superseded` 停领、取消活跃、退出 7。
-- 技能资产：原子回滚，不 prompt，节点失败（资产类）。
-- 工作区：校验失败即节点失败；不迁移其他 client。
-- DSH/ACP：关闭坏 session，必要时杀进程；节点失败（运行时类）。
-- 崩溃/重启：清理孤儿进程与残留 session，重新注册并等待调度器重新下发；已产生结果按 `attemptId` 幂等重报（R-02），未结算节点不自动重跑；收到重派后再执行当前节点；**不依赖 session 恢复或历史回放**。
-- 释放/清理：重启后 `register`/`heartbeat` 取 `cleanupPending`，按 `releaseId` 对账执行并回执；事件丢失不阻止清理，cleanup 失败不影响容量释放但需重试。
-- 恢复原则：暂停在节点边界生效；恢复由调度器重新下发触发，client 不自动重跑。
+- 重复派发：`finished[]` 让调度器不重发已算出结果的任务；同一 `taskId` 的结果以首份为准（`accepted=false` 丢弃）。
+- poll 响应丢失：任务未登记即未收到，`S-03` 下一跳重发同一 `taskId`；不需要幂等键。
+- 结果上报失败：重试传输；任务留在 `finished[]`；重启后补报；调度器见到 `finished` 不再重发。
+- 超时/卡死：`timeoutMs` 到点终止并报 `timeout`；可选 idle 看门狗报 `idle_timeout`；调度器按策略重派（`attempt + 1`）。
+- client 崩溃：重启清孤儿进程组；`settled` 结果补报；`received/running` 直接丢弃，等调度器静默回队后重派。
+- 调度器不可达：退避重试；连续失败达到阈值退出 6；`401`/协议不匹配停止并退出 3。
+- 不自动重跑；重试归属调度器。
 
 ## 11. 不做
 
@@ -312,7 +299,7 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 ## 12. 后续
 
 - 组件规格已建（2026-11-04，`planned`）：9 份 `docs/design/components/<id>/spec.md` 覆盖职责、内部功能、端口实现、数据所有权、验证计划与预算；组件级确认前不写实现代码。
-- 调度器契约已冻结（2026-11-07，v1；M1 已收口）：字段级权威见 [`contracts/executor-http-v1.md`](contracts/executor-http-v1.md)，`protocolVersion = 2026-11-07.1`。
+- 调度器契约已升级到 v2（2026-11-10）：三端点、at-least-once、`X-Executor-Protocol: 2`；字段级权威见 [`contracts/executor-http-v2.md`](contracts/executor-http-v2.md)。v1 已归档。
 - 场景与可靠性：`SCN-0002`（配置 client 并完成自检）、`SCN-0001`（执行节点并回传结果）与 `REQ-0002`（执行稳定性与可靠性）已建；S0 先按两个场景的 S0 用例落地。
 - S0 本地闭环工序：以冻结稿的用例与不变量为输入；优先验证取消/崩溃清理、容器根技能可见性、结果回传与 `doctor` 守门。
 - 只读观测 HTTP（`/api/v1/observability`）仍是独立 P1 设计稿（`docs/works/2026-11-06-observability-http/`），未进本架构；确认后另立工序回填。
@@ -331,7 +318,7 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
   - `run` 退出码 `1`、SIGTERM `143`；`run --permission`；
   - `stateRoot` 默认 `<runDir>/.agent-flow-client`（键名待 OQ-014）；
   - `doctor` 由 CLI 编排、各组件 `diagnose()` 提供检查项。
-- **M1 契约冻结（2026-11-07，T1–T10，已收口）**：`protocolVersion = 2026-11-07.1`；`C-01`…`C-07`、`SCH-01`…`SCH-20`、`CLT-01`…`CLT-13`、`cleanupPending`、退出码 7、`run` 作用域控制事件全部落盘；字段权威见 `contracts/executor-http-v1.md`。
+- **契约 v2（2026-11-10）**：调度器侧将执行语义改为 at-least-once，端点收敛为 `poll`/`result`/`skill-packages`；删除 register/heartbeat/claim/renew/bindSession/cleanup、租约、`runId` fencing、`late_result`、`cleanupPending`、`seq/ackSeq`。client 已按 v2 改造，字段权威见 `contracts/executor-http-v2.md`，迁移记录见 `docs/history/works/2026-11-10-contract-v2-migration/`。
 - **配置键已冻结（2026-11-08，OQ-014 关闭）**：`[acp].dsh_home`/`permission`、`[state].root`、`[logging].level`、`[capacity].max_instances`；`stateRoot` 默认 `<runDir>/.agent-flow-client`。
 - **退出码已冻结（2026-11-08，OQ-015 关闭）**：`run` 非成功 `NodeResult` 用 `1`，SIGINT `130`、SIGTERM `143`；其余按 §3.2。
 - **S0 已落地（2026-11-08）**：8 个组件转 `active`；`run`/`doctor` 可用，`SCN-0002` 3+1 与 `SCN-0001` S0 用例通过；见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。

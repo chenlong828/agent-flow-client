@@ -2,63 +2,71 @@
 layer: design
 module: global
 status: current
-updated: 2026-11-08
+updated: 2026-11-10
 ---
 
-# 场景 UC → 测试矩阵
+# 场景 UC → 测试矩阵（executor contract v2）
 
-> 用途：把 `SCN-0001` / `SCN-0002` 的用例映射到计划中的测试文件，作为 S0/S1/S2 验收与覆盖证明的单一入口（`OQ-024` / `AH-08`）。
-> 状态：`planned` 表示测试文件尚未创建；`existing` 表示已有测试。测试 ID 在对应工序拆任务时分配，分配后回填本表。
+> 用途：把 `SCN-0001` / `SCN-0002` 的用例映射到测试文件，作为验收与覆盖证明的单一入口（`OQ-024` / `AH-08`）。
+> 状态：`planned` 表示尚未创建；`existing` 表示已有测试。测试 ID 唯一，测试标题以 ID 开头。
 
-## 1. 执行节点（`SCN-0001`）
+## 1. 执行任务（`SCN-0001`）
 
-| UC | 场景 | 阶段 | 主责组件 | 计划测试文件 | 测试 ID | 状态 |
+| UC | 场景 | 阶段 | 主责组件 | 测试文件 | 测试 ID | 状态 |
 |---|---|---|---|---|---|---|
-| UC-01 | 单节点执行 | S0 | executor/result | `tests/scenarios/s0-exec.test.ts` | `TC-EXEC-001` | existing |
-| UC-02 | 顺序多节点 | S0.1/S2 | executor | `tests/components/executor/sequential-nodes.test.ts`、`tests/scenarios/s2-linear.test.ts` | `TC-EXEC-002` | existing |
-| UC-03 | fan-out 并发 | S2 | executor | `tests/components/executor/fanout.test.ts` | TBD | planned |
-| UC-04 | 技能切换 | S0.1/S2 | assets/executor | `tests/components/executor/sequential-nodes.test.ts`、`tests/components/assets/assets.test.ts` | TBD | existing |
+| UC-01 | 单任务执行 | S0/S1 | executor/result | `tests/scenarios/s0-exec.test.ts` | `TC-EXEC-001` | existing |
+| UC-02 | 顺序/并发两任务 | S2 | executor/cli | `tests/scenarios/v2-serve.test.ts` | `TC-EXEC-002` | existing |
+| UC-03 | 同实例 fan-out 并发 | S2 | executor/cli | `tests/scenarios/v2-serve.test.ts` | TBD | existing |
+| UC-04 | 技能切换 | S2 | assets/executor | `tests/components/assets/assets.test.ts` | TBD | existing |
 | UC-05 | 容器非法 | S0 | workspace | `tests/components/workspace/workspace.test.ts` | TBD | existing |
 | UC-06 | 技能包异常 | S0 | assets | `tests/scenarios/s0-exec.test.ts` | `TC-EXEC-004` | existing |
-| UC-07 | 运行时不可用 | S0/S1 | runtime | `tests/components/runtime/runtime.test.ts` | TBD | existing |
-| UC-08 | 工作区不可写/磁盘满 | S0 | workspace | `tests/components/workspace/workspace.test.ts` | TBD | existing |
-| UC-09 | prompt 超时 | S0/S1 | runtime | `tests/components/runtime/runtime.test.ts` | TBD | existing |
-| UC-10 | 工具失败/权限拒绝 | S0 | runtime | `tests/components/runtime/runtime.test.ts` | TBD | existing |
+| UC-07 | 运行时不可用 | S0 | runtime | `tests/components/runtime/runtime.test.ts` | TBD | existing |
+| UC-08 | 工作区不可写 | S0 | workspace | `tests/components/workspace/workspace.test.ts` | TBD | existing |
+| UC-09 | prompt 超时 | S0 | runtime | `tests/components/runtime/runtime.test.ts` | TBD | existing |
+| UC-10 | 工具权限 | S0 | runtime | `tests/components/runtime/runtime.test.ts` | TBD | existing |
 | UC-11 | DSH 进程崩溃 | S0 | runtime | `tests/components/runtime/runtime.test.ts` | TBD | existing |
-| UC-12 | 结果过大 | S1 | result | `tests/components/result/truncate.test.ts` | TBD | planned |
-| UC-13 | 取消执行 | S0/S2 | runtime/executor | `tests/scenarios/s0-exec.test.ts` | `TC-EXEC-003` | existing |
-| UC-14 | 关闭/二次信号 | S0/S2 | cli | `tests/components/cli/signals.test.ts` | TBD | existing |
-| UC-15 | client 崩溃重启 | S0（仅清理）/S2 | cli/executor/store | `tests/components/executor/execute.test.ts`（`recover`）、`tests/components/store/journal.test.ts` | TBD | existing |
-| UC-16 | 孤儿进程 | S0 | runtime | `tests/components/runtime/runtime.test.ts`、`tests/scenarios/s0-exec.test.ts` | TBD | existing |
-| UC-17 | 崩溃 session/lock | S0 | runtime/store | `tests/components/runtime/runtime.test.ts`、`tests/components/store/locks.test.ts` | TBD | existing |
-| UC-18 | 重跑幂等 | S0.1/S1 | executor | `tests/components/executor/sequential-nodes.test.ts` | TBD | existing |
-| UC-19 | 调度器不可达 | S1 | gateway/cli | `tests/components/gateway/transport.test.ts` | TBD | existing |
-| UC-20 | 心跳长轮询断开 | S1 | gateway | `tests/components/gateway/gateway.test.ts`、`tests/scenarios/s1-serve.test.ts` | TBD | existing |
-| UC-21 | 租约过期/迟到结果 | S1 | gateway/executor | `tests/components/gateway/transport.test.ts`、`tests/components/gateway/gateway.test.ts` | TBD | existing |
-| UC-22 | 重复投递/上报 | S1 | gateway/executor | `tests/components/gateway/gateway.test.ts`、`tests/components/executor/execute.test.ts` | TBD | existing |
-| UC-23 | 版本/鉴权失败 | S1 | gateway/cli | `tests/components/gateway/transport.test.ts`、`tests/scenarios/s1-serve.test.ts` | TBD | existing |
-| UC-24 | 同容器同技能集并发 | S2 | executor | `tests/components/executor/fanout.test.ts` | TBD | planned |
-| UC-25 | 不同技能集并发 | S2 | executor/assets | `tests/components/executor/execute.test.ts`（A 形态冲突守卫） | TBD | existing |
-| UC-26 | 多实例/容量上限 | S1/S2 | cli | `tests/components/cli/serve-loop.test.ts` | TBD | planned |
-| UC-27 | 日志/结果/磁盘上限 | S1/S3 | result/observability/store | `tests/components/result/truncate.test.ts`、`tests/components/observability/logging.test.ts` | TBD | planned |
+| UC-12 | 结果过大 | S1 | result/executor | `tests/components/result/result.test.ts`、`tests/components/executor/execute.test.ts` | TBD | existing |
+| UC-13 | 取消执行 | S0/S2 | runtime/executor | `tests/scenarios/v2-serve.test.ts` | `TC-EXEC-003` | existing |
+| UC-14 | 信号收口 | S0 | cli | `tests/components/cli/signals.test.ts` | TBD | existing |
+| UC-15 | 崩溃重启补报 | S0/S2 | cli/store | `tests/components/store/journal.test.ts`、`tests/scenarios/v2-serve.test.ts` | TBD | existing |
+| UC-16 | 孤儿进程 | S0 | runtime | `tests/components/runtime/runtime.test.ts` | TBD | existing |
+| UC-17 | session 不复用 | S0 | runtime/executor | `tests/components/executor/execute.test.ts` | TBD | existing |
+| UC-18 | 重跑/首份结果 | S1/S2 | gateway/executor | `tests/components/gateway/gateway.test.ts`、`tests/components/executor/execute.test.ts` | TBD | existing |
+| UC-19 | 调度器不可达 | S1 | gateway/cli | `tests/components/gateway/transport.test.ts`、`tests/scenarios/v2-serve.test.ts` | TBD | existing |
+| UC-20 | poll 断开/重连 | S1 | cli | `tests/scenarios/v2-serve.test.ts` | TBD | existing |
+| UC-21 | 超时/重复派发 | S1 | gateway/executor | `tests/scenarios/v2-serve.test.ts` | TBD | existing |
+| UC-22 | 重复投递/上报 | S1 | gateway | `tests/components/gateway/gateway.test.ts` | TBD | existing |
+| UC-23 | 协议/鉴权失败 | S1 | gateway/cli | `tests/scenarios/v2-serve.test.ts`、`tests/components/gateway/transport.test.ts` | TBD | existing |
+| UC-24 | 同容器同技能集并发 | S2 | executor/cli | `tests/scenarios/v2-serve.test.ts` | TBD | existing |
+| UC-25 | 不同技能集并发 | S2 | assets | `tests/components/assets/package.test.ts` | TBD | existing |
+| UC-26 | 容量上限 | S1/S2 | cli | `tests/scenarios/v2-serve.test.ts` | TBD | existing |
+| UC-27 | 日志/结果上限 | S1/S3 | result/observability | `tests/components/result/result.test.ts` | TBD | existing |
 | UC-28 | 不可信路径 | S0 | workspace | `tests/components/workspace/workspace.test.ts` | TBD | existing |
-| UC-29 | 不可信压缩包 | S0/S3 | assets | `tests/components/assets/assets.test.ts` | TBD | existing |
-| UC-30 | 凭据泄漏 | S3 | observability/result | `tests/components/observability/logging.test.ts` | TBD | planned |
+| UC-29 | 不可信包 | S0/S3 | assets | `tests/components/assets/assets.test.ts`、`tests/components/assets/package.test.ts` | TBD | existing |
+| UC-30 | 凭据泄漏 | S3 | observability/result | `tests/components/observability/logger.test.ts` | TBD | existing |
 | UC-31 | 会话隔离 | S0/S3 | runtime/cli | `tests/components/runtime/runtime.test.ts`、`tests/scenarios/s0-config.test.ts` | TBD | existing |
 
 ## 2. 配置与自检（`SCN-0002`）
 
-| 用例 | 场景 | 阶段 | 主责组件 | 计划测试文件 | 测试 ID | 状态 |
+| 用例 | 场景 | 阶段 | 主责组件 | 测试文件 | 测试 ID | 状态 |
 |---|---|---|---|---|---|---|
-| R1 | 无配置、无 env：默认 home | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-001` | existing |
-| R2 | 配置相对/绝对路径 | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-002` | existing |
-| R3 | env 覆盖配置 | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-003` | existing |
-| N1 | 非法 TOML/空值/不可写/指向 `~/.dsh` | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-004` | existing |
-| 补充 | `doctor` 缺 DSH/版本/容器/残留/凭据 | S0 | cli/observability | `tests/components/cli/doctor.test.ts` | TBD | planned |
+| R1 | 默认 home | S0 | cli | `tests/components/cli/config.test.ts`、`tests/scenarios/s0-config.test.ts` | `TC-CONFIG-001` | existing |
+| R2 | 绝对/相对路径 | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-002` | existing |
+| R3 | env 覆盖 | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-003` | existing |
+| N1 | 非法配置 | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-004` | existing |
+| 补充 | `doctor` 缺 DSH/凭据/残留 | S0 | cli/observability | `tests/components/cli/commands.test.ts` | TBD | existing |
 
-## 3. 覆盖门禁
+## 3. 契约 v2 专项
 
-- 每个 S0 UC（`UC-01/05/06/07/08/13/14/16/17/28/29` 与 `UC-31` 部分）必须有至少一个测试文件；`UC-15` 的 S0 部分只覆盖清理。
-- `TC-EXEC-001`…`004` 与 `TC-CONFIG-001`…`004` 是首批锚点；其余测试 ID 在 S0/S1/S2 工序拆任务时分配并回填。
-- 新增/修改场景 UC 时同步更新本表；没有映射的 UC 不得标记 `verified`。
-- CI 至少跑 `bun test`、`bun run typecheck`、`bun run docs:check`；契约测试见 `design/contracts/executor-http-v1.md` 附录 A。
+| 契约面 | 测试文件 |
+|---|---|
+| `P-01` poll 请求/响应/stop/cancelInstances | `tests/components/gateway/gateway.test.ts`、`tests/scenarios/v2-serve.test.ts` |
+| `P-02` result 首份为准/404/accepted=false | `tests/components/gateway/gateway.test.ts` |
+| `P-03` 下载/304/404/摘要 | `tests/components/gateway/gateway.test.ts`、`tests/components/assets/package.test.ts` |
+| 头部/错误码/重试 | `tests/components/gateway/transport.test.ts` |
+| `running[]`/`finished[]` | `tests/scenarios/v2-serve.test.ts` |
+
+## 4. 覆盖门禁
+
+- `TC-EXEC-001`…`004` 与 `TC-CONFIG-001`…`004` 是锚点；新增/改 UC 时同步更新本表。
+- v2 关键门禁：120s 静默回队（调度器侧）、结果先落盘后补报、`finished[]` 防重发、并发不串、取消无残留。

@@ -1,9 +1,11 @@
 ---
 layer: works
 module: global
-status: active
+status: frozen
 updated: 2026-11-10
 ---
+
+> **状态：已被取代（2026-11-10）**。调度器侧随后发布 executor contract v2（三端点、at-least-once），本提议的 v1 前提与“契约主体不变”结论不再适用；现行契约见 `docs/design/contracts/executor-http-v2.md`，迁移见 `docs/history/works/2026-11-10-contract-v2-migration/`。
 
 # 工序 Brief：执行容错语义与卡死处理提议
 
