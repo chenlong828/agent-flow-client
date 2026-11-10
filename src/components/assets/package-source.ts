@@ -10,14 +10,22 @@ import { installRemotePackage } from "./package-cache.ts";
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
-export type SourcePackage = { name: string; digest: string; downloadUrl: string; etag?: string };
+export type SourcePackage = {
+  packageId: string;
+  name: string;
+  version: string;
+  digest: string;
+  sizeBytes: number;
+  downloadUrl: string;
+  etag?: string;
+};
 
 async function isRemotePackage(pkg: SourcePackage, options: AssetOptions): Promise<boolean> {
   if (/^https?:/.test(pkg.downloadUrl)) return true;
   if (pkg.downloadUrl.startsWith("file://")) return false;
   if (!isAbsolute(pkg.downloadUrl)) return true;
   const isLocalDir = await stat(pkg.downloadUrl).then((info) => info.isDirectory()).catch(() => false);
-  return !isLocalDir && options.baseUrl !== undefined;
+  return !isLocalDir;
 }
 
 /** 包来源分派：本地目录（S0 保留）或 `C-05` HTTP zip。 */
@@ -45,11 +53,8 @@ async function materializeRemote(
   limits: CopyLimits,
   options: AssetOptions,
 ): Promise<void> {
-  if (options.baseUrl === undefined) {
-    throw new AssetError("download_failed", `未配置调度器地址，无法下载技能包：${pkg.name}`);
-  }
   try {
-    await installRemotePackage(pkg, staging, limits, { ...options, baseUrl: options.baseUrl });
+    await installRemotePackage(pkg, staging, limits, options);
   } catch (error) {
     if (error instanceof AssetError) throw error;
     if (error instanceof PackageDownloadError) {

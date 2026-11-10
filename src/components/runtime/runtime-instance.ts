@@ -28,7 +28,7 @@ export async function startInstance(
       onServerRequest: (method, params) => Promise.resolve(state.permission(method, params, options.permission)),
       onExit: (code) => {
         options.onStderr?.(`DSH 进程退出：code=${String(code)}`);
-        state.applyExit(instance.instanceId);
+        state.removeInstance(instance.instanceId);
       },
     });
     const handle: InstanceHandle = {

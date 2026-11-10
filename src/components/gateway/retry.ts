@@ -31,7 +31,7 @@ export async function withRetry<T>(operation: (attempt: number) => Promise<T>, o
       if (!retryable || attempt === maxAttempts) throw gatewayError;
       const backoff = Math.min(maxMs, baseMs * 2 ** (attempt - 1));
       const jitter = backoff * (Math.random() * (options.jitterRatio ?? 0.2));
-      await sleep(Math.max(0, gatewayError.retryAfterMs ?? backoff + jitter));
+      await sleep(Math.max(0, backoff + jitter));
     }
   }
   throw lastError ?? new GatewayError("unreachable", "重试失败");

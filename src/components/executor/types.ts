@@ -1,24 +1,15 @@
 /**
- * CMP-executor 值类型（字段权威见契约 §6）。端口接口在 `ports.ts`。
- *
- * 字段级权威见 docs/design/contracts/executor-http-v1.md §6；本文件只落 client
- * 侧需要的领域类型，不扩展契约字段。
+ * CMP-executor 值类型（executor-http-v2 §5）。
+ * 端口接口在 `ports.ts`，调度器端口在 `scheduler-port.ts`。
  */
 
-export type AttemptId = string;
+export type TaskId = string;
 export type InstanceId = string;
 export type NodeId = string;
 export type SessionId = string;
 
-export type AttemptState =
-  | "claimed"
-  | "bound"
-  | "ready"
-  | "running"
-  | "settled"
-  | "reported"
-  | "closed"
-  | "abandoned";
+/** 本地状态：received → running → settled（结果落盘） → reported（已 accepted）。 */
+export type TaskState = "received" | "running" | "settled" | "reported";
 
 export type ResultStatus = "succeeded" | "failed" | "cancelled" | "timeout";
 
@@ -26,62 +17,35 @@ export type ErrorClass =
   | "workspace"
   | "asset"
   | "runtime"
-  | "timeout"
-  | "cancelled"
   | "protocol"
+  | "cancelled"
+  | "timeout"
   | "scheduler"
   | "internal";
-
-export type CancelReason =
-  | "user_cancel"
-  | "paused"
-  | "shutdown"
-  | "lease_expired"
-  | "superseded"
-  | "signal"
-  | "prompt_timeout";
 
 export type Usage = {
   inputTokens?: number;
   outputTokens?: number;
 };
 
-export type NodeError = {
+export type TaskError = {
   class: ErrorClass;
   code: string;
   message: string;
-  retryable: boolean;
-  reason?: CancelReason;
 };
 
-export type NodeResult = {
-  attemptId: AttemptId;
+export type TaskResult = {
+  taskId: TaskId;
+  attempt: number;
   status: ResultStatus;
   sessionId?: SessionId;
   message: string;
   truncated: boolean;
   stopReason: string | null;
   usage: Usage | null;
-  error: NodeError | null;
+  error: TaskError | null;
   startedAt?: string;
   finishedAt?: string;
-};
-
-export type Lease = {
-  expiresAt: string;
-  ttlMs: number;
-};
-
-export type NodeRequest = {
-  attemptId: AttemptId;
-  attemptNo: number;
-  instanceId: InstanceId;
-  nodeId: NodeId;
-  workspacePath: string;
-  prompt: string;
-  timeoutMs: number;
-  claimedAt: string;
-  lease: Lease;
 };
 
 export type SkillPackage = {
@@ -99,31 +63,65 @@ export type SkillSet = {
   packages: SkillPackage[];
 };
 
-export type SessionBinding = {
-  serverTime: string;
+export type TaskRequest = {
+  taskId: TaskId;
+  instanceId: InstanceId;
+  nodeId: NodeId;
+  attempt: number;
+  prompt: string;
+  workspacePath: string;
+  timeoutMs: number;
   skillSet: SkillSet;
 };
 
-export type AttemptRecord = {
-  v: 1;
+export type RunningTask = {
+  taskId: TaskId;
+  instanceId: InstanceId;
+  startedAt: string;
+  lastEventAt?: string;
+};
+
+export type FinishedTask = {
+  taskId: TaskId;
+  attempt: number;
+  finishedAt: string;
+};
+
+export type PollRequest = {
+  capacity: { free: number };
+  running: RunningTask[];
+  finished: FinishedTask[];
+};
+
+export type PollResponse = {
+  tasks: TaskRequest[];
+  stop: boolean;
+  cancelInstances: InstanceId[];
+  nextPollAfterMs: number;
+};
+
+export type ResultAck = {
+  taskId: TaskId;
+  accepted: boolean;
+};
+
+export type TaskRecord = {
+  v: 2;
   ts: string;
-  attemptId: AttemptId;
+  taskId: TaskId;
+  attempt: number;
   instanceId: InstanceId;
   nodeId: NodeId;
-  state: AttemptState;
+  state: TaskState;
   sessionId?: SessionId;
-  result?: NodeResult;
-  error?: { code: string; class: ErrorClass; message: string };
+  result?: TaskResult;
 };
 
 export type OrphanRecord = {
   pid: number;
   pgid?: number;
   instanceId: InstanceId;
-  attemptId?: AttemptId;
+  taskId?: TaskId;
   createdAt: string;
   host: string;
 };
-
-export type Unlock = () => Promise<void>;
-

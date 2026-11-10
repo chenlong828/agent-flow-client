@@ -1,28 +1,15 @@
-import type {
-  AttemptId,
-  AttemptRecord,
-  AttemptState,
-  InstanceId,
-  OrphanRecord,
-  Unlock,
-} from "../executor/ports.ts";
+import type { JournalPort } from "../executor/ports.ts";
+import type { InstanceId, OrphanRecord, TaskId, TaskRecord as RecordType, TaskState } from "../executor/types.ts";
 import { FileJournal, type JournalOptions } from "./journal.ts";
-import { LockManager, type LockOptions } from "./locks.ts";
 import { OrphanStore } from "./orphans.ts";
 
-/** 组合 journal、实例锁与孤儿记录，实现 `JournalPort`。 */
-export class FileStore extends FileJournal {
-  readonly #locks: LockManager;
+/** 组合 journal 与孤儿记录，实现 `JournalPort`（v2 无实例锁、无清理回执）。 */
+export class FileStore extends FileJournal implements JournalPort {
   readonly #orphans: OrphanStore;
 
-  constructor(options: JournalOptions & LockOptions) {
+  constructor(options: JournalOptions) {
     super(options);
-    this.#locks = new LockManager(options.stateRoot, options);
     this.#orphans = new OrphanStore(options.stateRoot);
-  }
-
-  async lockInstance(instanceId: InstanceId): Promise<Unlock> {
-    return await this.#locks.lock(instanceId);
   }
 
   async recordOrphan(orphan: OrphanRecord): Promise<void> {
@@ -37,20 +24,15 @@ export class FileStore extends FileJournal {
     await this.#orphans.clear(pid);
   }
 
-  lockDiagnostics(): Promise<{ path: string; stale: boolean }[]> {
-    return this.#locks.diagnose();
-  }
-
-  /** 供 executor 测试/恢复使用；不进入 JournalPort。 */
-  async findLatest(attemptId: AttemptId): Promise<AttemptRecord | undefined> {
+  async findLatest(taskId: TaskId): Promise<RecordType | undefined> {
     const { findLatest } = await import("./journal-query.ts");
-    return findLatest(await this.load(), attemptId);
+    return findLatest(await this.load(), taskId);
   }
 
-  async statesOf(attemptId: AttemptId): Promise<AttemptState[]> {
+  async statesOf(taskId: TaskId): Promise<TaskState[]> {
     const { collapse } = await import("./journal-query.ts");
     return collapse(await this.load())
-      .filter((record) => record.attemptId === attemptId)
-      .map((record) => record.state);
+      .filter((record: RecordType) => record.taskId === taskId)
+      .map((record: RecordType) => record.state as TaskState);
   }
 }

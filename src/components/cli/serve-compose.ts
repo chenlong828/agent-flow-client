@@ -7,7 +7,6 @@ import { AcpRuntime } from "../runtime/runtime.ts";
 import { resolveDshCommand } from "../runtime/dsh.ts";
 import { HttpScheduler } from "../gateway/gateway.ts";
 import { HttpTransport } from "../gateway/transport.ts";
-import { loadClientId, newRunId } from "../gateway/identity.ts";
 import { JsonLogger } from "../observability/logger.ts";
 import { S0_MODEL } from "../runtime/profile.ts";
 import type { AppConfig } from "./config.ts";
@@ -22,8 +21,6 @@ export type ServeDeps = {
   runtime: AcpRuntime;
   gateway: HttpScheduler;
   logger: JsonLogger;
-  clientId: string;
-  runId: string;
 };
 
 function modelFromEnv(env: Record<string, string | undefined>) {
@@ -34,15 +31,13 @@ function modelFromEnv(env: Record<string, string | undefined>) {
   };
 }
 
-/** `serve` 的组合根：所有 L0 具体实现只在这里装配。 */
+/** `serve` 的组合根：所有 L0 具体实现只在这里装配（v2 无 clientId/runId）。 */
 export async function composeForServe(
   config: AppConfig,
   env: Record<string, string | undefined>,
   io: CliIo,
 ): Promise<ServeDeps> {
   const stateRoot = config.state.root;
-  const clientId = await loadClientId(stateRoot);
-  const runId = newRunId();
   const logger = new JsonLogger({
     level: config.logging.level,
     stderr: (line) => process.stderr.write(`${line}\n`),
@@ -53,10 +48,26 @@ export async function composeForServe(
   const workspace = new FileWorkspace();
   const schedulerUrl = config.scheduler.url;
   if (schedulerUrl === null) throw new Error("serve 需要 [scheduler].url");
+  const transport = new HttpTransport({ baseUrl: schedulerUrl, token: config.scheduler.token });
+  const gateway = new HttpScheduler({
+    transport,
+    audit: (event, detail) =>
+      logger.log({ level: "info", event, ...(detail === undefined ? {} : { msg: JSON.stringify(detail) }) }),
+  });
   const assets = new LocalAssets({}, {
     cacheRoot: join(stateRoot, "cache", "skills"),
-    baseUrl: schedulerUrl,
-    token: config.scheduler.token,
+    download: async (pkg) => {
+      const downloaded = await gateway.downloadPackage({
+        packageId: pkg.packageId,
+        name: "",
+        version: "",
+        digest: pkg.digest,
+        sizeBytes: pkg.sizeBytes,
+        downloadUrl: "",
+        ...(pkg.etag === undefined ? {} : { etag: pkg.etag }),
+      });
+      return downloaded;
+    },
   });
   const dsh = resolveDshCommand(env);
   if (dsh === null) throw new Error("未找到 DSH 入口：设置 DSH_BIN 或把 dsh 放到 PATH");
@@ -68,27 +79,14 @@ export async function composeForServe(
     credentialsSource: env.DSH_CREDENTIALS_SOURCE,
     onStderr: (line) => logger.log({ level: "debug", event: "dsh.stderr", msg: line }),
   });
-  const transport = new HttpTransport({
-    baseUrl: schedulerUrl,
-    clientId,
-    runId,
-    token: config.scheduler.token,
-  });
-  const gateway = new HttpScheduler(clientId, runId, {
-    transport,
-    clientVersion: "0.0.1",
-    audit: (event, detail) => logger.log({ level: "info", event, ...(detail === undefined ? {} : { msg: JSON.stringify(detail) }) }),
-  });
   const executor = new NodeExecutor({
-    scheduler: gateway,
     runtime,
     workspace,
     assets,
     journal: store,
     dshHome: config.acp.dshHome,
-    maxResultBytes: gateway.limits.maxResultBytes,
-    cleanupPolicy: "keep",
+    maxResultBytes: 262144,
+    ...(config.executor.idleTimeoutMs > 0 ? { idleTimeoutMs: config.executor.idleTimeoutMs } : {}),
   });
-  return { config, env, io, store, executor, runtime, gateway, logger, clientId, runId };
+  return { config, env, io, store, executor, runtime, gateway, logger };
 }
-

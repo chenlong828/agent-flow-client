@@ -1,11 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
-import type { NodeRequest, SkillPackage, SkillSet } from "../executor/ports.ts";
+import type { SkillPackage, SkillSet, TaskRequest } from "../executor/types.ts";
 
-export type LocalRunRequest = {
-  request: NodeRequest;
-  skillSet: SkillSet;
-};
+export type LocalRunRequest = { task: TaskRequest };
 
 export class RequestError extends Error {
   constructor(message: string) {
@@ -23,9 +20,7 @@ function asRecord(value: unknown, label: string): Record<string, unknown> {
 
 function requiredString(source: Record<string, unknown>, key: string, label: string): string {
   const value = source[key];
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new RequestError(`${label} 必须是非空字符串`);
-  }
+  if (typeof value !== "string" || value.trim() === "") throw new RequestError(`${label} 必须是非空字符串`);
   return value;
 }
 
@@ -36,19 +31,16 @@ function optionalString(source: Record<string, unknown>, key: string): string | 
   return value;
 }
 
-function parseLease(value: unknown): NodeRequest["lease"] {
-  const lease = asRecord(value, "lease");
-  const expiresAt = requiredString(lease, "expiresAt", "lease.expiresAt");
-  const ttlMs = lease.ttlMs;
-  if (typeof ttlMs !== "number" || !Number.isInteger(ttlMs) || ttlMs <= 0) {
-    throw new RequestError("lease.ttlMs 必须是正整数");
+function requiredInt(source: Record<string, unknown>, key: string, label: string): number {
+  const value = source[key];
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new RequestError(`${label} 必须是正整数`);
   }
-  return { expiresAt, ttlMs };
+  return value;
 }
 
-function parseSkillSet(value: unknown): SkillSet {
+export function parseSkillSet(value: unknown): SkillSet {
   const skillSet = asRecord(value, "skillSet");
-  const digest = requiredString(skillSet, "digest", "skillSet.digest");
   const rawPackages = skillSet.packages;
   if (!Array.isArray(rawPackages)) throw new RequestError("skillSet.packages 必须是数组");
   const packages: SkillPackage[] = rawPackages.map((raw, index) => {
@@ -67,10 +59,10 @@ function parseSkillSet(value: unknown): SkillSet {
       ...(optionalString(item, "etag") === undefined ? {} : { etag: optionalString(item, "etag") }),
     };
   });
-  return { digest, packages };
+  return { digest: requiredString(skillSet, "digest", "skillSet.digest"), packages };
 }
 
-/** 读取并校验本地 `run --request` 文件（SCN-0001 S0 替身触发）。 */
+/** 读取并校验本地 `run --request` 文件（v2 TaskRequest 形状）。 */
 export async function loadLocalRequest(path: string): Promise<LocalRunRequest> {
   let text: string;
   try {
@@ -85,28 +77,18 @@ export async function loadLocalRequest(path: string): Promise<LocalRunRequest> {
     throw new RequestError(`请求文件不是合法 JSON：${(error as Error).message}`);
   }
   const root = asRecord(parsed, "请求");
-  const attemptNo = root.attemptNo;
-  if (typeof attemptNo !== "number" || !Number.isInteger(attemptNo) || attemptNo < 1) {
-    throw new RequestError("attemptNo 必须是 ≥1 的整数");
-  }
-  const timeoutMs = root.timeoutMs;
-  if (typeof timeoutMs !== "number" || !Number.isInteger(timeoutMs) || timeoutMs <= 0) {
-    throw new RequestError("timeoutMs 必须是正整数");
-  }
   const workspacePath = requiredString(root, "workspacePath", "workspacePath");
-  if (!isAbsolute(workspacePath)) {
-    throw new RequestError("workspacePath 必须是绝对路径");
-  }
-  const request: NodeRequest = {
-    attemptId: requiredString(root, "attemptId", "attemptId"),
-    attemptNo,
-    instanceId: requiredString(root, "instanceId", "instanceId"),
-    nodeId: requiredString(root, "nodeId", "nodeId"),
-    workspacePath,
-    prompt: requiredString(root, "prompt", "prompt"),
-    timeoutMs,
-    claimedAt: requiredString(root, "claimedAt", "claimedAt"),
-    lease: parseLease(root.lease),
+  if (!isAbsolute(workspacePath)) throw new RequestError("workspacePath 必须是绝对路径");
+  return {
+    task: {
+      taskId: requiredString(root, "taskId", "taskId"),
+      instanceId: requiredString(root, "instanceId", "instanceId"),
+      nodeId: requiredString(root, "nodeId", "nodeId"),
+      attempt: requiredInt(root, "attempt", "attempt"),
+      prompt: requiredString(root, "prompt", "prompt"),
+      workspacePath,
+      timeoutMs: requiredInt(root, "timeoutMs", "timeoutMs"),
+      skillSet: parseSkillSet(root.skillSet),
+    },
   };
-  return { request, skillSet: parseSkillSet(root.skillSet) };
 }

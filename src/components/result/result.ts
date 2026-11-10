@@ -1,14 +1,9 @@
-import type {
-  ErrorClass,
-  NodeError,
-  NodeResult,
-  ResultStatus,
-  RuntimeFailure,
-  SessionOutcome,
-} from "../executor/ports.ts";
+import type { RuntimeFailure, SessionOutcome } from "../executor/ports.ts";
+import type { ErrorClass, ResultStatus, TaskError, TaskResult } from "../executor/types.ts";
 
 export type ResultContext = {
-  attemptId: string;
+  taskId: string;
+  attempt: number;
   maxResultBytes: number;
   startedAt?: string;
   finishedAt?: string;
@@ -17,38 +12,34 @@ export type ResultContext = {
 export type ErrorMapping = {
   class: ErrorClass;
   code: string;
-  retryable: boolean;
 };
 
 export type TruncatedText = { text: string; truncated: boolean };
 
 export const TRUNCATION_MARKER = "\n…[truncated]";
 
-type MappingRule = { codes: readonly string[]; class: ErrorClass; retryable: boolean };
+type MappingRule = { codes: readonly string[]; class: ErrorClass };
 
 const MAPPING: readonly MappingRule[] = [
-  { codes: ["not_prepared", "layout_invalid", "path_escape", "permission_denied", "disk_full", "locked"], class: "workspace", retryable: false },
-  { codes: ["download_failed", "checksum_mismatch", "unpack_failed"], class: "asset", retryable: true },
-  { codes: ["invalid_skill_format", "asset_skill_set_conflict", "io_error"], class: "asset", retryable: false },
-  { codes: ["spawn_failed", "process_exited", "prompt_failed"], class: "runtime", retryable: true },
-  { codes: ["protocol_error"], class: "protocol", retryable: false },
-  { codes: ["cancelled"], class: "cancelled", retryable: false },
-  { codes: ["timeout"], class: "timeout", retryable: true },
-  { codes: ["unreachable", "rate_limited"], class: "scheduler", retryable: true },
-  { codes: ["unauthorized", "version_incompatible", "invalid_request", "lease_expired", "invalid_session", "run_superseded", "stale_attempt"], class: "scheduler", retryable: false },
-  { codes: ["corrupt"], class: "internal", retryable: false },
-  { codes: ["internal_error"], class: "internal", retryable: true },
+  { codes: ["not_prepared", "layout_invalid", "path_escape", "permission_denied", "disk_full"], class: "workspace" },
+  { codes: ["download_failed", "checksum_mismatch", "unpack_failed", "invalid_skill_format", "io_error", "package_not_found"], class: "asset" },
+  { codes: ["spawn_failed", "process_exited", "prompt_failed"], class: "runtime" },
+  { codes: ["protocol_error"], class: "protocol" },
+  { codes: ["cancelled"], class: "cancelled" },
+  { codes: ["timeout", "prompt_timeout", "idle_timeout"], class: "timeout" },
+  { codes: ["unsupported_protocol", "unauthorized", "task_not_found", "payload_too_large"], class: "scheduler" },
+  { codes: ["internal_error"], class: "internal" },
 ];
 
-/** 组件稳定错误码 → ErrorClass + retryable；未知错误归 internal（CMP-result §2.2）。 */
+/** 组件稳定错误码 → ErrorClass；未知错误归 internal（CMP-result）。 */
 export function classify(error: RuntimeFailure | { code: string; message: string }): ErrorMapping {
   for (const rule of MAPPING) {
-    if (rule.codes.includes(error.code)) return { class: rule.class, code: error.code, retryable: rule.retryable };
+    if (rule.codes.includes(error.code)) return { class: rule.class, code: error.code };
   }
-  return { class: "internal", code: error.code, retryable: false };
+  return { class: "internal", code: error.code };
 }
 
-/** 按 UTF-8 字节截断；含标记的总字节数不超过 maxBytes（CMP-result §2.3）。 */
+/** 按 UTF-8 字节截断；含标记的总字节数不超过 maxBytes。 */
 export function truncate(text: string, maxBytes: number): TruncatedText {
   if (maxBytes < 0) throw new RangeError("maxBytes 不能为负");
   if (Buffer.byteLength(text, "utf8") <= maxBytes) return { text, truncated: false };
@@ -65,20 +56,21 @@ export function truncate(text: string, maxBytes: number): TruncatedText {
   return { text: `${out}${TRUNCATION_MARKER}`, truncated: true };
 }
 
-/** ACP 停止原因归一；未知值原样保留（`unknown=true`）。 */
+/** ACP 停止原因归一；未知值原样保留。 */
 export function mapStopReason(raw: string | null): { value: string | null; unknown: boolean } {
   if (raw === null) return { value: null, unknown: false };
   const known = ["end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled"];
   return { value: raw, unknown: !known.includes(raw) };
 }
 
-/** 从 SessionOutcome 组装 NodeResult；纯函数，不抛业务异常（CMP-result §3.1）。 */
-export function assemble(outcome: SessionOutcome, ctx: ResultContext): NodeResult {
+/** 从 SessionOutcome 组装 TaskResult；纯函数，不抛业务异常。 */
+export function assemble(outcome: SessionOutcome, ctx: ResultContext): TaskResult {
   const status = statusOf(outcome);
   const truncated = truncate(outcome.finalText, ctx.maxResultBytes);
-  const error = outcome.error === undefined ? null : toNodeError(outcome.error);
+  const error = outcome.error === undefined ? null : toTaskError(outcome.error);
   return {
-    attemptId: ctx.attemptId,
+    taskId: ctx.taskId,
+    attempt: ctx.attempt,
     status,
     ...(outcome.sessionId === "" ? {} : { sessionId: outcome.sessionId }),
     message: truncated.text,
@@ -98,12 +90,7 @@ function statusOf(outcome: SessionOutcome): ResultStatus {
   return "failed";
 }
 
-function toNodeError(error: RuntimeFailure): NodeError {
+function toTaskError(error: RuntimeFailure): TaskError {
   const mapping = classify(error);
-  return {
-    class: mapping.class,
-    code: mapping.code,
-    message: error.message,
-    retryable: mapping.retryable,
-  };
+  return { class: mapping.class, code: mapping.code, message: error.message };
 }

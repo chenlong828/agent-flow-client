@@ -1,34 +1,29 @@
-import type { NodeRequest } from "../executor/ports.ts";
 import { GatewayError } from "../gateway/errors.ts";
 import { ExitCode } from "./exit-codes.ts";
-import { HEARTBEAT_FLOOR_MS, MAX_UNREACHABLE, buildState, delay, stop, type ServeContext } from "./serve-context.ts";
-import { dispatchEvent, rejectAttempt } from "./serve-events.ts";
+import { MAX_UNREACHABLE, POLL_FLOOR_MS, buildPollRequest, delay, stop, type ServeContext } from "./serve-context.ts";
+import type { PollResponse, TaskRequest, TaskResult } from "../executor/types.ts";
 
-/** 心跳长轮询：独立于执行；控制事件分派、清理对账、断线退避。 */
-export async function heartbeatLoop(ctx: ServeContext): Promise<void> {
-  const { gateway, executor, logger } = ctx.deps;
+const MAX_PROMPT_BYTES = 1048576;
+
+/** 单条 poll 循环：取任务、上报 running/finished、收 stop/cancelInstances。 */
+export async function pollLoop(ctx: ServeContext): Promise<void> {
+  const { gateway, logger } = ctx.deps;
   while (!ctx.controller.signal.aborted) {
+    await flushFinished(ctx);
     try {
-      const outcome = await gateway.heartbeat(buildState(ctx), ctx.acks.splice(0));
+      const response = await gateway.poll(buildPollRequest(ctx));
       ctx.unreachable = 0;
-      ctx.assignmentsVersion = outcome.assignmentsVersion;
-      for (const event of outcome.control.events) await dispatchEvent(ctx, event);
-      if (outcome.cleanupPending.length > 0) {
-        ctx.acks.push(...(await executor.reconcileCleanup(outcome.cleanupPending)));
-      }
-      await delay(Math.max(HEARTBEAT_FLOOR_MS, outcome.nextPollAfterMs), ctx.controller.signal);
+      await applyResponse(ctx, response);
+      if (ctx.stopRequested && ctx.running.size === 0) return;
+      await delay(Math.max(POLL_FLOOR_MS, response.nextPollAfterMs), ctx.controller.signal);
     } catch (error) {
       if (ctx.controller.signal.aborted) return;
-      if (error instanceof GatewayError && error.code === "run_superseded") {
-        stop(ctx, ExitCode.runSuperseded);
-        return;
-      }
-      if (error instanceof GatewayError && error.terminalAuthFailure) {
+      if (error instanceof GatewayError && error.terminal) {
         stop(ctx, ExitCode.auth);
         return;
       }
       ctx.unreachable += 1;
-      logger.log({ level: "warn", event: "heartbeat.failed", msg: (error as Error).message });
+      logger.log({ level: "warn", event: "poll.failed", msg: (error as Error).message });
       if (ctx.unreachable >= MAX_UNREACHABLE) {
         stop(ctx, ExitCode.scheduler);
         return;
@@ -38,57 +33,87 @@ export async function heartbeatLoop(ctx: ServeContext): Promise<void> {
   }
 }
 
-/** 领取循环：有容量就领；领取后交给执行任务，同实例由 journal 锁串行。 */
-export async function claimLoop(ctx: ServeContext): Promise<void> {
-  const { gateway, config, logger } = ctx.deps;
-  while (!ctx.controller.signal.aborted) {
-    if (ctx.paused.size >= config.capacity.maxInstances) {
-      await delay(HEARTBEAT_FLOOR_MS, ctx.controller.signal);
-      continue;
-    }
-    try {
-      const request = await gateway.claim(buildState(ctx).capacity);
-      if (request === null) {
-        await delay(HEARTBEAT_FLOOR_MS, ctx.controller.signal);
-        continue;
-      }
-      launch(ctx, request);
-    } catch (error) {
-      if (ctx.controller.signal.aborted) return;
-      if (error instanceof GatewayError && error.code === "run_superseded") {
-        stop(ctx, ExitCode.runSuperseded);
-        return;
-      }
-      if (error instanceof GatewayError && error.terminalAuthFailure) {
-        stop(ctx, ExitCode.auth);
-        return;
-      }
-      logger.log({ level: "warn", event: "claim.failed", msg: (error as Error).message });
-      await delay(1000, ctx.controller.signal);
-    }
+async function applyResponse(ctx: ServeContext, response: PollResponse): Promise<void> {
+  if (response.cancelInstances.length > 0) {
+    for (const instanceId of response.cancelInstances) await ctx.deps.executor.cancelInstance(instanceId);
+  }
+  if (response.stop) ctx.stopRequested = true;
+  for (const task of response.tasks) {
+    if (ctx.stopRequested || ctx.running.has(task.taskId) || ctx.finished.has(task.taskId)) continue;
+    if (response.cancelInstances.includes(task.instanceId)) continue;
+    launchTask(ctx, task);
   }
 }
 
-function launch(ctx: ServeContext, request: NodeRequest): void {
-  const task = runAttempt(ctx, request).finally(() => ctx.inflight.delete(task));
-  ctx.inflight.add(task);
+function launchTask(ctx: ServeContext, task: TaskRequest): void {
+  const startedAt = new Date().toISOString();
+  ctx.running.set(task.taskId, { task, startedAt });
+  const taskPromise = runTask(ctx, task)
+    .then((result) => {
+      ctx.running.delete(task.taskId);
+      ctx.finished.set(task.taskId, { result, finishedAt: new Date().toISOString() });
+      return reportOne(ctx, task.taskId);
+    })
+    .catch((error: unknown) => {
+      ctx.deps.logger.log({ level: "error", event: "task.crashed", attemptId: task.taskId, msg: (error as Error).message });
+      ctx.running.delete(task.taskId);
+    });
+  void taskPromise;
 }
 
-async function runAttempt(ctx: ServeContext, request: NodeRequest): Promise<void> {
-  const { store, executor, logger } = ctx.deps;
-  if (ctx.paused.has(request.instanceId) || ctx.controller.signal.aborted) {
-    await rejectAttempt(ctx, request, ctx.controller.signal.aborted ? "shutdown" : "paused");
-    return;
+async function runTask(ctx: ServeContext, task: TaskRequest): Promise<TaskResult> {
+  if (Buffer.byteLength(task.prompt, "utf8") > MAX_PROMPT_BYTES) {
+    const result: TaskResult = {
+      taskId: task.taskId,
+      attempt: task.attempt,
+      status: "failed",
+      message: "",
+      truncated: false,
+      stopReason: null,
+      usage: null,
+      error: { class: "scheduler", code: "payload_too_large", message: `prompt 超过 ${MAX_PROMPT_BYTES} 字节` },
+    };
+    await ctx.deps.store.append({ v: 2, ts: new Date().toISOString(), taskId: task.taskId, attempt: task.attempt, instanceId: task.instanceId, nodeId: task.nodeId, state: "settled", result });
+    return result;
   }
-  ctx.instances.add(request.instanceId);
-  let unlock: (() => Promise<void>) | null = null;
+  return await ctx.deps.executor.executeTask(task, {
+    signal: ctx.controller.signal,
+    ...(ctx.deps.config.executor.idleTimeoutMs > 0 ? { idleTimeoutMs: ctx.deps.config.executor.idleTimeoutMs } : {}),
+  });
+}
+
+/** 已落盘未 accepted 的结果重报；accepted=false / 404 丢弃。 */
+export async function flushFinished(ctx: ServeContext): Promise<void> {
+  for (const taskId of [...ctx.finished.keys()]) await reportOne(ctx, taskId);
+}
+
+async function reportOne(ctx: ServeContext, taskId: string): Promise<void> {
+  if (ctx.reporting.has(taskId)) return;
+  const entry = ctx.finished.get(taskId);
+  if (entry === undefined) return;
+  ctx.reporting.add(taskId);
   try {
-    unlock = await store.lockInstance(request.instanceId);
-    await executor.executeNode(request, { signal: ctx.controller.signal });
+    const ack = await ctx.deps.gateway.reportResult(entry.result);
+    if (ack.accepted) {
+      await ctx.deps.store.mark(taskId, "reported");
+      ctx.finished.delete(taskId);
+      return;
+    }
+    await ctx.deps.store.mark(taskId, "reported");
+    ctx.finished.delete(taskId);
   } catch (error) {
-    if (unlock === null) await rejectAttempt(ctx, request, "workspace");
-    logger.log({ level: "warn", event: "attempt.failed", attemptId: request.attemptId, msg: (error as Error).message });
+    if (error instanceof GatewayError && error.terminal) {
+      stop(ctx, ExitCode.auth);
+      return;
+    }
+    if (error instanceof GatewayError && (error.code === "payload_too_large" || error.code === "protocol_error")) {
+      ctx.deps.logger.log({ level: "warn", event: "result.rejected", attemptId: taskId, msg: error.message });
+      await ctx.deps.store.mark(taskId, "reported").catch(() => undefined);
+      ctx.finished.delete(taskId);
+      return;
+    }
+    ctx.deps.logger.log({ level: "warn", event: "result.retry", attemptId: taskId, msg: (error as Error).message });
   } finally {
-    await unlock?.().catch(() => undefined);
+    ctx.reporting.delete(taskId);
   }
 }

@@ -1,4 +1,4 @@
-import type { NodeResult } from "../executor/ports.ts";
+import type { TaskResult } from "../executor/types.ts";
 import type { AppConfig } from "./config.ts";
 import { composeForRun } from "./compose.ts";
 import type { LocalRunRequest } from "./request.ts";
@@ -12,7 +12,7 @@ export type RunOptions = {
   local: LocalRunRequest;
 };
 
-/** `run` 单次执行：恢复 → 取锁 → 执行 → 收尾；stdout 只输出 NodeResult JSON。 */
+/** `run` 单次执行：清孤儿 → 执行 → 输出 TaskResult；不做实例锁/清理对账。 */
 export async function runOnce(options: RunOptions): Promise<number> {
   const { config, env, io, local } = options;
   let bundle;
@@ -22,18 +22,8 @@ export async function runOnce(options: RunOptions): Promise<number> {
     io.err(`运行时装配失败：${(error as Error).message}`);
     return ExitCode.runtime;
   }
-  const { store, runtime, executor } = bundle;
-
+  const { store, runtime, executor, scheduler } = bundle;
   await reapOrphans(store, runtime);
-  await executor.recover();
-
-  let unlock;
-  try {
-    unlock = await store.lockInstance(local.request.instanceId);
-  } catch (error) {
-    io.err(`实例锁冲突：${(error as Error).message}`);
-    return ExitCode.workspace;
-  }
 
   const controller = new AbortController();
   let signalCode: number | undefined;
@@ -41,31 +31,21 @@ export async function runOnce(options: RunOptions): Promise<number> {
     if (signalCode !== undefined) process.exit(code);
     signalCode = code;
     controller.abort();
-    void executor.cancelInstance(local.request.instanceId, "signal");
+    void executor.cancelInstance(local.task.instanceId);
   };
   const sigint = onSignal(ExitCode.sigint);
   const sigterm = onSignal(ExitCode.sigterm);
   process.on("SIGINT", sigint);
   process.on("SIGTERM", sigterm);
 
-  let result: NodeResult;
+  let result: TaskResult;
   try {
-    result = await executor.executeNode(local.request, { signal: controller.signal });
+    result = await executor.executeTask(local.task, { signal: controller.signal, ...(config.executor.idleTimeoutMs > 0 ? { idleTimeoutMs: config.executor.idleTimeoutMs } : {}) });
+    await scheduler.reportResult(result).catch(() => undefined);
   } finally {
     process.off("SIGINT", sigint);
     process.off("SIGTERM", sigterm);
-    await executor
-      .reconcileCleanup([
-        {
-          releaseId: `run-end-${local.request.attemptId}`,
-          instanceId: local.request.instanceId,
-          workspacePath: local.request.workspacePath,
-          cleanup: "keep",
-          releasedAt: new Date().toISOString(),
-        },
-      ])
-      .catch(() => undefined);
-    await unlock().catch(() => undefined);
+    await executor.shutdownInstances().catch(() => undefined);
   }
 
   io.out(JSON.stringify(result));

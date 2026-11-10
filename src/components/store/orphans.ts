@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { InstanceId, OrphanRecord } from "../executor/ports.ts";
+import type { InstanceId, OrphanRecord } from "../executor/types.ts";
 
 /** 孤儿进程记录（CMP-store §2.4）：只记录与查询，不探活、不杀进程。 */
 export class OrphanStore {

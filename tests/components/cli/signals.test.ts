@@ -36,15 +36,13 @@ describe("UC-14 信号收口", () => {
     await writeFile(
       requestPath,
       JSON.stringify({
-        attemptId: "01930000-0000-7000-8000-000000000201",
-        attemptNo: 1,
+        taskId: "01930000-0000-7000-8000-000000000201",
+        attempt: 1,
         instanceId: "01930000-0000-7000-8000-000000000202",
         nodeId: "01930000-0000-7000-8000-000000000203",
         workspacePath: container,
         prompt: "SLOW",
         timeoutMs: 30_000,
-        claimedAt: "2026-11-08T00:00:00.000Z",
-        lease: { expiresAt: "2026-11-08T00:05:00.000Z", ttlMs: 300000 },
         skillSet: {
           digest,
           packages: [{ packageId: "p", name: "alpha", version: "1", digest, sizeBytes: 0, downloadUrl: pathToFileURL(pkg).href }],

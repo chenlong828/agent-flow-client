@@ -19,7 +19,8 @@ export type AppConfig = Readonly<{
   }>;
   state: Readonly<{ root: string; source: Extract<ConfigSource, "cli" | "config" | "default"> }>;
   logging: Readonly<{ level: LogLevel; source: Extract<ConfigSource, "cli" | "config" | "default"> }>;
-  capacity: Readonly<{ maxInstances: number; source: "config" | "default" }>;
+  capacity: Readonly<{ maxConcurrent: number; source: "config" | "default" }>;
+  executor: Readonly<{ idleTimeoutMs: number; source: "config" | "default" }>;
   scheduler: Readonly<{
     url: string | null;
     token: string | null;
@@ -171,12 +172,21 @@ function resolveLogging(table: RawTable, flags: ConfigFlags): AppConfig["logging
 }
 
 function resolveCapacity(table: RawTable): AppConfig["capacity"] {
-  const value = table.max_instances;
-  if (value === undefined) return { maxInstances: 4, source: "default" };
+  const value = table.max_concurrent;
+  if (value === undefined) return { maxConcurrent: 4, source: "default" };
   if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 64) {
-    throw new ConfigError("config_invalid", "[capacity].max_instances 必须是 1..64 的整数", 2);
+    throw new ConfigError("config_invalid", "[capacity].max_concurrent 必须是 1..64 的整数", 2);
   }
-  return { maxInstances: value, source: "config" };
+  return { maxConcurrent: value, source: "config" };
+}
+
+function resolveExecutor(table: RawTable): AppConfig["executor"] {
+  const value = table.idle_timeout_ms;
+  if (value === undefined) return { idleTimeoutMs: 0, source: "default" };
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new ConfigError("config_invalid", "[executor].idle_timeout_ms 必须是非负整数", 2);
+  }
+  return { idleTimeoutMs: value, source: "config" };
 }
 
 function validatePaths(acp: AppConfig["acp"], state: AppConfig["state"], homeDir: string): void {
@@ -262,6 +272,7 @@ export async function loadConfig(options: {
   const state = resolveState(asTable(parsed.state, "[state]"), flags, runDir);
   const logging = resolveLogging(asTable(parsed.logging, "[logging]"), flags);
   const capacity = resolveCapacity(asTable(parsed.capacity, "[capacity]"));
+  const executor = resolveExecutor(asTable(parsed.executor, "[executor]"));
   const scheduler = resolveScheduler(asTable(parsed.scheduler, "[scheduler]"), env);
 
   validatePaths(acp, state, homeDir);
@@ -275,6 +286,7 @@ export async function loadConfig(options: {
     state: Object.freeze(state),
     logging: Object.freeze(logging),
     capacity: Object.freeze(capacity),
+    executor: Object.freeze(executor),
     scheduler: Object.freeze(scheduler),
   });
 }

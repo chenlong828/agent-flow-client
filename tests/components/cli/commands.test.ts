@@ -71,15 +71,13 @@ describe("cli 命令面", () => {
   test("run 缺 DSH 入口时返回 4 且不产生 stdout 结果", async () => {
     const runDir = await mkdtemp(join(tmpdir(), "afc-run-"));
     const request = {
-      attemptId: "01930000-0000-7000-8000-000000000001",
-      attemptNo: 1,
+      taskId: "01930000-0000-7000-8000-000000000001",
       instanceId: "01930000-0000-7000-8000-000000000002",
       nodeId: "01930000-0000-7000-8000-000000000003",
+      attempt: 1,
       workspacePath: join(runDir, "workspace"),
       prompt: "Reply with exactly: OK",
       timeoutMs: 60000,
-      claimedAt: "2026-11-08T00:00:00.000Z",
-      lease: { expiresAt: "2026-11-08T00:02:00.000Z", ttlMs: 120000 },
       skillSet: { digest: "sha256:abc", packages: [] },
     };
     const file = join(runDir, "request.json");
@@ -93,7 +91,7 @@ describe("cli 命令面", () => {
   test("run 请求文件非法返回 2", async () => {
     const runDir = await mkdtemp(join(tmpdir(), "afc-run-"));
     const file = join(runDir, "request.json");
-    await writeFile(file, JSON.stringify({ attemptId: "x" }));
+    await writeFile(file, JSON.stringify({ taskId: "x" }));
     const result = await run(["run", "--request", file], { runDir });
     expect(result.code).toBe(2);
     expect(result.err).toContain("请求文件错误");

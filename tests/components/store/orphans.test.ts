@@ -8,7 +8,7 @@ describe("孤儿进程记录", () => {
   test("记录、按实例列出、清理幂等", async () => {
     const root = await mkdtemp(join(tmpdir(), "afc-orphan-"));
     const store = new OrphanStore(root);
-    await store.record({ pid: 101, pgid: 101, instanceId: "i-1", attemptId: "a-1", createdAt: "2026-11-08T00:00:00Z", host: "h" });
+    await store.record({ pid: 101, pgid: 101, instanceId: "i-1", taskId: "t-1", createdAt: "2026-11-08T00:00:00Z", host: "h" });
     await store.record({ pid: 202, instanceId: "i-2", createdAt: "2026-11-08T00:00:00Z", host: "h" });
 
     expect((await store.list()).map((item) => item.pid).sort()).toEqual([101, 202]);

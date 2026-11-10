@@ -1,101 +1,71 @@
 import { mkdir, open } from "node:fs/promises";
 import { join } from "node:path";
-import type { AttemptId, AttemptRecord, InstanceId } from "../executor/ports.ts";
-import { appendRecord, compactJournal, journalSize, readJournal, SerialQueue } from "./journal-io.ts";
-import { findLatest, instancesOf, pendingAllOf, pendingFor } from "./journal-query.ts";
+import type { TaskId, TaskRecord, TaskState } from "../executor/types.ts";
+import { appendRecord, readJournal, SerialQueue } from "./journal-io.ts";
+import { findLatest, settledResults } from "./journal-query.ts";
 
 export type JournalOptions = {
   stateRoot: string;
-  compactBytes?: number;
-  compactLines?: number;
   now?: () => Date;
 };
 
-const DEFAULT_COMPACT_BYTES = 10 * 1024 * 1024;
-const DEFAULT_COMPACT_LINES = 10_000;
-
 /**
- * 本地 attempt journal（CMP-store §2.2）：追加写、按 attemptId 折叠、
- * 损坏行降级跳过；`stateRoot` 由组合根注入。
+ * 本地任务 journal（v2）：追加写、按 `taskId` 折叠、损坏行降级跳过。
+ * 只保留「任务 → 状态 + 结果」，不做多态状态机与压缩。
  */
 export class FileJournal {
   readonly #stateRoot: string;
   readonly #journalPath: string;
-  readonly #compactBytes: number;
-  readonly #compactLines: number;
   readonly #now: () => Date;
   readonly #queue = new SerialQueue();
-  #records: AttemptRecord[] | null = null;
+  #records: TaskRecord[] | null = null;
 
   constructor(options: JournalOptions) {
     this.#stateRoot = options.stateRoot;
     this.#journalPath = join(options.stateRoot, "journal.jsonl");
-    this.#compactBytes = options.compactBytes ?? DEFAULT_COMPACT_BYTES;
-    this.#compactLines = options.compactLines ?? DEFAULT_COMPACT_LINES;
     this.#now = options.now ?? (() => new Date());
+  }
+
+  get journalPath(): string {
+    return this.#journalPath;
   }
 
   async init(): Promise<void> {
     await mkdir(this.#stateRoot, { recursive: true, mode: 0o700 });
-    await mkdir(join(this.#stateRoot, "locks"), { recursive: true, mode: 0o700 });
     await mkdir(join(this.#stateRoot, "orphans"), { recursive: true, mode: 0o700 });
     const handle = await open(this.#journalPath, "a", 0o600);
     await handle.close();
   }
 
-  async load(): Promise<AttemptRecord[]> {
+  async load(): Promise<TaskRecord[]> {
     if (this.#records === null) this.#records = await readJournal(this.#journalPath);
     return this.#records;
   }
 
-  async append(record: AttemptRecord): Promise<void> {
+  async append(record: TaskRecord): Promise<void> {
     await this.#queue.run(async () => {
       await appendRecord(this.#journalPath, record);
       this.#records = null;
-      await this.#compactIfNeeded();
     });
   }
 
-  async mark(attemptId: AttemptId, state: AttemptRecord["state"], patch?: Partial<AttemptRecord>): Promise<void> {
+  async mark(taskId: TaskId, state: TaskState, patch?: Partial<TaskRecord>): Promise<void> {
     await this.#queue.run(async () => {
-      const latest = findLatest(await this.load(), attemptId);
-      if (latest === undefined) throw new Error(`journal 中不存在 attempt：${attemptId}`);
+      const latest = findLatest(await this.load(), taskId);
+      if (latest === undefined) throw new Error(`journal 中不存在任务：${taskId}`);
       await appendRecord(this.#journalPath, {
         ...latest,
         ...patch,
-        v: 1,
+        v: 2,
         ts: this.#now().toISOString(),
-        attemptId,
+        taskId,
         state,
       });
       this.#records = null;
-      await this.#compactIfNeeded();
     });
   }
 
-  async pending(instanceId: InstanceId): Promise<AttemptRecord[]> {
-    return pendingFor(await this.load(), instanceId);
-  }
-
-  async pendingAll(): Promise<AttemptRecord[]> {
-    return pendingAllOf(await this.load());
-  }
-
-  async listInstances(): Promise<InstanceId[]> {
-    return instancesOf(await this.load());
-  }
-
-  async compact(): Promise<void> {
-    await this.#queue.run(async () => {
-      await compactJournal(this.#journalPath, await this.load());
-      this.#records = null;
-    });
-  }
-
-  async #compactIfNeeded(): Promise<void> {
-    const records = await this.load();
-    if ((await journalSize(this.#journalPath)) < this.#compactBytes && records.length < this.#compactLines) return;
-    await compactJournal(this.#journalPath, records);
-    this.#records = null;
+  async settled(): Promise<TaskRecord[]> {
+    return settledResults(await this.load());
   }
 }

@@ -14,7 +14,9 @@ export type SessionState = {
   stopReason: string | null;
   error?: SessionOutcome["error"];
   timedOut: boolean;
+  idleTimedOut: boolean;
   cancelRequested: boolean;
+  lastEventAt: number;
 };
 
 /** 运行期注册表：连接、实例、session 与事件累积；不持久化。 */
@@ -44,7 +46,16 @@ export class RuntimeState {
   }
 
   addSession(ref: SessionRef): SessionState {
-    const state: SessionState = { ref, finalText: "", usage: null, stopReason: null, timedOut: false, cancelRequested: false };
+    const state: SessionState = {
+      ref,
+      finalText: "",
+      usage: null,
+      stopReason: null,
+      timedOut: false,
+      idleTimedOut: false,
+      cancelRequested: false,
+      lastEventAt: Date.now(),
+    };
     this.#sessions.set(ref.sessionId, state);
     return state;
   }
@@ -66,6 +77,7 @@ export class RuntimeState {
     const sessionId = String((params as { sessionId?: unknown } | undefined)?.sessionId ?? "");
     const update = (params as { update?: Record<string, unknown> } | undefined)?.update ?? {};
     const state = this.#sessions.get(sessionId);
+    if (state !== undefined) state.lastEventAt = Date.now();
     if (update.sessionUpdate === "agent_message_chunk") {
       const content = update.content as { type?: string; text?: string } | undefined;
       if (state !== undefined && content?.type === "text" && typeof content.text === "string") {
@@ -84,8 +96,10 @@ export class RuntimeState {
     }
   }
 
-  applyExit(instanceId: string): void {
-    this.removeInstance(instanceId);
+  countSessions(instanceId: string): number {
+    let count = 0;
+    for (const state of this.#sessions.values()) if (state.ref.instanceId === instanceId) count += 1;
+    return count;
   }
 
   permission(method: string, params: unknown, decision: PermissionDecision): unknown {

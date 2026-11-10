@@ -36,15 +36,13 @@ async function setup(options: { prompt: string; timeoutMs?: number; skill?: bool
     ],
   };
   const request = {
-    attemptId: "01930000-0000-7000-8000-000000000001",
-    attemptNo: 1,
+    taskId: "01930000-0000-7000-8000-000000000001",
+    attempt: 1,
     instanceId: "01930000-0000-7000-8000-000000000002",
     nodeId: "01930000-0000-7000-8000-000000000003",
     workspacePath: container,
     prompt: options.prompt,
     timeoutMs: options.timeoutMs ?? 5000,
-    claimedAt: "2026-11-08T00:00:00.000Z",
-    lease: { expiresAt: "2026-11-08T00:02:00.000Z", ttlMs: 120000 },
     skillSet,
   };
   const requestPath = join(runDir, "request.json");
@@ -84,7 +82,7 @@ describe("SCN-0001 S0 端到端（ACP 桩）", () => {
     expect(skill).toContain("name: alpha");
     const journal = await readFile(join(runDir, "state", "journal.jsonl"), "utf8");
     const states = journal.trim().split("\n").map((line) => JSON.parse(line).state);
-    expect(states).toEqual(["claimed", "bound", "ready", "running", "settled", "reported", "closed"]);
+    expect(states).toEqual(["received", "running", "settled"]);
     expect((await readdir(join(runDir, "state", "orphans"))).length).toBe(0);
   });
 
@@ -94,7 +92,7 @@ describe("SCN-0001 S0 端到端（ACP 桩）", () => {
     expect(result.code).toBe(1);
     const payload = JSON.parse(result.out);
     expect(payload.status).toBe("timeout");
-    expect(payload.error).toMatchObject({ class: "timeout", retryable: true });
+    expect(payload.error).toMatchObject({ class: "timeout", code: "timeout" });
   });
 
   test("TC-EXEC-004 技能包非法：不 prompt、退出 1、结果 asset 类", async () => {

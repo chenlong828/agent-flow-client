@@ -3,24 +3,12 @@ import { readFile, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileJournal } from "../../../src/components/store/journal.ts";
-import type { AttemptRecord, NodeResult } from "../../../src/components/executor/ports.ts";
+import type { TaskRecord, TaskResult } from "../../../src/components/executor/types.ts";
 
-function record(overrides: Partial<AttemptRecord> = {}): AttemptRecord {
-  return {
-    v: 1,
-    ts: "2026-11-08T00:00:00.000Z",
-    attemptId: "attempt-1",
-    instanceId: "instance-1",
-    nodeId: "node-1",
-    state: "claimed",
-    ...overrides,
-  };
-}
-
-const successResult: NodeResult = {
-  attemptId: "attempt-1",
+const result: TaskResult = {
+  taskId: "task-1",
+  attempt: 1,
   status: "succeeded",
-  sessionId: "session-1",
   message: "OK",
   truncated: false,
   stopReason: "end_turn",
@@ -28,78 +16,48 @@ const successResult: NodeResult = {
   error: null,
 };
 
-describe("journal 追加与折叠", () => {
-  test("按 attemptId 折叠最后状态；pending 排除终态", async () => {
-    const stateRoot = await mkdtemp(join(tmpdir(), "afc-journal-"));
-    const journal = new FileJournal({ stateRoot });
-    await journal.init();
+function record(overrides: Partial<TaskRecord> = {}): TaskRecord {
+  return {
+    v: 2,
+    ts: "2026-11-10T00:00:00.000Z",
+    taskId: "task-1",
+    attempt: 1,
+    instanceId: "instance-1",
+    nodeId: "node-1",
+    state: "received",
+    ...overrides,
+  };
+}
 
-    await journal.append(record());
-    await journal.mark("attempt-1", "running");
-    await journal.mark("attempt-1", "settled", { result: successResult });
-
-    const pending = await journal.pending("instance-1");
-    expect(pending).toHaveLength(1);
-    expect(pending[0]?.state).toBe("settled");
-
-    await journal.mark("attempt-1", "reported");
-    await journal.mark("attempt-1", "closed");
-    expect(await journal.pending("instance-1")).toEqual([]);
-    expect(await journal.listInstances()).toEqual(["instance-1"]);
-  });
-
-  test("append 写一行且不覆盖", async () => {
-    const stateRoot = await mkdtemp(join(tmpdir(), "afc-journal-"));
-    const journal = new FileJournal({ stateRoot });
+describe("v2 journal", () => {
+  test("折叠最后状态；settled 只返回结果未确认的任务", async () => {
+    const root = await mkdtemp(join(tmpdir(), "afc-v2-journal-"));
+    const journal = new FileJournal({ stateRoot: root });
     await journal.init();
     await journal.append(record());
-    await journal.append(record({ state: "bound" }));
-    const text = await readFile(join(stateRoot, "journal.jsonl"), "utf8");
-    expect(text.trim().split("\n")).toHaveLength(2);
+    await journal.mark("task-1", "running");
+    await journal.mark("task-1", "settled", { result });
+    expect((await journal.settled()).map((item) => item.taskId)).toEqual(["task-1"]);
+    await journal.mark("task-1", "reported");
+    expect(await journal.settled()).toEqual([]);
   });
 
-  test("损坏行降级跳过，不阻塞启动", async () => {
-    const stateRoot = await mkdtemp(join(tmpdir(), "afc-journal-"));
+  test("损坏行与 v1 记录被忽略", async () => {
+    const root = await mkdtemp(join(tmpdir(), "afc-v2-journal-"));
     await writeFile(
-      join(stateRoot, "journal.jsonl"),
-      `${JSON.stringify(record())}\n{not-json\n${JSON.stringify(record({ state: "running" }))}\n`,
+      join(root, "journal.jsonl"),
+      `${JSON.stringify(record())}\n{broken\n${JSON.stringify({ v: 1, attemptId: "old", state: "settled" })}\n`,
     );
-    const journal = new FileJournal({ stateRoot });
+    const journal = new FileJournal({ stateRoot: root });
     await journal.init();
-    const pending = await journal.pending("instance-1");
-    expect(pending).toHaveLength(1);
-    expect(pending[0]?.state).toBe("running");
+    await journal.mark("task-1", "running");
+    const text = await readFile(join(root, "journal.jsonl"), "utf8");
+    expect(text.trim().split("\n")).toHaveLength(4);
   });
 
-  test("compact 保留每个 attempt 最新记录", async () => {
-    const stateRoot = await mkdtemp(join(tmpdir(), "afc-journal-"));
-    const journal = new FileJournal({ stateRoot });
-    await journal.init();
-    await journal.append(record());
-    await journal.append(record({ attemptId: "attempt-2", state: "running" }));
-    await journal.mark("attempt-1", "running");
-    await journal.mark("attempt-1", "settled", { result: successResult });
-    await journal.compact();
-    const lines = (await readFile(join(stateRoot, "journal.jsonl"), "utf8")).trim().split("\n");
-    expect(lines).toHaveLength(2);
-    const states = lines.map((line) => JSON.parse(line).state).sort();
-    expect(states).toEqual(["running", "settled"]);
-  });
-
-  test("超过阈值自动压缩不死锁", async () => {
-    const stateRoot = await mkdtemp(join(tmpdir(), "afc-journal-"));
-    const journal = new FileJournal({ stateRoot, compactLines: 1 });
-    await journal.init();
-    await journal.append(record());
-    await journal.append(record({ attemptId: "attempt-2" }));
-    await journal.mark("attempt-1", "running");
-    const lines = (await readFile(join(stateRoot, "journal.jsonl"), "utf8")).trim().split("\n");
-    expect(lines).toHaveLength(2);
-  });
-
-  test("mark 不存在的 attempt 报错", async () => {
-    const stateRoot = await mkdtemp(join(tmpdir(), "afc-journal-"));
-    const journal = new FileJournal({ stateRoot });
+  test("mark 不存在的任务报错", async () => {
+    const root = await mkdtemp(join(tmpdir(), "afc-v2-journal-"));
+    const journal = new FileJournal({ stateRoot: root });
     await journal.init();
     await expect(journal.mark("missing", "running")).rejects.toThrow("不存在");
   });

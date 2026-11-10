@@ -1,45 +1,27 @@
-import type {
-  AssetPort,
-  ContainerPaths,
-  InstalledSkills,
-  InstanceHandle,
-  JournalPort,
-  NodeResult,
-  PromptOptions,
-  SessionOutcome,
-  SessionRef,
-  SkillSet,
-  WorkspacePort,
-} from "../../../src/components/executor/ports.ts";
-import type { SchedulerPort, Ack } from "../../../src/components/executor/scheduler-port.ts";
-import type { AttemptRecord, AttemptState, InstanceId, OrphanRecord, Unlock } from "../../../src/components/executor/types.ts";
+import type { AssetPort, ContainerPaths, InstalledSkills, InstanceHandle, JournalPort, PromptOptions, SessionOutcome, SessionRef, SkillPackageRef, WorkspacePort } from "../../../src/components/executor/ports.ts";
+import type { InstanceId, OrphanRecord, TaskRecord, TaskResult, TaskState } from "../../../src/components/executor/types.ts";
 
-export const container: ContainerPaths = { root: "/tmp/afc-exec-container", skillRoot: "/tmp/afc-exec-container/.dsh/skills", stagingRoot: "/tmp/afc-exec-container/.dsh/.staging" };
+export const container: ContainerPaths = {
+  root: "/tmp/afc-v2-container",
+  skillRoot: "/tmp/afc-v2-container/.dsh/skills",
+  stagingRoot: "/tmp/afc-v2-container/.dsh/.staging",
+};
 
 export class MemoryJournal implements JournalPort {
-  records: AttemptRecord[] = [];
-  states: AttemptState[] = [];
+  records: TaskRecord[] = [];
+  states: TaskState[] = [];
   orphans: OrphanRecord[] = [];
-  async append(record: AttemptRecord): Promise<void> {
+  async append(record: TaskRecord): Promise<void> {
     this.records.push(record);
     this.states.push(record.state);
   }
-  async mark(attemptId: string, state: AttemptState, patch?: Partial<AttemptRecord>): Promise<void> {
-    const latest = [...this.records].reverse().find((record) => record.attemptId === attemptId);
-    this.records.push({ ...(latest as AttemptRecord), ...patch, state, ts: "2026-11-08T00:00:00.000Z" });
+  async mark(taskId: string, state: TaskState, patch?: Partial<TaskRecord>): Promise<void> {
+    const latest = [...this.records].reverse().find((record) => record.taskId === taskId);
+    this.records.push({ ...(latest as TaskRecord), ...patch, state, ts: "2026-11-10T00:00:00.000Z" });
     this.states.push(state);
   }
-  async pending(instanceId: InstanceId): Promise<AttemptRecord[]> {
-    return this.records.filter((record) => record.instanceId === instanceId && !["closed", "abandoned"].includes(record.state));
-  }
-  async pendingAll(): Promise<AttemptRecord[]> {
-    return this.records.filter((record) => !["closed", "abandoned"].includes(record.state));
-  }
-  async listInstances(): Promise<InstanceId[]> {
-    return [...new Set(this.records.map((record) => record.instanceId))];
-  }
-  async lockInstance(_instanceId: InstanceId): Promise<Unlock> {
-    return async () => undefined;
+  async settled(): Promise<TaskRecord[]> {
+    return this.records.filter((record) => record.state === "settled");
   }
   async recordOrphan(orphan: OrphanRecord): Promise<void> {
     this.orphans.push(orphan);
@@ -58,20 +40,27 @@ export class FakeRuntime {
   cancelled: string[] = [];
   shutdowns: string[] = [];
   ensureCalls = 0;
-  behavior: "ok" | "hang" | "fail" = "ok";
   finalText = "OK";
+  behavior: "ok" | "hang" | "fail" | "timeout" = "ok";
+  readonly #sessions = new Set<string>();
+
   async ensureInstance(instance: { instanceId: string }): Promise<InstanceHandle> {
     this.ensureCalls += 1;
     return { instanceId: instance.instanceId, pid: 1234, pgid: 1234 };
   }
-  async newSession(instance: InstanceHandle): Promise<SessionRef> {
-    return { sessionId: "s-1", instanceId: instance.instanceId };
+  async newSession(instance: InstanceHandle, _cwd: string): Promise<SessionRef> {
+    const ref = { sessionId: `s-${this.#sessions.size + 1}`, instanceId: instance.instanceId };
+    this.#sessions.add(ref.sessionId);
+    return ref;
   }
   async prompt(session: SessionRef, text: string, opts: PromptOptions): Promise<SessionOutcome> {
     this.prompts.push(text);
     if (this.behavior === "ok") return { sessionId: session.sessionId, finalText: this.finalText, stopReason: "end_turn", usage: null };
     if (this.behavior === "fail") {
-      return { sessionId: session.sessionId, finalText: "", stopReason: null, usage: null, error: { code: "spawn_failed", message: "x", class: "runtime" } };
+      return { sessionId: session.sessionId, finalText: "", stopReason: null, usage: null, error: { code: "prompt_failed", message: "x", class: "runtime" } };
+    }
+    if (this.behavior === "timeout") {
+      return { sessionId: session.sessionId, finalText: "", stopReason: null, usage: null, error: { code: "timeout", message: "t", class: "timeout" } };
     }
     await new Promise<void>((resolve) => opts.signal.addEventListener("abort", () => resolve(), { once: true }));
     return { sessionId: session.sessionId, finalText: "", stopReason: null, usage: null, error: { code: "cancelled", message: "c", class: "cancelled" } };
@@ -81,14 +70,18 @@ export class FakeRuntime {
   }
   async closeSession(session: SessionRef): Promise<void> {
     this.closed.push(session.sessionId);
+    this.#sessions.delete(session.sessionId);
   }
   async shutdownInstance(instance: InstanceHandle): Promise<void> {
     this.shutdowns.push(instance.instanceId);
+    this.#sessions.clear();
+  }
+  activeSessions(): number {
+    return this.#sessions.size;
   }
 }
 
 export class FakeWorkspace implements WorkspacePort {
-  cleaned: string[] = [];
   async ensureContainer(): Promise<ContainerPaths> {
     return container;
   }
@@ -98,20 +91,17 @@ export class FakeWorkspace implements WorkspacePort {
   async resolve(_container: ContainerPaths, relPath: string): Promise<string> {
     return relPath;
   }
-  async cleanup(_instance: InstanceHandle, policy: string): Promise<void> {
-    this.cleaned.push(policy);
-  }
 }
 
 export class FakeAssets implements AssetPort {
-  installed: SkillSet[] = [];
+  installed: string[] = [];
   failWith: { code: string; message: string } | null = null;
-  async install(skillSet: SkillSet): Promise<InstalledSkills> {
+  async install(skillSet: { digest: string }): Promise<InstalledSkills> {
     if (this.failWith !== null) throw this.failWith;
-    this.installed.push(skillSet);
+    this.installed.push(skillSet.digest);
     return { digest: skillSet.digest, skills: [], changed: true };
   }
-  async verify() {
+  async verify(_pkg: SkillPackageRef) {
     return { ok: true, digest: "sha256:x" };
   }
   async currentDigest(): Promise<string | null> {
@@ -119,33 +109,16 @@ export class FakeAssets implements AssetPort {
   }
 }
 
-export class FakeScheduler implements SchedulerPort {
-  bound: string[] = [];
-  bindDigests = new Map<string, string>();
-  bindSkillSets = new Map<string, SkillSet>();
-  reported: NodeResult[] = [];
-  reportFails = false;
-  async register() {
-    return { serverTime: "", limits: { maxResultBytes: 1024, maxPromptBytes: 1024, maxRequestBytes: 1024, maxSkillPackageBytes: 1024, maxSkillPackages: 1 }, assignmentsVersion: 1, cleanupPending: [] };
-  }
-  async heartbeat() {
-    return { serverTime: "", control: { seq: 0, events: [] }, cleanupPending: [], assignmentsVersion: 1, nextPollAfterMs: 1000 };
-  }
-  async claim() {
-    return null;
-  }
-  async renew() {
-    return { expiresAt: "", ttlMs: 1000 };
-  }
-  async bindSession(attemptId: string): Promise<SkillSet> {
-    this.bound.push(attemptId);
-    const explicit = this.bindSkillSets.get(attemptId);
-    if (explicit !== undefined) return explicit;
-    return { digest: this.bindDigests.get(attemptId) ?? "sha256:test", packages: [] };
-  }
-  async reportResult(_attemptId: string, result: NodeResult): Promise<Ack> {
-    if (this.reportFails) throw new Error("unreachable");
-    this.reported.push(result);
-    return { attemptId: result.attemptId, disposition: "accepted", attemptState: "reported", recordedAt: "" };
-  }
+export function makeResult(taskId: string, overrides: Partial<TaskResult> = {}): TaskResult {
+  return {
+    taskId,
+    attempt: 1,
+    status: "succeeded",
+    message: "OK",
+    truncated: false,
+    stopReason: "end_turn",
+    usage: null,
+    error: null,
+    ...overrides,
+  };
 }

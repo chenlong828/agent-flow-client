@@ -1,6 +1,4 @@
-import type { Ack, CleanupPending, ControlEvent, Limits } from "../../src/components/executor/scheduler-port.ts";
-import type { NodeRequest, NodeResult, SkillSet } from "../../src/components/executor/types.ts";
-import { uuidv7 } from "../../src/components/shared/uuid.ts";
+import type { PollRequest, PollResponse, ResultAck, SkillPackage, TaskRequest, TaskResult } from "../../src/components/executor/types.ts";
 
 export type StubRequest = {
   method: string;
@@ -11,43 +9,23 @@ export type StubRequest = {
 
 export type StubFailure = { status: number; code?: string; times?: number };
 
-const DEFAULT_LIMITS: Limits = {
-  maxResultBytes: 262144,
-  maxPromptBytes: 1048576,
-  maxRequestBytes: 2097152,
-  maxSkillPackageBytes: 67108864,
-  maxSkillPackages: 64,
-};
-
-/** 契约附录 A 的轻量内存桩：路由、鉴权、长轮询、幂等与错误注入。 */
+/** executor contract v2 的轻量内存桩：poll 长轮询、首份结果为准、技能包下载与错误注入。 */
 export class StubScheduler {
   readonly requests: StubRequest[] = [];
   readonly server: ReturnType<typeof Bun.serve>;
   readonly #token: string | null;
-  readonly #heartbeatHoldMs: number;
-  readonly #claimHoldMs: number;
-  readonly #limits: Limits;
-  readonly skillSet: SkillSet;
-  #events: ControlEvent[] = [];
-  #seq = 0;
-  #claims: NodeRequest[] = [];
-  #cleanup: CleanupPending[] = [];
-  #reports = new Map<string, NodeResult>();
+  readonly #pollHoldMs: number;
+  #tasks: TaskRequest[] = [];
+  #stop = false;
+  #cancelInstances: string[] = [];
+  #results = new Map<string, TaskResult>();
   #failures = new Map<string, StubFailure>();
-  #leaseExpiresAt = new Date(Date.now() + 120_000).toISOString();
-  #registerCompatibility = "compatible";
-  #reportLate = false;
-  #bindAttemptId: string | null = null;
-  readonly #skillSets = new Map<string, SkillSet>();
-  readonly #activeInstances = new Set<string>();
-  readonly #attemptInstances = new Map<string, string>();
+  #package: { bytes: Uint8Array; etag: string; sha256: string } | null = null;
+  #nextPollAfterMs = 10;
 
-  constructor(options: { token?: string; heartbeatHoldMs?: number; claimHoldMs?: number; limits?: Partial<Limits>; skillSet?: SkillSet } = {}) {
+  constructor(options: { token?: string; pollHoldMs?: number } = {}) {
     this.#token = options.token ?? null;
-    this.#heartbeatHoldMs = options.heartbeatHoldMs ?? 30;
-    this.#claimHoldMs = options.claimHoldMs ?? 20;
-    this.#limits = { ...DEFAULT_LIMITS, ...options.limits };
-    this.skillSet = options.skillSet ?? { digest: "sha256:stub", packages: [] };
+    this.#pollHoldMs = options.pollHoldMs ?? 30;
     this.server = Bun.serve({ port: 0, fetch: (request) => this.#handle(request) });
   }
 
@@ -55,36 +33,36 @@ export class StubScheduler {
     return `http://127.0.0.1:${this.server.port}`;
   }
 
-  enqueueRequest(request: NodeRequest): void {
-    this.#claims.push(request);
+  enqueueTask(task: TaskRequest): void {
+    this.#tasks.push(task);
   }
 
-  enqueueEvent(event: ControlEvent): void {
-    this.#events.push(event);
+  setStop(value: boolean): void {
+    this.#stop = value;
   }
 
-  setCleanupPending(pending: CleanupPending[]): void {
-    this.#cleanup = pending;
+  cancelInstance(instanceId: string): void {
+    if (!this.#cancelInstances.includes(instanceId)) this.#cancelInstances.push(instanceId);
+  }
+
+  clearCancelInstances(): void {
+    this.#cancelInstances = [];
+  }
+
+  setPackage(bytes: Uint8Array, etag: string, sha256: string): void {
+    this.#package = { bytes, etag, sha256 };
   }
 
   failNext(key: string, failure: StubFailure): void {
     this.#failures.set(key, failure);
   }
 
-  setCompatibility(compatibility: string): void {
-    this.#registerCompatibility = compatibility;
+  setNextPollAfterMs(value: number): void {
+    this.#nextPollAfterMs = value;
   }
 
-  setReportLate(late: boolean): void {
-    this.#reportLate = late;
-  }
-
-  setBindAttemptId(attemptId: string): void {
-    this.#bindAttemptId = attemptId;
-  }
-
-  setSkillSetFor(attemptId: string, skillSet: SkillSet): void {
-    this.#skillSets.set(attemptId, skillSet);
+  results(): TaskResult[] {
+    return [...this.#results.values()];
   }
 
   async close(): Promise<void> {
@@ -108,114 +86,62 @@ export class StubScheduler {
     if (this.#token !== null && headers.authorization !== `Bearer ${this.#token}`) {
       return this.#error(401, "unauthorized");
     }
-    return await this.#route(request, url, body);
-  }
-
-  async #route(request: Request, url: URL, body: Record<string, unknown>): Promise<Response> {
-    if (request.method === "POST" && url.pathname === "/api/v1/executor/register") return this.#register();
-    if (request.method === "POST" && url.pathname === "/api/v1/executor/heartbeat") return await this.#heartbeat(body);
-    if (request.method === "POST" && url.pathname === "/api/v1/executor/claim") return await this.#claim();
-    const match = /^\/api\/v1\/executor\/attempts\/([^/]+)\/(lease|session|result)$/.exec(url.pathname);
-    if (request.method === "POST" && match !== null) {
-      const attemptId = decodeURIComponent(match[1] as string);
-      const action = match[2] as "lease" | "session" | "result";
-      if (action === "lease") return this.#renew();
-      if (action === "session") return this.#bind(attemptId, body);
-      return this.#report(attemptId, body);
+    if (headers["x-executor-protocol"] !== "2") {
+      return this.#error(400, "unsupported_protocol");
     }
+    if (request.method === "POST" && url.pathname === "/api/v1/executor/poll") return await this.#poll(body);
+    const result = /^\/api\/v1\/executor\/tasks\/([^/]+)\/result$/.exec(url.pathname);
+    if (request.method === "POST" && result !== null) return this.#report(decodeURIComponent(result[1] as string), body);
+    const pkg = /^\/api\/v1\/executor\/skill-packages\/([^/]+)$/.exec(url.pathname);
+    if (request.method === "GET" && pkg !== null) return this.#packageResponse(request);
     return this.#error(404, "not_found");
   }
 
-  #register(): Response {
-    return Response.json({
-      serverTime: new Date().toISOString(),
-      protocolVersion: "2026-11-07.1",
-      compatibility: this.#registerCompatibility,
-      clientLease: { expiresAt: new Date(Date.now() + 90_000).toISOString(), ttlMs: 90000 },
-      heartbeat: { pollTimeoutMs: 30000, clientTimeoutMs: 35000, nextPollAfterMs: 1000 },
-      limits: this.#limits,
-      assignmentsVersion: 1,
-      cleanupPending: this.#cleanup,
-    });
-  }
-
-  async #heartbeat(body: Record<string, unknown>): Promise<Response> {
+  async #poll(body: Record<string, unknown>): Promise<Response> {
     const started = Date.now();
-    while (this.#events.length === 0 && Date.now() - started < this.#heartbeatHoldMs) {
+    while (this.#tasks.length === 0 && !this.#stop && this.#cancelInstances.length === 0) {
+      if (Date.now() - started >= this.#pollHoldMs) break;
       await Bun.sleep(5);
     }
-    const events = this.#events;
-    this.#events = [];
-    this.#seq += events.length;
-    return Response.json({
-      serverTime: new Date().toISOString(),
-      clientLease: { expiresAt: new Date(Date.now() + 90_000).toISOString(), ttlMs: 90000 },
-      control: { seq: events.length === 0 ? Number(body.ackSeq ?? 0) : this.#seq, events },
-      assignmentsVersion: 1,
-      cleanupPending: this.#cleanup,
-      nextPollAfterMs: 1000,
-    });
-  }
-
-  async #claim(): Promise<Response> {
-    const started = Date.now();
-    while (Date.now() - started < this.#claimHoldMs) {
-      const head = this.#claims[0];
-      if (head !== undefined && !this.#activeInstances.has(head.instanceId)) {
-        this.#claims.shift();
-        this.#activeInstances.add(head.instanceId);
-        this.#attemptInstances.set(head.attemptId, head.instanceId);
-        return Response.json(head);
-      }
-      if (head === undefined && this.#claims.length === 0) {
-        // 没有待领取请求；等待短窗口后返回 204。
-        await Bun.sleep(5);
-        if (Date.now() - started >= this.#claimHoldMs) break;
-        continue;
-      }
-      await Bun.sleep(5);
-    }
-    return new Response(null, { status: 204 });
-  }
-
-  #renew(): Response {
-    return Response.json({
-      serverTime: new Date().toISOString(),
-      lease: { expiresAt: this.#leaseExpiresAt, ttlMs: 120000 },
-    });
-  }
-
-  #bind(attemptId: string, body: Record<string, unknown>): Response {
-    return Response.json({
-      attemptId: this.#bindAttemptId ?? attemptId,
-      sessionId: body.sessionId,
-      skillSet: this.#skillSets.get(attemptId) ?? this.skillSet,
-    });
-  }
-
-  #report(attemptId: string, body: Record<string, unknown>): Response {
-    const result = body.result as NodeResult | undefined;
-    if (this.#reportLate) {
-      return this.#error(409, "late_result");
-    }
-    const duplicate = this.#reports.has(attemptId);
-    if (result !== undefined) {
-      this.#reports.set(attemptId, result);
-      const instanceId = this.#attemptInstances.get(attemptId);
-      if (instanceId !== undefined) this.#activeInstances.delete(instanceId);
-      this.#attemptInstances.delete(attemptId);
-    }
-    const ack: Ack = {
-      attemptId,
-      disposition: duplicate ? "duplicate" : "accepted",
-      attemptState: "reported",
-      recordedAt: new Date().toISOString(),
+    const free = Number((body.capacity as { free?: number } | undefined)?.free ?? 0);
+    const tasks = this.#tasks.splice(0, Math.max(0, Math.min(free, 10)));
+    const response: PollResponse = {
+      tasks,
+      stop: this.#stop,
+      cancelInstances: [...this.#cancelInstances],
+      nextPollAfterMs: this.#nextPollAfterMs,
     };
+    return Response.json(response);
+  }
+
+  #report(taskId: string, body: Record<string, unknown>): Response {
+    if (this.#results.has(taskId)) {
+      const ack: ResultAck = { taskId, accepted: false };
+      return Response.json(ack);
+    }
+    const result = body as unknown as TaskResult;
+    this.#results.set(taskId, { ...result, taskId });
+    const ack: ResultAck = { taskId, accepted: true };
     return Response.json(ack);
   }
 
+  #packageResponse(request: Request): Response {
+    if (this.#package === null) return this.#error(404, "package_not_found");
+    if (request.headers.get("if-none-match") === this.#package.etag) {
+      return new Response(null, { status: 304 });
+    }
+    return new Response(new Blob([new Uint8Array(this.#package.bytes)]), {
+      headers: {
+        "content-type": "application/zip",
+        etag: this.#package.etag,
+        "x-checksum-sha256": this.#package.sha256,
+      },
+    });
+  }
+
   #error(status: number, code: string): Response {
-    const headers = status === 429 ? { "Retry-After": "2" } : undefined;
-    return Response.json({ error: { code, message: code, requestId: uuidv7() } }, { status, ...(headers === undefined ? {} : { headers }) });
+    return Response.json({ error: { code, message: code } }, { status });
   }
 }
+
+export type { PollRequest, SkillPackage };

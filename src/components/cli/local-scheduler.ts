@@ -1,87 +1,33 @@
-import type { AttemptId, Lease, NodeRequest, NodeResult, SessionId, SkillSet } from "../executor/ports.ts";
-import type {
-  Ack,
-  Capacity,
-  CleanupAck,
-  ClientInfo,
-  ClientState,
-  HeartbeatOutcome,
-  RegistrationOutcome,
-  SchedulerPort,
-} from "../executor/scheduler-port.ts";
+import type { PackageDownload, SchedulerPort } from "../executor/scheduler-port.ts";
+import type { PollRequest, PollResponse, ResultAck, SkillPackage, TaskRequest, TaskResult } from "../executor/types.ts";
 
-export type LocalSchedulerRequest = {
-  request: NodeRequest;
-  skillSet: SkillSet;
-};
-
-/**
- * `run` 的本地调度器替身（组合根适配器，不是新组件）：
- * `bindSession` 返回请求内联的技能集，`reportResult` 只捕获结果；不产生任何网络 I/O。
- */
+/** `run` 的本地调度器替身：只发一次任务，结果只捕获不外发。 */
 export class LocalScheduler implements SchedulerPort {
-  readonly #request: LocalSchedulerRequest;
-  readonly #now: () => Date;
-  #result: NodeResult | null = null;
-  #claimed = false;
+  readonly #task: TaskRequest;
+  #dispatched = false;
+  #result: TaskResult | null = null;
 
-  constructor(request: LocalSchedulerRequest, now: () => Date = () => new Date()) {
-    this.#request = request;
-    this.#now = now;
+  constructor(task: TaskRequest) {
+    this.#task = task;
   }
 
-  get result(): NodeResult | null {
+  get result(): TaskResult | null {
     return this.#result;
   }
 
-  async register(_info: ClientInfo): Promise<RegistrationOutcome> {
-    return {
-      serverTime: this.#now().toISOString(),
-      limits: {
-        maxResultBytes: 256 * 1024,
-        maxPromptBytes: 1024 * 1024,
-        maxRequestBytes: 1024 * 1024,
-        maxSkillPackageBytes: 64 * 1024 * 1024,
-        maxSkillPackages: 64,
-      },
-      assignmentsVersion: 1,
-      cleanupPending: [],
-    };
+  async poll(request: PollRequest): Promise<PollResponse> {
+    void request;
+    if (this.#dispatched) return { tasks: [], stop: false, cancelInstances: [], nextPollAfterMs: 0 };
+    this.#dispatched = true;
+    return { tasks: [this.#task], stop: false, cancelInstances: [], nextPollAfterMs: 0 };
   }
 
-  async heartbeat(state: ClientState, _acks?: CleanupAck[]): Promise<HeartbeatOutcome> {
-    return {
-      serverTime: this.#now().toISOString(),
-      control: { seq: 0, events: [] },
-      cleanupPending: [],
-      assignmentsVersion: state.assignmentsVersion,
-      nextPollAfterMs: 1000,
-    };
-  }
-
-  async claim(_capacity: Capacity): Promise<NodeRequest | null> {
-    if (this.#claimed) return null;
-    this.#claimed = true;
-    return this.#request.request;
-  }
-
-  async renew(attemptId: AttemptId): Promise<Lease> {
-    return this.#request.request.lease;
-  }
-
-  async bindSession(attemptId: AttemptId, _sessionId: SessionId): Promise<SkillSet> {
-    if (attemptId !== this.#request.request.attemptId) throw new Error(`本地请求不匹配：${attemptId}`);
-    return this.#request.skillSet;
-  }
-
-  async reportResult(_attemptId: AttemptId, result: NodeResult): Promise<Ack> {
-    const duplicate = this.#result !== null;
+  async reportResult(result: TaskResult): Promise<ResultAck> {
     this.#result = result;
-    return {
-      attemptId: result.attemptId,
-      disposition: duplicate ? "duplicate" : "accepted",
-      attemptState: "reported",
-      recordedAt: this.#now().toISOString(),
-    };
+    return { taskId: result.taskId, accepted: true };
+  }
+
+  async downloadPackage(_pkg: SkillPackage): Promise<PackageDownload> {
+    throw new Error("run 模式不支持远程技能包；使用 file:// 或本地目录");
   }
 }

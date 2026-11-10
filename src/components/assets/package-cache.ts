@@ -1,13 +1,14 @@
 import { rm } from "node:fs/promises";
 import type { AssetOptions } from "./assets.ts";
 import { AssetError } from "./errors.ts";
-import { fetchPackage, writeCachedPackage } from "./download.ts";
-import { unpackZip, type UnpackLimits } from "./unpack.ts";
+import { writeCachedPackage } from "./download.ts";
+import { unpackZip } from "./unpack.ts";
 import type { SourcePackage } from "./package-source.ts";
+import type { CopyLimits } from "./copy.ts";
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
-async function tryCache(cachePath: string, staging: string, limits: UnpackLimits): Promise<boolean> {
+async function tryCache(cachePath: string, staging: string, limits: CopyLimits): Promise<boolean> {
   if (!(await Bun.file(cachePath).exists())) return false;
   try {
     await unpackZip(cachePath, staging, limits);
@@ -18,30 +19,25 @@ async function tryCache(cachePath: string, staging: string, limits: UnpackLimits
   }
 }
 
-/** 下载/缓存 zip 并解包到 staging；命中缓存时不发请求。 */
+/** 远端 zip：命中缓存直接解包；否则经注入的 P-03 下载器取包。 */
 export async function installRemotePackage(
   pkg: SourcePackage,
   staging: string,
-  limits: UnpackLimits,
-  options: AssetOptions & { baseUrl: string },
+  limits: CopyLimits,
+  options: AssetOptions,
 ): Promise<void> {
   const cachePath =
     options.cacheRoot === undefined ? null : `${options.cacheRoot}/${pkg.digest.replaceAll(/[^0-9a-zA-Z]/g, "-")}.zip`;
   if (cachePath !== null && (await tryCache(cachePath, staging, limits))) return;
+  if (options.download === undefined) throw new AssetError("download_failed", `未配置技能包下载器：${pkg.name}`);
+  if (pkg.sizeBytes > limits.maxBytes) throw new AssetError("download_failed", `技能包超过大小上限：${pkg.name}`);
 
-  const fetched = await fetchPackage(pkg.downloadUrl, {
-    baseUrl: options.baseUrl,
-    token: options.token ?? null,
-    maxBytes: limits.maxBytes,
-    ...(pkg.etag === undefined ? {} : { etag: pkg.etag }),
-    ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
-  });
+  const fetched = await options.download(pkg);
   if (fetched.notModified) throw new AssetError("download_failed", `技能包 304 但本地无缓存：${pkg.name}`);
-  if (DIGEST_PATTERN.test(pkg.digest) && `sha256:${fetched.sha256}` !== pkg.digest) {
+  if (fetched.bytes === undefined) throw new AssetError("download_failed", `技能包响应为空：${pkg.name}`);
+  if (DIGEST_PATTERN.test(pkg.digest) && fetched.sha256 !== undefined && `sha256:${fetched.sha256}` !== pkg.digest) {
     throw new AssetError("checksum_mismatch", `技能包摘要不符：${pkg.name}`);
   }
-  if (fetched.bytes.byteLength === 0) throw new AssetError("download_failed", `技能包为空：${pkg.name}`);
-
   const zipPath = cachePath ?? `${staging}.zip`;
   if (options.cacheRoot !== undefined) await writeCachedPackage(options.cacheRoot, pkg.digest, fetched.bytes);
   else await Bun.write(zipPath, fetched.bytes);

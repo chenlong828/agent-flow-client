@@ -1,67 +1,61 @@
 import { hostname } from "node:os";
-import { join } from "node:path";
 import type {
   AssetPort,
-  AttemptState,
-  CleanupPolicy,
   ContainerPaths,
   InstanceHandle,
   JournalPort,
-  NodeRequest,
-  NodeResult,
+  PromptOptions,
   RuntimeFailure,
   RuntimePort,
   SessionRef,
   WorkspacePort,
 } from "./ports.ts";
-import type { CleanupAck, CleanupPending, SchedulerPort } from "./scheduler-port.ts";
+import type { SchedulerPort } from "./scheduler-port.ts";
+import type { SessionOutcome } from "./ports.ts";
+import type { TaskRequest, TaskResult } from "./types.ts";
 import { assemble, classify } from "../result/result.ts";
-import { claimContainer, releaseContainer } from "./container-guard.ts";
 
 export type ExecutionContext = {
   signal: AbortSignal;
+  idleTimeoutMs?: number;
 };
 
-export type RecoveryReport = {
-  abandoned: string[];
-  reReported: string[];
-  pendingReports: string[];
+export type RunningSnapshot = {
+  taskId: string;
+  instanceId: string;
+  startedAt: string;
+  lastEventAt?: string;
 };
 
 export type NodeExecutorOptions = {
-  scheduler: SchedulerPort;
   runtime: RuntimePort;
   workspace: WorkspacePort;
   assets: AssetPort;
   journal: JournalPort;
   dshHome: string;
   maxResultBytes?: number;
-  cleanupPolicy?: CleanupPolicy;
+  idleTimeoutMs?: number;
   now?: () => Date;
   host?: string;
 };
 
-type ActiveAttempt = {
-  promise: Promise<NodeResult>;
+type ActiveTask = {
+  promise: Promise<TaskResult>;
   controller: AbortController;
   instanceId: string;
-  phase: AttemptState;
-  sessionId?: string;
+  session?: SessionRef;
+  startedAt: string;
 };
 
-const DEFAULT_MAX_RESULT_BYTES = 256 * 1024;
-const RESULT_CACHE_LIMIT = 128;
+const MAX_RESULT_BYTES = 262144;
 
-/** 节点尝试状态机与执行序列（CMP-executor）；对预期失败返回 NodeResult。 */
+/** 任务执行内核（v2）：received → running → settled；结果先落盘再交给 serve 上报。 */
 export class NodeExecutor {
   readonly #options: NodeExecutorOptions;
   readonly #now: () => Date;
   readonly #host: string;
-  readonly #active = new Map<string, ActiveAttempt>();
-  readonly #results = new Map<string, NodeResult>();
-  readonly #handles = new Map<string, InstanceHandle>();
-  readonly #containers = new Map<string, { digest: string; attempts: Set<string> }>();
-  readonly #cleanupAcks = new Map<string, CleanupAck>();
+  readonly #active = new Map<string, ActiveTask>();
+  readonly #instances = new Map<string, InstanceHandle>();
 
   constructor(options: NodeExecutorOptions) {
     this.#options = options;
@@ -69,167 +63,92 @@ export class NodeExecutor {
     this.#host = options.host ?? hostname();
   }
 
-  async executeNode(request: NodeRequest, ctx: ExecutionContext): Promise<NodeResult> {
-    const active = this.#active.get(request.attemptId);
+  async executeTask(task: TaskRequest, ctx: ExecutionContext): Promise<TaskResult> {
+    const active = this.#active.get(task.taskId);
     if (active !== undefined) return await active.promise;
-    const cached = this.#results.get(request.attemptId);
-    if (cached !== undefined) return cached;
-
     const controller = new AbortController();
     const onAbort = (): void => controller.abort();
     ctx.signal.addEventListener("abort", onAbort, { once: true });
-    const promise = this.#runAttempt(request, controller)
-      .then((result) => {
-        this.#remember(request.attemptId, result);
-        return result;
-      })
+    const startedAt = this.#now().toISOString();
+    const promise = this.#runTask(task, controller, startedAt)
       .finally(() => {
-        this.#active.delete(request.attemptId);
+        this.#active.delete(task.taskId);
         ctx.signal.removeEventListener("abort", onAbort);
       });
-    this.#active.set(request.attemptId, { promise, controller, instanceId: request.instanceId, phase: "claimed" });
+    this.#active.set(task.taskId, { promise, controller, instanceId: task.instanceId, startedAt });
     return await promise;
   }
 
-  setMaxResultBytes(maxResultBytes: number): void {
-    this.#options.maxResultBytes = maxResultBytes;
-  }
-
-  async cancelInstance(instanceId: string, _reason = "user_cancel"): Promise<void> {
-    for (const [attemptId, active] of this.#active) {
+  async cancelInstance(instanceId: string): Promise<void> {
+    for (const active of this.#active.values()) {
       if (active.instanceId !== instanceId) continue;
       active.controller.abort();
-      if (active.sessionId !== undefined) {
-        await this.#options.runtime.cancel({ sessionId: active.sessionId, instanceId }).catch(() => undefined);
-      }
-      void attemptId;
+      if (active.session !== undefined) await this.#options.runtime.cancel(active.session).catch(() => undefined);
     }
   }
 
-  async recover(instanceId?: string): Promise<RecoveryReport> {
-    const pending = instanceId === undefined ? await this.#options.journal.pendingAll() : await this.#options.journal.pending(instanceId);
-    const report: RecoveryReport = { abandoned: [], reReported: [], pendingReports: [] };
-    for (const record of pending) {
-      if (record.result !== undefined && (record.state === "settled" || record.state === "reported")) {
-        try {
-          await this.#options.scheduler.reportResult(record.attemptId, record.result);
-          await this.#options.journal.mark(record.attemptId, "reported");
-          await this.#options.journal.mark(record.attemptId, "closed");
-          report.reReported.push(record.attemptId);
-        } catch {
-          report.pendingReports.push(record.attemptId);
-        }
-        continue;
-      }
-      await this.#options.journal.mark(record.attemptId, "abandoned");
-      report.abandoned.push(record.attemptId);
+  async cancelAll(): Promise<void> {
+    for (const active of this.#active.values()) {
+      active.controller.abort();
+      if (active.session !== undefined) await this.#options.runtime.cancel(active.session).catch(() => undefined);
     }
-    return report;
   }
 
-  snapshotAttempts(): { attemptId: string; instanceId: string; phase: string; sessionId?: string }[] {
-    return [...this.#active.entries()].map(([attemptId, active]) => ({
-      attemptId,
+  snapshotRunning(): RunningSnapshot[] {
+    return [...this.#active.entries()].map(([taskId, active]) => ({
+      taskId,
       instanceId: active.instanceId,
-      phase: active.phase,
-      ...(active.sessionId === undefined ? {} : { sessionId: active.sessionId }),
+      startedAt: active.startedAt,
     }));
   }
 
-  async reconcileCleanup(pending: CleanupPending[]): Promise<CleanupAck[]> {
-    const acks: CleanupAck[] = [];
-    for (const item of pending) {
-      const cached = this.#cleanupAcks.get(item.releaseId);
-      if (cached !== undefined) {
-        acks.push(cached);
-        continue;
-      }
-      try {
-        await this.cancelInstance(item.instanceId);
-        const handle = this.#handles.get(item.instanceId);
-        if (handle !== undefined) {
-          await this.#options.runtime.shutdownInstance(handle, "force");
-          await this.#options.workspace.cleanup(handle, item.cleanup ?? this.#options.cleanupPolicy ?? "keep");
-          this.#handles.delete(item.instanceId);
-        }
-        for (const orphan of await this.#options.journal.listOrphans(item.instanceId)) {
-          await this.#options.journal.clearOrphan(orphan.pid);
-        }
-        const ack: CleanupAck = { releaseId: item.releaseId, status: "done", completedAt: this.#now().toISOString() };
-        this.#cleanupAcks.set(item.releaseId, ack);
-        acks.push(ack);
-      } catch (error) {
-        const ack: CleanupAck = {
-          releaseId: item.releaseId,
-          status: "failed",
-          completedAt: this.#now().toISOString(),
-          errorClass: classify({ code: codeOf(error), message: (error as Error).message }).class,
-          retryable: false,
-        };
-        this.#cleanupAcks.set(item.releaseId, ack);
-        acks.push(ack);
-      }
+  async shutdownInstances(): Promise<void> {
+    for (const handle of this.#instances.values()) {
+      await this.#options.runtime.shutdownInstance(handle, "force").catch(() => undefined);
+      await this.#options.journal.clearOrphan(handle.pid).catch(() => undefined);
     }
-    return acks;
+    this.#instances.clear();
   }
 
-  async #runAttempt(request: NodeRequest, controller: AbortController): Promise<NodeResult> {
-    const startedAt = this.#now().toISOString();
+  async #runTask(task: TaskRequest, controller: AbortController, startedAt: string): Promise<TaskResult> {
     let session: SessionRef | undefined;
-    let containerRoot: string | undefined;
-    let outcome: Parameters<typeof assemble>[0];
+    let outcome: SessionOutcome | undefined;
     try {
       await this.#options.journal.append({
-        v: 1,
+        v: 2,
         ts: startedAt,
-        attemptId: request.attemptId,
-        instanceId: request.instanceId,
-        nodeId: request.nodeId,
-        state: "claimed",
+        taskId: task.taskId,
+        attempt: task.attempt,
+        instanceId: task.instanceId,
+        nodeId: task.nodeId,
+        state: "received",
       });
       const container = await this.#options.workspace.ensureContainer(
-        { instanceId: request.instanceId, pid: 0 },
-        request.workspacePath,
+        { instanceId: task.instanceId, pid: 0 },
+        task.workspacePath,
       );
       const handle = await this.#options.runtime.ensureInstance({
-        instanceId: request.instanceId,
+        instanceId: task.instanceId,
         dshHome: this.#options.dshHome,
         containerRoot: container.root,
       });
-      this.#handles.set(request.instanceId, handle);
+      this.#instances.set(task.instanceId, handle);
       await this.#options.journal.recordOrphan({
         pid: handle.pid,
         ...(handle.pgid === undefined ? {} : { pgid: handle.pgid }),
-        instanceId: request.instanceId,
-        attemptId: request.attemptId,
+        instanceId: task.instanceId,
+        taskId: task.taskId,
         createdAt: this.#now().toISOString(),
         host: this.#host,
       });
       session = await this.#options.runtime.newSession(handle, container.root);
-      const boundActive = this.#active.get(request.attemptId);
-      if (boundActive !== undefined) {
-        boundActive.phase = "bound";
-        boundActive.sessionId = session.sessionId;
-      }
-      await this.#options.journal.mark(request.attemptId, "bound", { sessionId: session.sessionId });
-
-      const skillSet = await this.#options.scheduler.bindSession(request.attemptId, session.sessionId);
-      containerRoot = container.root;
-      claimContainer(this.#containers, containerRoot, request.attemptId, skillSet.digest);
-      await this.#options.assets.install(skillSet, container);
-      const readyActive = this.#active.get(request.attemptId);
-      if (readyActive !== undefined) readyActive.phase = "ready";
-      await this.#options.journal.mark(request.attemptId, "ready");
-
-      const runningActive = this.#active.get(request.attemptId);
-      if (runningActive !== undefined) runningActive.phase = "running";
-      await this.#options.journal.mark(request.attemptId, "running");
+      const active = this.#active.get(task.taskId);
+      if (active !== undefined) active.session = session;
+      await this.#options.journal.mark(task.taskId, "running", { sessionId: session.sessionId });
+      await this.#options.assets.install(task.skillSet, container);
       outcome = controller.signal.aborted
-        ? { sessionId: session.sessionId, finalText: "", stopReason: null, usage: null, error: { code: "cancelled", message: "prompt 被取消", class: "cancelled" } }
-        : await this.#options.runtime.prompt(session, request.prompt, {
-            signal: controller.signal,
-            timeoutMs: request.timeoutMs,
-          });
+        ? cancelledOutcome(session.sessionId)
+        : await this.#prompt(session, task, controller);
     } catch (error) {
       const failure: RuntimeFailure = {
         code: codeOf(error),
@@ -238,44 +157,36 @@ export class NodeExecutor {
       };
       outcome = { sessionId: session?.sessionId ?? "", finalText: "", stopReason: null, usage: null, error: failure };
     }
-    try {
-      return await this.#finish(request, session, outcome, startedAt);
-    } finally {
-      if (containerRoot !== undefined) releaseContainer(this.#containers, containerRoot, request.attemptId);
-    }
-  }
-
-  async #finish(
-    request: NodeRequest,
-    session: SessionRef | undefined,
-    outcome: Parameters<typeof assemble>[0],
-    startedAt: string,
-  ): Promise<NodeResult> {
     const result = assemble(outcome, {
-      attemptId: request.attemptId,
-      maxResultBytes: this.#options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES,
+      taskId: task.taskId,
+      attempt: task.attempt,
+      maxResultBytes: this.#options.maxResultBytes ?? MAX_RESULT_BYTES,
       startedAt,
       finishedAt: this.#now().toISOString(),
     });
-    await this.#options.journal.mark(request.attemptId, "settled", { result });
-    try {
-      await this.#options.scheduler.reportResult(request.attemptId, result);
-      await this.#options.journal.mark(request.attemptId, "reported");
-    } catch {
-      // 上报失败保留 settled，下次启动重报（R-02）。
-    }
+    await this.#options.journal.mark(task.taskId, "settled", { result });
     if (session !== undefined) await this.#options.runtime.closeSession(session).catch(() => undefined);
-    await this.#options.journal.mark(request.attemptId, "closed");
     return result;
   }
 
-  #remember(attemptId: string, result: NodeResult): void {
-    this.#results.set(attemptId, result);
-    if (this.#results.size > RESULT_CACHE_LIMIT) {
-      const oldest = this.#results.keys().next().value;
-      if (oldest !== undefined) this.#results.delete(oldest);
-    }
+  async #prompt(session: SessionRef, task: TaskRequest, controller: AbortController): Promise<SessionOutcome> {
+    const options: PromptOptions = {
+      signal: controller.signal,
+      timeoutMs: task.timeoutMs,
+      ...(this.#options.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.#options.idleTimeoutMs }),
+    };
+    return await this.#options.runtime.prompt(session, task.prompt, options);
   }
+}
+
+function cancelledOutcome(sessionId: string): SessionOutcome {
+  return {
+    sessionId,
+    finalText: "",
+    stopReason: null,
+    usage: null,
+    error: { code: "cancelled", message: "任务被取消", class: "cancelled" },
+  };
 }
 
 function codeOf(error: unknown): string {
@@ -283,7 +194,4 @@ function codeOf(error: unknown): string {
   return typeof code === "string" ? code : "internal_error";
 }
 
-/** 供测试/诊断：把容器路径拼到实例 home 下（S1 多实例派生用）。 */
-export function instanceHome(base: string, instanceId: string): string {
-  return join(base, "instances", instanceId);
-}
+export type { ContainerPaths };

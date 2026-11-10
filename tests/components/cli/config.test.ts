@@ -24,7 +24,8 @@ describe("TC-CONFIG-001 默认配置", () => {
     expect(config.state.root).toBe(join(runDir, ".agent-flow-client"));
     expect(config.state.source).toBe("default");
     expect(config.logging.level).toBe("info");
-    expect(config.capacity.maxInstances).toBe(4);
+    expect(config.capacity.maxConcurrent).toBe(4);
+    expect(config.executor.idleTimeoutMs).toBe(0);
     expect(Object.isFrozen(config)).toBe(true);
   });
 });
@@ -40,7 +41,7 @@ root = "var/state"
 [logging]
 level = "debug"
 [capacity]
-max_instances = 8
+max_concurrent = 8
 `);
     const config = await loadConfig({ runDir, env: {}, homeDir });
     expect(config.acp.dshHome).toBe(join(runDir, "custom-home"));
@@ -49,7 +50,7 @@ max_instances = 8
     expect(config.state.root).toBe(join(runDir, "var/state"));
     expect(config.state.source).toBe("config");
     expect(config.logging.level).toBe("debug");
-    expect(config.capacity.maxInstances).toBe(8);
+    expect(config.capacity.maxConcurrent).toBe(8);
     expect(config.capacity.source).toBe("config");
   });
 
@@ -111,7 +112,7 @@ describe("TC-CONFIG-004 非法配置不回退", () => {
     ["dsh_home 类型错误", `[acp]\ndsh_home = 3\n`, 2],
     ["permission 非法", `[acp]\npermission = "maybe"\n`, 2],
     ["logging.level 非法", `[logging]\nlevel = "trace"\n`, 2],
-    ["max_instances 越界", `[capacity]\nmax_instances = 0\n`, 2],
+    ["max_concurrent 越界", `[capacity]\nmax_concurrent = 0\n`, 2],
   ];
 
   test("TC-CONFIG-004 非法 TOML、空值、类型与越界值一律 config_invalid/2", async () => {

@@ -20,9 +20,12 @@ const DEFAULT_LIMITS: CopyLimits = { maxBytes: 64 * 1024 * 1024, maxFiles: 10_00
 
 export type AssetOptions = {
   cacheRoot?: string;
-  baseUrl?: string;
-  token?: string | null;
-  fetchImpl?: typeof fetch;
+  /** `P-03` 下载器；由组合根注入（serve 用 gateway，run 不提供）。 */
+  download?: (pkg: { packageId: string; etag?: string; digest: string; sizeBytes: number }) => Promise<{
+    bytes?: Uint8Array;
+    notModified: boolean;
+    sha256?: string;
+  }>;
 };
 const LOCK_STALE_MS = 60_000;
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -34,6 +37,7 @@ const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 export class LocalAssets implements AssetPort {
   readonly #limits: CopyLimits;
   readonly #options: AssetOptions;
+  readonly #queues = new Map<string, Promise<unknown>>();
 
   constructor(limits: Partial<CopyLimits> = {}, options: AssetOptions = {}) {
     this.#limits = { ...DEFAULT_LIMITS, ...limits };
@@ -41,6 +45,17 @@ export class LocalAssets implements AssetPort {
   }
 
   async install(skillSet: SkillSet, container: ContainerPaths): Promise<InstalledSkills> {
+    // 同一容器同一时刻只有一个安装临界区（C-03）；并发任务串行进入。
+    const previous = this.#queues.get(container.root) ?? Promise.resolve();
+    const run = previous.then(
+      async () => await this.#installExclusive(skillSet, container),
+      async () => await this.#installExclusive(skillSet, container),
+    );
+    this.#queues.set(container.root, run.catch(() => undefined));
+    return await run;
+  }
+
+  async #installExclusive(skillSet: SkillSet, container: ContainerPaths): Promise<InstalledSkills> {
     const current = await this.currentDigest(container);
     if (current === skillSet.digest && (await exists(container.skillRoot))) {
       return { digest: skillSet.digest, skills: await installedNames(container.skillRoot), changed: false };

@@ -9,6 +9,7 @@ import type {
 } from "../executor/ports.ts";
 import { RuntimeError } from "./errors.ts";
 import { RuntimeState, type SessionState } from "./runtime-state.ts";
+import { startPromptTimers } from "./prompt-timers.ts";
 import { startInstance } from "./runtime-instance.ts";
 import type { RuntimeOptions } from "./runtime-options.ts";
 
@@ -26,6 +27,7 @@ const SHUTDOWN_GRACE_MS = 5_000;
 export class AcpRuntime implements RuntimePort {
   readonly #options: RuntimeOptions;
   readonly #state: RuntimeState;
+  readonly #starting = new Map<string, Promise<InstanceHandle>>();
 
   constructor(options: RuntimeOptions) {
     this.#options = options;
@@ -37,7 +39,13 @@ export class AcpRuntime implements RuntimePort {
     if (existing !== undefined) {
       return { instanceId: instance.instanceId, pid: existing.pid, ...(process.platform === "win32" ? {} : { pgid: existing.pid }) };
     }
-    return await startInstance(this.#options, instance, this.#state);
+    const pending = this.#starting.get(instance.instanceId);
+    if (pending !== undefined) return await pending;
+    const starting = startInstance(this.#options, instance, this.#state).finally(() => {
+      this.#starting.delete(instance.instanceId);
+    });
+    this.#starting.set(instance.instanceId, starting);
+    return await starting;
   }
 
   async newSession(instance: InstanceHandle, cwd: string): Promise<SessionRef> {
@@ -75,13 +83,12 @@ export class AcpRuntime implements RuntimePort {
     state.stopReason = null;
     state.error = undefined;
     state.timedOut = false;
+    state.idleTimedOut = false;
     state.cancelRequested = false;
+    state.lastEventAt = Date.now();
 
     const cancelPrompt = (): void => acp.notify("session/cancel", { sessionId: session.sessionId });
-    const timer = setTimeout(() => {
-      state.timedOut = true;
-      cancelPrompt();
-    }, opts.timeoutMs);
+    const stopTimers = startPromptTimers(state, opts, cancelPrompt);
     opts.signal.addEventListener("abort", cancelPrompt, { once: true });
 
     try {
@@ -97,12 +104,14 @@ export class AcpRuntime implements RuntimePort {
         state.error = { code: failure.code, message: failure.message, class: failure.code === "timeout" ? "timeout" : "runtime" };
       }
     } finally {
-      clearTimeout(timer);
+      stopTimers();
       opts.signal.removeEventListener("abort", cancelPrompt);
     }
 
     if (state.timedOut) {
-      state.error = { code: "timeout", message: `prompt 超时（${opts.timeoutMs}ms）`, class: "timeout" };
+      state.error = state.idleTimedOut
+        ? { code: "idle_timeout", message: `连续 ${opts.idleTimeoutMs}ms 无 ACP 事件`, class: "timeout" }
+        : { code: "timeout", message: `prompt 超时（${opts.timeoutMs}ms）`, class: "timeout" };
       const outcome = outcomeOf(state);
       await this.cancel(session).catch(() => undefined);
       return outcome;
@@ -120,9 +129,17 @@ export class AcpRuntime implements RuntimePort {
     if (acp === undefined) return;
     acp.notify("session/cancel", { sessionId: session.sessionId });
     await acp.request("session/close", { sessionId: session.sessionId }, CANCEL_CLOSE_MS).catch(() => undefined);
-    acp.kill("SIGKILL");
-    await acp.waitExit(2_000);
-    this.#state.removeInstance(session.instanceId);
+    this.#state.deleteSession(session.sessionId);
+    // 还有同实例其它 session 时不杀进程组，避免连带终止并发任务。
+    if (this.#state.countSessions(session.instanceId) === 0) {
+      acp.kill("SIGKILL");
+      await acp.waitExit(2_000);
+      this.#state.removeInstance(session.instanceId);
+    }
+  }
+
+  activeSessions(instanceId: string): number {
+    return this.#state.countSessions(instanceId);
   }
 
   async closeSession(session: SessionRef): Promise<void> {
