@@ -48,6 +48,9 @@ docs/
 │   │   ├── brief.md
 │   │   ├── result.md
 │   │   └── probe/                          ← 空会话探针
+│   ├── 2026-11-10-execution-semantics-proposal/ ← 执行容错语义提议（待调度层评审）
+│   │   ├── brief.md
+│   │   └── proposal.md
 │   ├── 2026-11-06-observability-http/      ← 只读观测 HTTP（P1 设计稿，附评已处置）
 │   │   ├── brief.md
 │   │   ├── proposal.md                     ← /api/v1/observability：日志、SSE、DSH session 归档

@@ -35,3 +35,4 @@ updated: 2026-11-08
 | OQ-024 | 场景 UC → 测试目录/文件的映射表何时补？ | 场景覆盖证明、S0 验收 | **已关闭**（2026-11-08）：见 `docs/design/test-matrix.md`；每个 S0 UC 至少一个计划测试文件，测试 ID 在工序中回填。 |
 | OQ-025 | `CleanupAck.failed` + `retryable=false` 的终止规则？ | 调度器是否永久重发清理、告警噪声 | 调度器侧 follow-up（`ND2-06`）：v1 约定 `failed` 保留 pending；若 `retryable=false`，应停止下发并转审计，而不是永久重发。待调度器确认后写进契约/实现。 |
 | OQ-026 | S0 的模型路由（`hundsun-public/hs-deepseek-flash-latest`）由谁下发、如何与调度器节点参数解耦？ | 生产环境的模型选择与调度器契约 | S0 用实例 profile 补丁固定 `llm-pi-ai` + `agent-default-model` + `acp` 三处，`AF_MODEL`/`AF_LLM_BASE_URL` 可覆盖；S1 决定进配置键还是由 `NodeRequest` 携带（后者需改契约）。见 `docs/history/works/2026-11-08-s0-local-loop/result.md` §5。 |
+| OQ-027 | Agent 执行任务的容错语义（不承诺 exactly-once、允许顺序重试、同容器单写者）与卡死/超时归属，需调度层确认 | client 重试/超时实现、契约可选字段、容量与清理策略 | 已整理提议 `docs/works/2026-11-10-execution-semantics-proposal/proposal.md`，待 Q1–Q8 结论；结论前按现行 A 方案与既有契约执行。 |

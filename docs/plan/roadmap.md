@@ -38,7 +38,7 @@ updated: 2026-11-08
 
 ## 下一步工作计划
 
-> 当前活跃工序：`docs/works/2026-11-06-observability-http/`（观测 HTTP P1 设计稿，独立轨道）；S0/S1/S2（A 方案内）/M1 已归档。
+> 当前活跃工序：`docs/works/2026-11-10-execution-semantics-proposal/`（执行容错语义提议，待调度层评审）；`docs/works/2026-11-06-observability-http/`（观测 HTTP P1 设计稿，独立轨道）；S0/S1/S2（A 方案内）/M1 已归档。
 
 ### 批次 1：S0 本地执行闭环（已完成，2026-11-08）
 
