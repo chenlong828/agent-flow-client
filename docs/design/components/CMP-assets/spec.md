@@ -63,7 +63,7 @@ type SkillPackageRef = {
 ```
 
 - 来源与鉴权由组合根注入；assets 不依赖 `CMP-gateway`。
-- `C-05` 走调度器托管端点：`GET /api/v1/executor/skill-packages/{packageId}`；请求带 `Authorization` 与 `X-Client-Run-Id`，条件请求用 `If-None-Match`（304 视为缓存命中）。
+- `C-05` 走调度器托管端点：`GET /api/v1/executor/skill-packages/{packageId}`；请求带 `Authorization` 与 `X-Client-Run-Id`。缓存以 `digest` 为键，命中即解包、不发请求；未命中时先清掉任务带来的 `etag` 再下载，不做条件请求（本地没有副本却带 `If-None-Match` 会拿到 304，等于自断字节来源）。下载器回 `304` 仍按 `download_failed` 上报，防御中间层擅自缓存。
 - **跨 host 不带凭据**：只有 URL host 与 `SchedulerEndpoint.baseUrl` 相同才附 `Authorization`；外链必须短期签名且不带 client token。
 - `packageId` 不可变：同 id 的内容不可替换；内容变更必须换 id。
 - 大小上限取 `limits.maxSkillPackageBytes`（v1 默认 64 MiB）；超限 `download_failed`。

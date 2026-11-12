@@ -29,10 +29,18 @@ async function container(): Promise<Awaited<ReturnType<FileWorkspace["ensureCont
   return await new FileWorkspace().ensureContainer(instance, root);
 }
 
-function skillSet(digest: string): SkillSet {
+function skillSet(digest: string, etag?: string): SkillSet {
   return {
     digest,
-    packages: [{ packageId: "p-1", name: "alpha", version: "1", digest, sizeBytes: 0, downloadUrl: "/api/v1/executor/skill-packages/p-1" }],
+    packages: [{
+      packageId: "p-1",
+      name: "alpha",
+      version: "1",
+      digest,
+      sizeBytes: 0,
+      downloadUrl: "/api/v1/executor/skill-packages/p-1",
+      ...(etag === undefined ? {} : { etag }),
+    }],
   };
 }
 
@@ -73,11 +81,27 @@ describe("P-03 技能包落地", () => {
     });
   });
 
+  test("缓存未命中时不做条件请求：先清空任务 etag 再下载", async () => {
+    const { bytes, sha256 } = await makeZip();
+    const seen: Array<string | undefined> = [];
+    const assets = new LocalAssets({}, {
+      download: async (pkg) => {
+        seen.push(pkg.etag);
+        // 模拟 P-03：带 If-None-Match 且命中 → 304；无条件下载 → 200 全文。
+        return pkg.etag === undefined ? { bytes, notModified: false, sha256 } : { notModified: true };
+      },
+    });
+    const installed = await assets.install(skillSet(`sha256:${sha256}`, '"sha256-abc"'), await container());
+    expect(seen).toEqual([undefined]);
+    expect(installed.skills.sort()).toEqual(["alpha", "flat"]);
+  });
+
   test("304 但无缓存判 download_failed", async () => {
     const assets = new LocalAssets({}, { download: async () => ({ notModified: true }) });
     await expect(assets.install(skillSet("sha256:x"), await container())).rejects.toMatchObject({ code: "download_failed" });
   });
 });
+
 /** 编排侧真实包形状：zip 根就是 `SKILL.md`（附件在 `scripts/`、`references/`）。 */
 async function rootSkillZip(files: Record<string, string>): Promise<{ bytes: Uint8Array; sha256: string }> {
   const dir = await mkdtemp(join(tmpdir(), "afc-root-zip-"));

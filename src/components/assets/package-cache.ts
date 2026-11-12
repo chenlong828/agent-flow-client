@@ -32,7 +32,10 @@ export async function installRemotePackage(
   if (options.download === undefined) throw new AssetError("download_failed", `未配置技能包下载器：${pkg.name}`);
   if (pkg.sizeBytes > limits.maxBytes) throw new AssetError("download_failed", `技能包超过大小上限：${pkg.name}`);
 
-  const fetched = await options.download(pkg);
+  // 走到这里说明本地没有该 digest 的副本：任务里的 etag 描述的是目标版本，
+  // 拿它发条件请求必然 304，而本地无包可用。缓存未命中时不做条件请求。
+  const fetched = await options.download({ ...pkg, etag: undefined });
+  // 防御：中间层若擅自返回 304，仍按失败处理，不静默成功。
   if (fetched.notModified) throw new AssetError("download_failed", `技能包 304 但本地无缓存：${pkg.name}`);
   if (fetched.bytes === undefined) throw new AssetError("download_failed", `技能包响应为空：${pkg.name}`);
   if (DIGEST_PATTERN.test(pkg.digest) && fetched.sha256 !== undefined && `sha256:${fetched.sha256}` !== pkg.digest) {
