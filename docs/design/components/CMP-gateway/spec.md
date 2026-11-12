@@ -15,7 +15,7 @@ updated: 2026-11-12
 ## 1. 职责与边界
 
 - **单元 / 层**：组件；L0 基础设施；HTTP 防腐层。
-- **负责**：五端点 `poll`/`reportResult`/`downloadPackage`/`uploadSessionLog`/`uploadArchive`；Bearer 鉴权；`X-Executor-Protocol: 3`；超时/重试；HTTP 错误信封归一。
+- **负责**：五端点 `poll`/`reportResult`/`downloadPackage`/`uploadSessionLog`/`uploadArchive`；Bearer 鉴权与开发期 `X-Client-Id` 自报身份；`X-Executor-Protocol: 3`；超时/重试；HTTP 错误信封归一。
 - **不负责**：任务状态机（executor）、结果语义（result）、进程/文件（runtime/workspace/assets）、调度器内部任务列表。
 - **变化轴**：调度器协议。
 
@@ -29,8 +29,8 @@ updated: 2026-11-12
 | `uploadArchive(runId, bytes)` | `POST /runs/{runId}/archive`；`application/gzip`；终态前置；后到覆盖 | `ArchiveAck` | `run_not_found`、`invalid_state`、`payload_too_large`、`unreachable`、`timeout` |
 | `downloadPackage(pkg)` | `GET /skill-packages/{packageId}`；支持 `If-None-Match`；304 → `notModified` | `PackageDownload` | `package_not_found`、`unreachable` |
 
-- 公共头：`Authorization: Bearer <token>`、`X-Executor-Protocol: 3`、`X-Request-Id`。
-- 没有 `clientId`/`runId`/`register`/`heartbeat`/`claim`/`renew`/`bindSession`。
+- 公共头：`Authorization: Bearer <token>`、`X-Executor-Protocol: 3`、`X-Request-Id`、`X-Client-Id`（总是带，取值见 `CMP-cli` 配置）、`X-Client-Address`（可选，仅服务端展示）。
+- 没有 `runId`/`register`/`heartbeat`/`claim`/`renew`/`bindSession`；`clientId` 只作为请求头，不在本地持久化，也不读服务端回写。
 - HTTP 状态与 JSON 信封不进入端口；错误码闭集：`unsupported_protocol`、`unauthorized`、`task_not_found`、`run_not_found`、`package_not_found`、`session_log_missing`、`invalid_state`、`invalid_archive`、`payload_too_large`、`unreachable`、`timeout`、`protocol_error`。
 - 二进制上传必须带 `Content-Length`；`bytes`/`sha256` 一律指压缩后内容。
 
@@ -42,7 +42,8 @@ updated: 2026-11-12
 4. `downloadPackage` 只在同源 URL 带 token；跨 host 不带。
 5. `uploadSessionLog`/`uploadArchive` 不做本地重试编排；重试与「先日志后结果」由 executor/CLI 决定。
 6. `P-04` 的 `404` 由调用方丢弃上传与结果，`413` 由调用方转「空日志 + 失败结果」流程。
-5. 凭据不进日志/结果/错误 message。
+7. 有 token 时 `Bearer` 与 `X-Client-Id` 同时带；优先关系由服务端判定，客户端不因 401 自动降级或切模式。
+8. 凭据不进日志/结果/错误 message。
 
 ## 4. 依赖与分层
 
@@ -61,6 +62,7 @@ updated: 2026-11-12
 | 类型 | 用例 | 文件 |
 |---|---|---|
 | 传输 | 头、错误码、超时、重试 | `tests/components/gateway/transport.test.ts` |
+| 身份 | 五端点 `X-Client-Id`/地址头、Bearer 共存 | `tests/components/gateway/transport.test.ts`、`tests/scenarios/v3-serve.test.ts` |
 | poll | 请求形状、stop/cancelInstances | `tests/components/gateway/gateway.test.ts` |
 | result | 首份/重复/404 | 同上 |
 | package | 200/304/404 | 同上 |

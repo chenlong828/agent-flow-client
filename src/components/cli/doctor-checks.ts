@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import type { AppConfig } from "./config.ts";
 import { isUserDshPath } from "./config.ts";
+import { isValidClientId } from "./client-identity.ts";
 import type { CheckResult } from "../observability/doctor.ts";
 import { resolveDshCommand, dshCommandExists, probeDshVersion } from "../runtime/dsh.ts";
 import { findProjectRoot } from "../workspace/project-root.ts";
@@ -84,10 +85,31 @@ function configChecks(config: AppConfig, homeDir: string): CheckResult[] {
       detail: config.scheduler.url ?? "未配置（serve 需要）",
     },
     {
+      id: "scheduler.client_id",
+      title: "调度器客户端身份",
+      status: isValidClientId(config.scheduler.clientId) ? "pass" : "fail",
+      detail: `${config.scheduler.clientId}（来源 ${config.scheduler.clientIdSource}）`,
+      ...(isValidClientId(config.scheduler.clientId)
+        ? {}
+        : { remediation: "改为 1–64 个不含空白/控制字符的稳定值（AF_CLIENT_ID 或 [scheduler].client_id）" }),
+    },
+    {
       id: "scheduler.token",
       title: "调度器 token",
       status: config.scheduler.token === null ? "warn" : "pass",
-      detail: config.scheduler.token === null ? "未配置（仅 loopback 开发可用）" : `已配置（来源 ${config.scheduler.tokenSource}）`,
+      detail:
+        config.scheduler.token === null
+          ? `未配置${config.scheduler.allowUnauthenticated ? "（allow_unauthenticated=true，靠 X-Client-Id 自报身份）" : "（仅 loopback 可用，或开发期设 allow_unauthenticated = true）"}`
+          : `已配置（来源 ${config.scheduler.tokenSource}）`,
+    },
+    {
+      id: "scheduler.identity",
+      title: "调度器身份方式",
+      status: config.scheduler.token === null ? "warn" : "pass",
+      detail:
+        config.scheduler.token === null
+          ? "以 X-Client-Id 自报身份（开发期）；服务端 EXECUTOR_AUTH=on 时会返回 401"
+          : `Bearer（X-Client-Id 同时附带：${config.scheduler.clientId}）`,
     },
   ];
 }

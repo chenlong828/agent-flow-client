@@ -31,6 +31,18 @@ Bun 已安装在 `~/.bun/bin` 并加入 `PATH`；项目不携带本地 Bun。
 
 `serve` 按 executor contract v3 对接五个端点：`POST /api/v1/executor/poll`、`POST /api/v1/executor/tasks/{taskId}/result`、`GET /api/v1/executor/skill-packages/{packageId}`、`POST /api/v1/executor/tasks/{taskId}/session-log`、`POST /api/v1/executor/runs/{runId}/archive`。
 
+开发期自报身份（调度器 `EXECUTOR_AUTH=off`，默认）：`.config` 里给一个稳定的 `[scheduler] client_id`（或用 `AF_CLIENT_ID` 覆盖），client 会在五个端点统一带 `X-Client-Id`；调度器首次见到该值就自动登记节点，不需要先建 Harness 资产、不需要 `API-41`、不需要 token。`client_id` 必须跨重启稳定，缺省取本机 `hostname()`；非 loopback 且无 token 时还需 `allow_unauthenticated = true`：
+
+```toml
+[scheduler]
+url = "https://sched.example.com"
+client_id = "chenlong-mac-01"
+# 开发期放开「非 loopback + 无 token」；生产回补时删掉并改用 token
+allow_unauthenticated = true
+```
+
+`doctor` 会列出 `scheduler.client_id` 的取值与来源，并在无 token 时提示当前身份方式。`EXECUTOR_AUTH=on` 后 `X-Client-Id` 被服务端忽略，client 继续用 `Bearer`，两者可共存。
+
 本机自测可直接用桩调度器：
 
 ```bash
@@ -58,6 +70,17 @@ bun run scripts/serve-bg.ts status   # 监督模式会显示 serve pid、重启�
 ```
 
 `serve` 以 0/130/143 退出视为正常停止；其余退出码按 1s→30s 退避重启；连续 5 次在启动后 3s 内退出（配置/DSH 入口这类确定性错误）则放弃并记录原因。监督事件写在 `<state.root>/logs/supervise.out`。
+
+本机调试用 `scripts/serve-dev.sh`（系统终端里执行，包装了 `start --dev`）：
+
+```bash
+./scripts/serve-dev.sh            # 起一次；serve 被任何方式杀掉都会自动拉起
+./scripts/serve-dev.sh status
+./scripts/serve-dev.sh reload     # 改完代码立即重启（等价于杀掉 serve）
+./scripts/serve-dev.sh stop
+```
+
+启动必须在系统终端里做（DSH 会话里启动会继承文件沙箱，容器目录写入报 `EPERM`），完整规则见 `AGENTS.md`「本机联调」。
 
 pid 在 `<state.root>/run/serve.pid`，stdout/stderr 在 `<state.root>/logs/serve.out`（结构化日志仍是 `client.jsonl`）。shell 里已导出 `DSH_HOME` 时（例如在 DSH 会话内）先 `env -u DSH_HOME` 再启动，否则它会覆盖配置里的 `[acp].dsh_home`，client 会拒绝 `~/.dsh`。
 

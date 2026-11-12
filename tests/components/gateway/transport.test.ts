@@ -17,6 +17,7 @@ describe("v3 HTTP 传输", () => {
     expect(request?.headers["x-executor-protocol"]).toBe("3");
     expect(request?.headers["x-request-id"]).toMatch(/^[0-9a-f-]{36}$/);
     expect(request?.headers["x-client-run-id"]).toBeUndefined();
+    expect(request?.headers["x-client-id"]).toBeUndefined();
     await stub.close();
   });
 
@@ -73,5 +74,44 @@ describe("v3 HTTP 传输", () => {
       ),
     ).rejects.toMatchObject({ code: "unauthorized" });
     expect(unauthorizedAttempts).toBe(1);
+  });
+});
+
+describe("TC-CLT-ENR 开发期自报身份", () => {
+  const identity = { clientId: "chenlong-mac-01", clientAddress: "chenlong-mac.local" };
+
+  test("TC-CLT-ENR-1/2 无 token 时五个端点都带 X-Client-Id 与地址头", async () => {
+    const stub = new StubScheduler();
+    const transport = new HttpTransport({ baseUrl: stub.url, token: null, ...identity });
+    const results = await Promise.allSettled([
+      transport.post("/poll", { capacity: { free: 0 }, running: [], finished: [] }, 1000),
+      transport.postBytes("/tasks/t1/session-log?attempt=1", new Uint8Array([31, 139]), 1000, {
+        "Content-Type": "application/x-ndjson",
+      }),
+      transport.post("/tasks/t1/result", { taskId: "t1", attempt: 1, status: "succeeded" }, 1000),
+      transport.getBytes("/skill-packages/p1", 1000),
+      transport.postBytes("/runs/r1/archive", new Uint8Array([31, 139]), 1000),
+    ]);
+    expect(stub.requests).toHaveLength(5);
+    for (const request of stub.requests) {
+      expect(request.headers["x-client-id"]).toBe("chenlong-mac-01");
+      expect(request.headers["x-client-address"]).toBe("chenlong-mac.local");
+      expect(request.headers.authorization).toBeUndefined();
+    }
+    const rejected = results.filter((result) => result.status === "rejected");
+    for (const result of rejected) {
+      expect((result as PromiseRejectedResult).reason).not.toMatchObject({ code: "unauthorized" });
+    }
+    await stub.close();
+  });
+
+  test("TC-CLT-ENR-4 有 token 时仍带 Bearer（两种模式共存）", async () => {
+    const stub = new StubScheduler({ token: "t" });
+    const transport = new HttpTransport({ baseUrl: stub.url, token: "t", ...identity });
+    await transport.post("/poll", { capacity: { free: 0 }, running: [], finished: [] }, 1000);
+    const request = stub.requests[0];
+    expect(request?.headers.authorization).toBe("Bearer t");
+    expect(request?.headers["x-client-id"]).toBe("chenlong-mac-01");
+    await stub.close();
   });
 });

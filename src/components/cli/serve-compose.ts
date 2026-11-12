@@ -52,7 +52,12 @@ export async function composeForServe(
   const sessionLogs = new FileSessionLogStore(stateRoot);
   const schedulerUrl = config.scheduler.url;
   if (schedulerUrl === null) throw new Error("serve 需要 [scheduler].url");
-  const transport = new HttpTransport({ baseUrl: schedulerUrl, token: config.scheduler.token });
+  const transport = new HttpTransport({
+    baseUrl: schedulerUrl,
+    token: config.scheduler.token,
+    clientId: config.scheduler.clientId,
+    clientAddress: config.scheduler.clientAddress,
+  });
   const gateway = new HttpScheduler({
     transport,
     audit: (event, detail) =>

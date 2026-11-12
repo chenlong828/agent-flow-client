@@ -81,6 +81,7 @@ v3 在此之上加两件事：**执行前有 task-space**（工作区内按 run 
 - 传输：HTTP/1.1 或 2，生产必须 HTTPS；`http://` 仅允许 loopback。
 - 格式：请求/响应 `application/json; charset=utf-8`；`P-03` 为 `application/zip`；`P-04` 为 `application/x-ndjson` + `Content-Encoding: gzip`；`P-05` 为 `application/gzip`。
 - 鉴权：`Authorization: Bearer <token>`；token 绑定 `clientId`，不进 URL、日志、结果。
+- **开发期身份旁路**（服务端 `EXECUTOR_AUTH=off`，2026-11-12 追加）：client 可改带 `X-Client-Id: <1–64 个非空白字符>` 声明身份，可选 `X-Client-Address: <1–200 字符>` 声明接入地址；服务端以此放行并自动登记节点。能命中的 Bearer 优先，两者都没有仍返回 `401 unauthorized`。该头只在开发期生效，`EXECUTOR_AUTH=on` 时被忽略；生产部署必须关掉旁路并改用 Bearer（调度器侧决策：[`2026-11-12-executor-auth-dev-bypass.md`](../../../../agent-flow-orchaster/docs/history/decisions/2026-11-12-executor-auth-dev-bypass.md)）。
 - 版本：请求头 `X-Executor-Protocol: 3`；不匹配返回 `400 unsupported_protocol`，client 停止并退出。
 - 时间：ISO-8601 UTC。**不使用 `serverTime` 做租约计算**（没有租约），时间字段只用于审计。
 - 可选请求头 `X-Request-Id`，服务端回显并在错误信封里返回。
@@ -112,7 +113,7 @@ v3 在此之上加两件事：**执行前有 task-space**（工作区内按 run 
 | 400 | `unsupported_protocol` | `X-Executor-Protocol` 缺失或不等于 `3` |
 | 400 | `validation_error` | 请求体未知字段、字段类型/范围非法、`status`/`error.class` 不在闭集 |
 | 400 | `invalid_archive` | `P-05` 的 gzip/tar 损坏、含绝对路径/`..`/越界符号链接、超条目或解压总量 |
-| 401 | `unauthorized` | Bearer 缺失或 token 未映射到 `clientId` |
+| 401 | `unauthorized` | Bearer 缺失或 token 未映射到 `clientId`，且（`EXECUTOR_AUTH=off` 时）没有可用的 `X-Client-Id` |
 | 404 | `task_not_found` | `P-02`/`P-04` 的 `taskId` 不存在或不属于该 client 的实例 |
 | 404 | `run_not_found` | `P-05` 的 `runId` 不存在或不属于该 `clientId` |
 | 404 | `package_not_found` | `P-03` 的 `packageId` 不存在或已下架 |

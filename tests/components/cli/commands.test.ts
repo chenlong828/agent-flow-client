@@ -112,6 +112,33 @@ describe("cli 命令面", () => {
     expect(result.out).toContain("scheduler.connectivity");
   });
 
+  test("doctor 报告自报身份的取值、来源与开发期提示", async () => {
+    const runDir = await mkdtemp(join(tmpdir(), "afc-doc-"));
+    const bin = join(runDir, "fake-dsh");
+    await writeFile(bin, "#!/bin/sh\necho 0.2.2-alpha.2\n", { mode: 0o755 });
+    const result = await run(["doctor"], {
+      runDir,
+      env: { DSH_BIN: bin, HUNDSUN_PUBLIC_API_KEY: "test-key", AF_CLIENT_ID: "dev-node-01" },
+    });
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("[PASS] scheduler.client_id");
+    expect(result.out).toContain("dev-node-01（来源 env）");
+    expect(result.out).toContain("[WARN] scheduler.identity");
+    expect(result.out).toContain("X-Client-Id 自报身份");
+
+    await writeFile(
+      join(runDir, ".config"),
+      `[scheduler]\nurl = "https://sched.example.com"\ntoken = "t"\nclient_id = "node-7"\n`,
+    );
+    const withToken = await run(["doctor"], {
+      runDir,
+      env: { DSH_BIN: bin, HUNDSUN_PUBLIC_API_KEY: "test-key" },
+    });
+    expect(withToken.out).toContain("[PASS] scheduler.client_id");
+    expect(withToken.out).toContain("node-7（来源 config）");
+    expect(withToken.out).toContain("[PASS] scheduler.identity");
+  });
+
   test("doctor --json 只输出 JSON 报告", async () => {
     const runDir = await mkdtemp(join(tmpdir(), "afc-doc-"));
     const bin = join(runDir, "fake-dsh");

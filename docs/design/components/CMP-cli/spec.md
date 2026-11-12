@@ -86,6 +86,18 @@ type AppConfig = Readonly<{
 | `[capacity]` | `max_concurrent` | integer 1..64 | `4` | 仅配置 |
 | `[executor]` | `idle_timeout_ms` | integer ≥0，0=关闭 | `0` | 仅配置 |
 | `[scheduler]` | `url` | string，S1 使用 | 无 | 仅配置（S1） |
+| `[scheduler]` | `token` | string | 无 | `AF_SCHEDULER_TOKEN` > 配置 |
+| `[scheduler]` | `client_id` | string，1–64 个不含空白/控制字符的稳定值 | 本机 `hostname()` | `AF_CLIENT_ID` > 配置 > `hostname()` |
+| `[scheduler]` | `allow_unauthenticated` | boolean，默认 `false` | `false` | 仅配置 |
+
+开发期自报身份（`[scheduler].client_id`，2026-11-12）：
+
+- 取值优先级：`AF_CLIENT_ID` > `[scheduler].client_id` > `hostname()`；来源记入 `scheduler.clientIdSource`，`doctor` 展示。
+- 形状校验与服务端同一正则（`^[^\s\u0000-\u001f\u007f]{1,64}$`），空/全空白/超长/含空白 → **退出 2**（`config_invalid`），不回退 hostname。
+- 必须跨重启稳定：不用 PID、时间戳、随机串；换机或重装才换值。
+- `clientAddress` 取本机 `hostname()`，作为 `X-Client-Address` 仅供服务端展示，不可配置。
+- `allow_unauthenticated = true` 时放开「非 loopback + 无 token」校验，改由 `X-Client-Id` 自报身份；默认 `false`（生产回补时保持关闭，不改代码）。
+- 客户端不持久化服务端回写的身份；`clientId`/token 的权威仍在服务端。
 
 优先级（高 → 低）：**CLI flag > 环境变量（仅 `DSH_HOME`）> `<runDir>/.config` > 默认值**。`capacity.max_concurrent` 只能来自配置，不提供 flag（`AH-01`）。
 
@@ -139,7 +151,8 @@ type AppConfig = Readonly<{
   - 凭据：`DEEPSEEK_API_KEY` 或 `.credentials.yaml` 是否存在（只显示“已配置/未配置”）；
   - 工作区（传 `--workspace` 时）：容器布局、`findProjectRoot(容器根) === 容器根`、可写；
   - 残留：journal 未收口 attempt、实例锁、孤儿进程、残留 session；
-  - 调度器连通性（S1；S0 标 `none`）。
+  - 调度器连通性（S1；S0 标 `none`）；
+  - 调度器身份（开发期）：`scheduler.client_id` 报生效值与来源（env/config/hostname）、非法值 fail；`scheduler.identity` 在无 token 时 warn「以 `X-Client-Id` 自报身份（开发期），服务端 `EXECUTOR_AUTH=on` 时会返回 401」。
 - 输出：人类可读表格或 `--json`；生效配置脱敏。
 - 退出码按阻塞项：配置 2、版本/鉴权 3、DSH/运行时 4、工作区/资产 5；全部通过 0（可有非阻塞警告）。
 - `doctor` 不启动执行、不注册调度器、不改配置。

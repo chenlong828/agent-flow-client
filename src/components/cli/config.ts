@@ -1,7 +1,8 @@
 import { constants } from "node:fs";
 import { access, mkdir, readFile, stat } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, hostname as osHostname } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { isValidClientId, resolveClientIdentity, type ClientIdSource } from "./client-identity.ts";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type PermissionMode = "deny" | "allow";
@@ -25,6 +26,13 @@ export type AppConfig = Readonly<{
     url: string | null;
     token: string | null;
     tokenSource: "env" | "config" | "none";
+    /** 开发期自报身份：`X-Client-Id` 的取值，跨重启稳定。 */
+    clientId: string;
+    clientIdSource: ClientIdSource;
+    /** 仅供服务端展示的接入地址（`X-Client-Address`）；取本机 hostname。 */
+    clientAddress: string | null;
+    /** 允许「非 loopback + 无 token」的调度器地址；开发期自注册用，默认 false。 */
+    allowUnauthenticated: boolean;
     protocolVersion: string;
   }>;
 }>;
@@ -205,38 +213,76 @@ function validatePaths(acp: AppConfig["acp"], state: AppConfig["state"], homeDir
 const PROTOCOL_VERSION = "2026-11-07.1";
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]);
 
-function isLoopbackUrl(url: URL): boolean {
-  return LOOPBACK_HOSTS.has(url.hostname);
-}
-
-function resolveScheduler(table: RawTable, env: Record<string, string | undefined>): AppConfig["scheduler"] {
-  const rawUrl = readString(table, "url", "[scheduler].url");
-  const configToken = readString(table, "token", "[scheduler].token");
-  const envToken = env.AF_SCHEDULER_TOKEN !== undefined && env.AF_SCHEDULER_TOKEN.trim() !== "" ? env.AF_SCHEDULER_TOKEN : undefined;
-  const token = envToken ?? configToken ?? null;
-  const tokenSource = envToken !== undefined ? "env" : configToken !== undefined ? "config" : "none";
-
-  if (rawUrl === undefined) {
-    if (token !== null) throw new ConfigError("config_invalid", "[scheduler].token 已配置但 [scheduler].url 为空", 2);
-    return { url: null, token: null, tokenSource: "none", protocolVersion: PROTOCOL_VERSION };
-  }
-
+function parseSchedulerUrl(rawUrl: string): { url: URL; loopback: boolean } {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
   } catch {
     throw new ConfigError("config_invalid", `[scheduler].url 不是合法 URL：${rawUrl}`, 2);
   }
-  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLoopbackUrl(parsed))) {
+  const loopback = LOOPBACK_HOSTS.has(parsed.hostname);
+  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) {
     throw new ConfigError("scheduler_insecure_url", "scheduler.url 必须 HTTPS（http 仅允许 loopback）", 2);
   }
-  if (token === null && !isLoopbackUrl(parsed)) {
-    throw new ConfigError("scheduler_token_missing", "非 loopback 的 scheduler 必须配置 token（AF_SCHEDULER_TOKEN 或 [scheduler].token）", 2);
+  return { url: parsed, loopback };
+}
+
+function resolveScheduler(
+  table: RawTable,
+  env: Record<string, string | undefined>,
+  hostname: string,
+): AppConfig["scheduler"] {
+  const rawUrl = readString(table, "url", "[scheduler].url");
+  const configToken = readString(table, "token", "[scheduler].token");
+  const envToken = env.AF_SCHEDULER_TOKEN !== undefined && env.AF_SCHEDULER_TOKEN.trim() !== "" ? env.AF_SCHEDULER_TOKEN : undefined;
+  const token = envToken ?? configToken ?? null;
+  const tokenSource = envToken !== undefined ? "env" : configToken !== undefined ? "config" : "none";
+
+  const allowRaw = table.allow_unauthenticated;
+  if (allowRaw !== undefined && typeof allowRaw !== "boolean") {
+    throw new ConfigError("config_invalid", "[scheduler].allow_unauthenticated 必须是布尔值", 2);
+  }
+  const allowUnauthenticated = allowRaw === true;
+
+  const identity = resolveClientIdentity({
+    env,
+    configId: readString(table, "client_id", "[scheduler].client_id"),
+    hostname,
+  });
+  if (!isValidClientId(identity.clientId)) {
+    throw new ConfigError(
+      "config_invalid",
+      `[scheduler].client_id（来源 ${identity.clientIdSource}）必须是 1–64 个不含空白/控制字符的字符串：${JSON.stringify(identity.clientId)}`,
+      2,
+    );
+  }
+
+  if (rawUrl === undefined) {
+    if (token !== null) throw new ConfigError("config_invalid", "[scheduler].token 已配置但 [scheduler].url 为空", 2);
+    return {
+      url: null,
+      token: null,
+      tokenSource: "none",
+      ...identity,
+      allowUnauthenticated,
+      protocolVersion: PROTOCOL_VERSION,
+    };
+  }
+
+  const { url: parsed, loopback } = parseSchedulerUrl(rawUrl);
+  if (token === null && !loopback && !allowUnauthenticated) {
+    throw new ConfigError(
+      "scheduler_token_missing",
+      "非 loopback 的 scheduler 必须配置 token（AF_SCHEDULER_TOKEN 或 [scheduler].token），或在开发期设 [scheduler].allow_unauthenticated = true 走 X-Client-Id 自报身份",
+      2,
+    );
   }
   return {
     url: parsed.toString().replace(/\/$/, ""),
     token,
     tokenSource,
+    ...identity,
+    allowUnauthenticated,
     protocolVersion: PROTOCOL_VERSION,
   };
 }
@@ -260,10 +306,12 @@ export async function loadConfig(options: {
   env: Record<string, string | undefined>;
   flags?: ConfigFlags;
   homeDir?: string;
+  hostname?: string;
 }): Promise<AppConfig> {
   const { runDir, env } = options;
   const flags = options.flags ?? {};
   const homeDir = options.homeDir ?? homedir();
+  const hostname = options.hostname ?? osHostname();
   const configPath = flags.configPath ? resolve(process.cwd(), flags.configPath) : resolve(runDir, ".config");
   const parsed = await readConfigFile(configPath);
 
@@ -273,7 +321,7 @@ export async function loadConfig(options: {
   const logging = resolveLogging(asTable(parsed.logging, "[logging]"), flags);
   const capacity = resolveCapacity(asTable(parsed.capacity, "[capacity]"));
   const executor = resolveExecutor(asTable(parsed.executor, "[executor]"));
-  const scheduler = resolveScheduler(asTable(parsed.scheduler, "[scheduler]"), env);
+  const scheduler = resolveScheduler(asTable(parsed.scheduler, "[scheduler]"), env, hostname);
 
   validatePaths(acp, state, homeDir);
   await ensureDirectory(acp.dshHome, "home_create_failed", "DSH_HOME");

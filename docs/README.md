@@ -62,6 +62,10 @@ docs/
 │   │   ├── contract-diff.md
 │   │   ├── response.md                     ← 调度器侧对 client 评审的回复
 │   │   └── review.md                       ← client 评审与两轮确认
+│   ├── 2026-11-12-client-self-enroll/      ← 开发期 X-Client-Id 自报身份（P2，收口）
+│   │   ├── brief.md
+│   │   ├── review.md
+│   │   └── result.md
 └── history/                                ← 记忆：怎么走到这里的
     ├── works/                              ← 已归档工序（frozen）
     │   ├── 2026-11-10-execution-semantics-proposal/ ← 执行容错语义提议（已被 v2 取代）

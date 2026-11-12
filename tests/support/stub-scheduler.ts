@@ -42,7 +42,7 @@ export class StubScheduler {
   #package: { bytes: Uint8Array; etag: string; sha256: string } | null = null;
   #nextPollAfterMs = 10;
 
-  constructor(options: { token?: string; pollHoldMs?: number } = {}) {
+  constructor(options: { token?: string | null; pollHoldMs?: number } = {}) {
     this.#token = options.token ?? null;
     this.#pollHoldMs = options.pollHoldMs ?? 30;
     this.server = Bun.serve({ port: 0, fetch: (request) => this.#handle(request) });

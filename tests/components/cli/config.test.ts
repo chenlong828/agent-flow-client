@@ -229,3 +229,86 @@ token = "t"
     expect((error as ConfigError).exitCode).toBe(2);
   });
 });
+
+describe("TC-CLT-ENR 自报身份（开发期 X-Client-Id）", () => {
+  test("TC-CLT-ENR-1 client_id 优先级：AF_CLIENT_ID > [scheduler].client_id > hostname", async () => {
+    const { runDir, homeDir } = await fixture(`
+[scheduler]
+url = "http://127.0.0.1:3100"
+`);
+    const fromHostname = await loadConfig({ runDir, env: {}, homeDir, hostname: "dev-mac-01" });
+    expect(fromHostname.scheduler.clientId).toBe("dev-mac-01");
+    expect(fromHostname.scheduler.clientIdSource).toBe("hostname");
+    expect(fromHostname.scheduler.clientAddress).toBe("dev-mac-01");
+    expect(fromHostname.scheduler.token).toBeNull();
+
+    await writeFile(join(runDir, ".config"), `[scheduler]\nurl = "http://127.0.0.1:3100"\nclient_id = "from-config"\n`);
+    const fromConfig = await loadConfig({ runDir, env: {}, homeDir, hostname: "dev-mac-01" });
+    expect(fromConfig.scheduler.clientId).toBe("from-config");
+    expect(fromConfig.scheduler.clientIdSource).toBe("config");
+
+    const fromEnv = await loadConfig({ runDir, env: { AF_CLIENT_ID: "from-env" }, homeDir, hostname: "dev-mac-01" });
+    expect(fromEnv.scheduler.clientId).toBe("from-env");
+    expect(fromEnv.scheduler.clientIdSource).toBe("env");
+
+    const emptyEnv = await loadConfig({ runDir, env: { AF_CLIENT_ID: "  " }, homeDir, hostname: "dev-mac-01" });
+    expect(emptyEnv.scheduler.clientId).toBe("from-config");
+  });
+
+  test("TC-CLT-ENR-3 空/超长/含空白的 client_id 退出 2，不回退 hostname", async () => {
+    const cases: Array<[string, string]> = [
+      ["空串", `[scheduler]\nurl = "http://127.0.0.1:3100"\nclient_id = ""\n`],
+      ["全空白", `[scheduler]\nurl = "http://127.0.0.1:3100"\nclient_id = "   "\n`],
+      ["含空格", `[scheduler]\nurl = "http://127.0.0.1:3100"\nclient_id = "chen long"\n`],
+      ["超长", `[scheduler]\nurl = "http://127.0.0.1:3100"\nclient_id = "${"a".repeat(65)}"\n`],
+    ];
+    for (const [name, content] of cases) {
+      const { runDir, homeDir } = await fixture(content);
+      const error = await loadConfig({ runDir, env: {}, homeDir, hostname: "dev-mac-01" }).catch((caught: unknown) => caught);
+      expect({ name, instance: error instanceof ConfigError }).toEqual({ name, instance: true });
+      expect({ name, code: (error as ConfigError).code }).toEqual({ name, code: "config_invalid" });
+      expect({ name, exitCode: (error as ConfigError).exitCode }).toEqual({ name, exitCode: 2 });
+    }
+
+    const { runDir, homeDir } = await fixture(`[scheduler]\nurl = "http://127.0.0.1:3100"\n`);
+    const envError = await loadConfig({ runDir, env: { AF_CLIENT_ID: "a b" }, homeDir, hostname: "dev-mac-01" }).catch(
+      (caught: unknown) => caught,
+    );
+    expect((envError as ConfigError).code).toBe("config_invalid");
+    expect((envError as ConfigError).exitCode).toBe(2);
+  });
+
+  test("allow_unauthenticated 默认 false 拒绝非 loopback 无 token，true 放行", async () => {
+    const { runDir, homeDir } = await fixture(`
+[scheduler]
+url = "https://sched.example.com"
+client_id = "dev-node-01"
+`);
+    const strict = await loadConfig({ runDir, env: {}, homeDir, hostname: "dev-mac-01" }).catch((caught: unknown) => caught);
+    expect(strict).toBeInstanceOf(ConfigError);
+    expect((strict as ConfigError).code).toBe("scheduler_token_missing");
+    expect((strict as ConfigError).exitCode).toBe(2);
+
+    await writeFile(
+      join(runDir, ".config"),
+      `[scheduler]\nurl = "https://sched.example.com"\nclient_id = "dev-node-01"\nallow_unauthenticated = true\n`,
+    );
+    const config = await loadConfig({ runDir, env: {}, homeDir, hostname: "dev-mac-01" });
+    expect(config.scheduler.url).toBe("https://sched.example.com");
+    expect(config.scheduler.token).toBeNull();
+    expect(config.scheduler.allowUnauthenticated).toBe(true);
+    expect(config.scheduler.clientId).toBe("dev-node-01");
+  });
+
+  test("allow_unauthenticated 非布尔值退出 2", async () => {
+    const { runDir, homeDir } = await fixture(`
+[scheduler]
+url = "http://127.0.0.1:3100"
+allow_unauthenticated = "yes"
+`);
+    const error = await loadConfig({ runDir, env: {}, homeDir, hostname: "dev-mac-01" }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ConfigError);
+    expect((error as ConfigError).code).toBe("config_invalid");
+    expect((error as ConfigError).exitCode).toBe(2);
+  });
+});

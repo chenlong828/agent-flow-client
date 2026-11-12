@@ -2,7 +2,7 @@
 layer: design
 module: global
 status: current
-updated: 2026-11-10
+updated: 2026-11-12
 ---
 
 # 场景 UC → 测试矩阵（executor contract v3）
@@ -55,6 +55,8 @@ updated: 2026-11-10
 | R3 | env 覆盖 | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-003` | existing |
 | N1 | 非法配置 | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-004` | existing |
 | 补充 | `doctor` 缺 DSH/凭据/残留 | S0 | cli/observability | `tests/components/cli/commands.test.ts` | TBD | existing |
+| R4 | 自报身份取值/来源/开发期提示 | S1 | cli/gateway | `tests/components/cli/config.test.ts`、`tests/components/cli/commands.test.ts`、`tests/components/gateway/transport.test.ts`、`tests/scenarios/v3-serve.test.ts` | `TC-CLT-ENR-1`…`4` | existing |
+| N2 | 非法 `client_id` / `allow_unauthenticated` 类型 | S1 | cli | `tests/components/cli/config.test.ts` | `TC-CLT-ENR-3` | existing |
 
 ## 3. 契约 v3 专项
 
@@ -64,6 +66,7 @@ updated: 2026-11-10
 | `P-02` result 首份为准/404/accepted=false | `tests/components/gateway/gateway.test.ts` |
 | `P-03` 下载/304/404/摘要 | `tests/components/gateway/gateway.test.ts`、`tests/components/assets/package.test.ts` |
 | 头部/错误码/重试 | `tests/components/gateway/transport.test.ts` |
+| 身份头 `X-Client-Id`/`X-Client-Address`（开发期） | `tests/components/gateway/transport.test.ts`、`tests/scenarios/v3-serve.test.ts` |
 | `running[]`/`finished[]`/`archivedRuns` | `tests/scenarios/v2-serve.test.ts` |
 | `P-04` 日志先于结果、空日志、413 | `tests/components/gateway/gateway.test.ts`、`tests/components/executor/execute.test.ts`、`tests/scenarios/v3-serve.test.ts` |
 | `P-05` 归档后到覆盖、`invalid_state`、后台归档 | `tests/components/gateway/gateway.test.ts`、`tests/scenarios/v3-serve.test.ts` |

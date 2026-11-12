@@ -2,7 +2,7 @@
 layer: design
 module: global
 status: current
-updated: 2026-11-08
+updated: 2026-11-12
 ---
 
 # 执行面客户端架构
@@ -127,7 +127,7 @@ updated: 2026-11-08
 | 日志/`doctor` JSON | v1 | 字段可加；已有字段语义不变 | 消费方忽略未知字段 |
 | ACP | v1 | 按 DSH 基线；升级前复跑关键用例 | 版本不兼容退出 3 |
 | 技能包/digest | v1 | digest 覆盖内容；格式变更换 digest | 旧包缓存可失效 |
-| 调度器契约 | **v3（2026-11-12）** | 五端点、task-space、会话日志、运行归档；`X-Executor-Protocol: 3` | 不兼容 `400 unsupported_protocol`，停止并退出 |
+| 调度器契约 | **v3（2026-11-12）** | 五端点、task-space、会话日志、运行归档；`X-Executor-Protocol: 3`；开发期 `X-Client-Id` 自报身份（服务端 `EXECUTOR_AUTH=off`） | 不兼容 `400 unsupported_protocol`，停止并退出 |
 
 ### 4.3 依赖矩阵与禁止边
 
@@ -164,7 +164,7 @@ updated: 2026-11-08
 
 | 组件 | 内部功能 | 关键状态/不变量 |
 |---|---|---|
-| `CMP-cli` | `main`、`resolveRunDir`、`loadConfig`、`runServe`、`runOnce`、`runDoctor`、`runVersion`、组合根、信号 | 配置冻结；心跳独立于执行；退出码 |
+| `CMP-cli` | `main`、`resolveRunDir`、`loadConfig`、`resolveClientIdentity`、`runServe`、`runOnce`、`runDoctor`、`runVersion`、组合根、信号 | 配置冻结；心跳独立于执行；退出码 |
 | `CMP-executor` | `TaskRunner`、`CancellationScope`、`ports` | 状态 `received→running→settled`；同 taskId 单飞；结果先落盘 |
 | `CMP-result` | `assemble`、`classify`、`truncate`、`mapStopReason` | 纯函数；错误分类单点；UTF-8 安全截断 |
 | `CMP-gateway` | `HttpTransport`、`RetryPolicy` | `poll` 长轮询；结果首份为准；`X-Executor-Protocol: 2` |

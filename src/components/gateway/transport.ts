@@ -3,6 +3,10 @@ import { GatewayError, mapHttpError, transportError } from "./errors.ts";
 export type TransportOptions = {
   baseUrl: string;
   token: string | null;
+  /** 开发期自报身份（`X-Client-Id`）；有 token 时两者共存，服务端优先 Bearer。 */
+  clientId?: string | null;
+  /** 可选接入地址（`X-Client-Address`），仅供服务端展示。 */
+  clientAddress?: string | null;
   fetchImpl?: typeof fetch;
 };
 
@@ -44,6 +48,21 @@ export class HttpTransport {
     return this.#options.token;
   }
 
+  /** 公共头层：协议、请求 id、鉴权与开发期身份；可选请求头最后合并。 */
+  #headers(extraHeaders: Record<string, string>, hasBody: boolean): Record<string, string> {
+    const headers: Record<string, string> = {
+      [PROTOCOL_HEADER]: PROTOCOL_VERSION,
+      "X-Request-Id": crypto.randomUUID(),
+      ...extraHeaders,
+    };
+    const { token, clientId, clientAddress } = this.#options;
+    if (token !== null) headers.Authorization = `Bearer ${token}`;
+    if (clientId !== undefined && clientId !== null) headers["X-Client-Id"] = clientId;
+    if (clientAddress !== undefined && clientAddress !== null) headers["X-Client-Address"] = clientAddress;
+    if (hasBody) headers["Content-Type"] = "application/json; charset=utf-8";
+    return headers;
+  }
+
   async #request(
     method: "GET" | "POST",
     path: string,
@@ -51,13 +70,7 @@ export class HttpTransport {
   ): Promise<HttpResult> {
     const { body, timeoutMs, headers: extraHeaders = {}, binary = false } = options;
     const url = `${this.#options.baseUrl}${BASE_PATH}${path}`;
-    const headers: Record<string, string> = {
-      [PROTOCOL_HEADER]: PROTOCOL_VERSION,
-      "X-Request-Id": crypto.randomUUID(),
-      ...extraHeaders,
-    };
-    if (this.#options.token !== null) headers.Authorization = `Bearer ${this.#options.token}`;
-    if (body !== undefined) headers["Content-Type"] = "application/json; charset=utf-8";
+    const headers = this.#headers(extraHeaders, body !== undefined);
     const payload = options.raw ?? (body === undefined ? undefined : JSON.stringify(body));
 
     const controller = new AbortController();

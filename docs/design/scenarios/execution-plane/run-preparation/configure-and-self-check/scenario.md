@@ -2,7 +2,7 @@
 layer: design
 module: execution-plane
 status: designed
-updated: 2026-11-04
+updated: 2026-11-12
 flow: FLOW-CONFIG-001
 scenario: SCN-0002
 domain: 执行面
@@ -92,7 +92,7 @@ tests:
 | R1 | `TC-CONFIG-001` | 无 `.config`、无 env：默认 `<runDir>/AF_DSH_HOME` 生效；`doctor` 全绿；退出 0 |
 | R2 | `TC-CONFIG-002` | `.config` 绝对/相对路径：生效值为绝对路径；DSH 子进程拿到同一路径 |
 | R3 | `TC-CONFIG-003` | env 覆盖 `.config`：生效值与来源均为 env；启动后改 `.config` 不切换 |
-| N1 | `TC-CONFIG-004` | 非法 TOML/空值/不可写/指向 `~/.dsh`：退出 2，不回退默认，不启动执行 |
+| N1 | `TC-CONFIG-004` | 非法 TOML/空值/不可写/指向 `~/.dsh`/非法 `client_id`：退出 2，不回退默认，不启动执行 |
 
 补充检查（不替代 3+1）：
 
@@ -102,13 +102,14 @@ tests:
 - 残留 session/lock/孤儿进程 → 报告并给出清理建议/退出 4。
 - 凭据缺失 → `doctor` 报阻塞项（不误报全绿）；S0 测试注入测试凭据。
 - 生效配置输出脱敏；凭据只显示“已配置/未配置”。
+- 开发期自报身份（`TC-CLT-ENR-1`/`3`）：`client_id` 取值来源为 env/config/hostname，`doctor` 报取值与来源；空/超长/含空白退出 2；`allow_unauthenticated` 放开非 loopback 无 token 的校验（默认关）。
 
 ## 6. 覆盖边界
 
 | 阶段 | 覆盖 |
 |---|---|
 | S0 | 配置加载/优先级/校验/冻结；`[acp].dsh_home`；`doctor` 的 DSH/home/凭据存在性/残留 session；退出码 2/3/4/5 |
-| S1 | 调度器地址、凭据、版本协商；`doctor` 连通性检查 |
+| S1 | 调度器地址、凭据、版本协商；`doctor` 连通性检查；开发期 `X-Client-Id` 自报身份（取值/校验/来源） |
 | S3 | 凭据存储与完整脱敏；安装/打包后的默认路径 |
 
 不覆盖：热加载、多实例 home 派生与回收（OQ-009）、调度器契约字段（M1）、凭据签发、UI。

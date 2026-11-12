@@ -76,7 +76,7 @@ async function doctorCommand(args: ParsedArgs, config: AppConfig, deps: CliDeps)
   });
   const report = collect(checks);
   deps.io.out(
-    `生效配置：runDir=${config.runDir} DSH_HOME=${config.acp.dshHome}（${config.acp.dshHomeSource}）state.root=${config.state.root}（${config.state.source}）permission=${config.acp.permission}`,
+    `生效配置：runDir=${config.runDir} DSH_HOME=${config.acp.dshHome}（${config.acp.dshHomeSource}）state.root=${config.state.root}（${config.state.source}）permission=${config.acp.permission} client_id=${config.scheduler.clientId}（${config.scheduler.clientIdSource}）`,
   );
   deps.io.out(render(report, args.flags["--json"] === true ? "json" : "human"));
   return exitCode(report);

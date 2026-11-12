@@ -23,16 +23,19 @@ function task(id: string, prompt: string, container: string): TaskRequest {
   };
 }
 
-async function fixture(options: { workspace?: boolean; protocol?: string; sessionLogLimit?: number } = {}) {
+async function fixture(
+  options: { workspace?: boolean; protocol?: string; sessionLogLimit?: number; token?: string | null; clientId?: string } = {},
+) {
   const runDir = await mkdtemp(join(tmpdir(), "afc-v3-serve-"));
   const container = join(runDir, "workspace");
   if (options.workspace !== false) await mkdir(container, { recursive: true });
-  const stub = new StubScheduler({ token: "stub-token" });
+  const token = options.token === undefined ? "stub-token" : options.token;
+  const stub = new StubScheduler({ token });
   stub.setProtocol(options.protocol ?? "3");
   if (options.sessionLogLimit !== undefined) stub.setSessionLogLimit(options.sessionLogLimit);
   await writeFile(
     join(runDir, ".config"),
-    `[acp]\ndsh_home = "${join(runDir, "dsh-home")}"\npermission = "allow"\n[state]\nroot = "${join(runDir, "state")}"\n[logging]\nlevel = "error"\n[capacity]\nmax_concurrent = 2\n[scheduler]\nurl = "${stub.url}"\ntoken = "stub-token"\n`,
+    `[acp]\ndsh_home = "${join(runDir, "dsh-home")}"\npermission = "allow"\n[state]\nroot = "${join(runDir, "state")}"\n[logging]\nlevel = "error"\n[capacity]\nmax_concurrent = 2\n[scheduler]\nurl = "${stub.url}"\n${token === null ? "" : `token = "${token}"\n`}${options.clientId === undefined ? "" : `client_id = "${options.clientId}"\n`}`,
   );
   const item = task("01930000-0000-7000-8000-000000000811", "NODE-V3", container);
   stub.enqueueTask(item);
@@ -105,6 +108,21 @@ describe("v3 serve：task-space / 日志 / 归档", () => {
     const confirm = stub.requests.find((request) => Array.isArray(request.body.archivedRuns) && (request.body.archivedRuns as string[]).includes(runId));
     expect(confirm?.body.archivedRuns).toContain(runId);
     expect(existsSync(space)).toBe(true);
+    stub.setStop(true);
+    expect(await child.exited).toBe(0);
+    stub.server.stop(true);
+  }, 40_000);
+
+  test("TC-CLT-ENR-1/2 自报身份：无 token 时按 X-Client-Id 全链路执行", async () => {
+    const { stub, child } = await fixture({ token: null, clientId: "e2e-node-01" });
+    await waitFor(() => stub.results().length >= 1);
+    const result = stub.results()[0]!;
+    expect(result.status).toBe("succeeded");
+    expect(stub.requests.length).toBeGreaterThanOrEqual(3);
+    for (const request of stub.requests) {
+      expect(request.headers["x-client-id"]).toBe("e2e-node-01");
+      expect(request.headers.authorization).toBeUndefined();
+    }
     stub.setStop(true);
     expect(await child.exited).toBe(0);
     stub.server.stop(true);
