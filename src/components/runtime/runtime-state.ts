@@ -1,10 +1,4 @@
-import type {
-  InstanceHandle,
-  PermissionDecision,
-  SessionEvent,
-  SessionOutcome,
-  SessionRef,
-} from "../executor/ports.ts";
+import type { InstanceHandle, SessionEvent, SessionOutcome, SessionRef } from "../executor/ports.ts";
 import type { AcpConnection } from "./acp-client.ts";
 
 export type SessionState = {
@@ -25,9 +19,15 @@ export class RuntimeState {
   readonly #connections = new Map<string, AcpConnection>();
   readonly #sessions = new Map<string, SessionState>();
   readonly #onEvent: ((event: SessionEvent) => void) | undefined;
+  #rawSink: ((method: string, params: unknown) => void) | undefined;
 
   constructor(onEvent?: (event: SessionEvent) => void) {
     this.#onEvent = onEvent;
+  }
+
+  /** 原始 ACP 事件出口（`P-04`）；只在该 session 的 prompt 期间生效。 */
+  setRawSink(sink: ((method: string, params: unknown) => void) | undefined): void {
+    this.#rawSink = sink;
   }
 
   connection(instanceId: string): AcpConnection | undefined {
@@ -73,6 +73,7 @@ export class RuntimeState {
   }
 
   applyNotification(method: string, params: unknown): void {
+    this.#rawSink?.(method, params);
     if (method !== "session/update") return;
     const sessionId = String((params as { sessionId?: unknown } | undefined)?.sessionId ?? "");
     const update = (params as { update?: Record<string, unknown> } | undefined)?.update ?? {};
@@ -102,15 +103,7 @@ export class RuntimeState {
     return count;
   }
 
-  permission(method: string, params: unknown, decision: PermissionDecision): unknown {
-    if (method !== "session/request_permission") throw new Error(`不支持的 ACP 请求：${method}`);
-    if (decision === "deny") return { outcome: { outcome: "cancelled" } };
-    const options = (params as { options?: { optionId?: string; kind?: string }[] } | undefined)?.options ?? [];
-    const allow = options.find((option) => option.kind === "allow_once" || option.kind === "allow_always");
-    return allow?.optionId === undefined
-      ? { outcome: { outcome: "cancelled" } }
-      : { outcome: { outcome: "selected", optionId: allow.optionId } };
-  }
+
 }
 
 function normalizeUsage(update: Record<string, unknown>): SessionOutcome["usage"] {

@@ -1,5 +1,6 @@
 import { JsonLogger, type Logger } from "../observability/logger.ts";
 import { FileStore } from "../store/store.ts";
+import { FileSessionLogStore } from "../store/session-logs.ts";
 import { FileWorkspace } from "../workspace/workspace.ts";
 import { LocalAssets } from "../assets/assets.ts";
 import { AcpRuntime } from "../runtime/runtime.ts";
@@ -14,6 +15,7 @@ export type RunBundle = {
   logger: Logger;
   store: FileStore;
   workspace: FileWorkspace;
+  sessionLogs: FileSessionLogStore;
   assets: LocalAssets;
   runtime: AcpRuntime;
   scheduler: LocalScheduler;
@@ -38,6 +40,7 @@ export async function composeForRun(
   const store = new FileStore({ stateRoot: config.state.root });
   await store.init();
   const workspace = new FileWorkspace();
+  const sessionLogs = new FileSessionLogStore(config.state.root);
   const assets = new LocalAssets({}, {});
   const scheduler = new LocalScheduler(request.task);
   const dsh = resolveDshCommand(env);
@@ -54,10 +57,11 @@ export async function composeForRun(
     runtime,
     workspace,
     assets,
+    sessionLogs,
     journal: store,
     dshHome: config.acp.dshHome,
     maxResultBytes: 262144,
     ...(config.executor.idleTimeoutMs > 0 ? { idleTimeoutMs: config.executor.idleTimeoutMs } : {}),
   });
-  return { logger, store, workspace, assets, runtime, scheduler, executor };
+  return { logger, store, workspace, sessionLogs, assets, runtime, scheduler, executor };
 }

@@ -29,6 +29,7 @@ function task(id: string, prompt: string, container: string, skillSet: SkillSet)
     attempt: 1,
     prompt,
     workspacePath: container,
+    taskSpacePath: `${container}/.agent-flow/task/${id}`,
     timeoutMs: 30_000,
     skillSet,
   };

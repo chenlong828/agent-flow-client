@@ -13,6 +13,7 @@ function task(overrides: Partial<TaskRequest> = {}): TaskRequest {
     attempt: 1,
     prompt: "HELLO",
     workspacePath: "/tmp/v2/ws",
+    taskSpacePath: "/tmp/v2/ws/.agent-flow/task/task-1",
     timeoutMs: 30000,
     skillSet: { digest: "sha256:d", packages: [] },
     ...overrides,
@@ -73,6 +74,8 @@ describe("poll", () => {
 describe("result", () => {
   test("首份 accepted=true，重复 accepted=false", async () => {
     const { stub, gateway } = setup();
+    // v3 前置：先上传该 attempt 的会话日志（0 行也算）。
+    await gateway.uploadSessionLog({ taskId: "task-1", attempt: 1, payload: new Uint8Array([31, 139]) });
     expect((await gateway.reportResult(result)).accepted).toBe(true);
     expect((await gateway.reportResult(result)).accepted).toBe(false);
     await stub.close();
@@ -84,6 +87,43 @@ describe("result", () => {
     const ack = await gateway.reportResult(result);
     expect(ack.accepted).toBe(false);
     expect(audits).toContain("result.task_not_found");
+    await stub.close();
+  });
+});
+
+describe("session log / archive", () => {
+  test("uploadSessionLog：gzip 头、stored、重传覆盖", async () => {
+    const { stub, gateway } = setup();
+    const first = await gateway.uploadSessionLog({ taskId: "task-1", attempt: 1, payload: new Uint8Array([1, 2, 3]) });
+    expect(first.stored).toBe("created");
+    const again = await gateway.uploadSessionLog({ taskId: "task-1", attempt: 1, payload: new Uint8Array([4, 5]) });
+    expect(again.stored).toBe("replaced");
+    const sent = stub.requests.find((request) => request.path.includes("/session-log"));
+    expect(sent?.headers["content-type"]).toBe("application/x-ndjson");
+    expect(sent?.headers["content-encoding"]).toBe("gzip");
+    await stub.close();
+  });
+
+  test("uploadArchive：后到覆盖；超过上限映射 payload_too_large", async () => {
+    const { stub, gateway } = setup();
+    stub.setArchiveLimit(4);
+    const ok = await gateway.uploadArchive({ runId: "run-1", payload: new Uint8Array([1, 2]) });
+    expect(ok.stored).toBe("created");
+    await expect(gateway.uploadArchive({ runId: "run-1", payload: new Uint8Array([1, 2, 3, 4, 5]) })).rejects.toMatchObject({
+      code: "payload_too_large",
+    });
+    await stub.close();
+  });
+
+  test("poll：发送 archivedRuns、解析 archiveRequests", async () => {
+    const { stub, gateway } = setup();
+    stub.requestArchive({ runId: "run-1", instanceId: "instance-1", workspacePath: "/tmp/v2/ws", taskSpacePath: "/tmp/v2/ws/.agent-flow/task/run-1" });
+    const response = await gateway.poll({ ...emptyPoll, archivedRuns: ["run-old"] });
+    expect(response.archiveRequests).toEqual([
+      { runId: "run-1", instanceId: "instance-1", workspacePath: "/tmp/v2/ws", taskSpacePath: "/tmp/v2/ws/.agent-flow/task/run-1" },
+    ]);
+    const poll = stub.requests.find((request) => request.path.endsWith("/poll"));
+    expect(poll?.body.archivedRuns).toEqual(["run-old"]);
     await stub.close();
   });
 });

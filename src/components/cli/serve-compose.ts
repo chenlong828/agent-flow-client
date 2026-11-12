@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { NodeExecutor } from "../executor/executor.ts";
 import { FileStore } from "../store/store.ts";
+import { FileSessionLogStore } from "../store/session-logs.ts";
 import { FileWorkspace } from "../workspace/workspace.ts";
 import { LocalAssets } from "../assets/assets.ts";
 import { AcpRuntime } from "../runtime/runtime.ts";
@@ -17,6 +18,8 @@ export type ServeDeps = {
   env: Record<string, string | undefined>;
   io: CliIo;
   store: FileStore;
+  workspace: FileWorkspace;
+  sessionLogs: FileSessionLogStore;
   executor: NodeExecutor;
   runtime: AcpRuntime;
   gateway: HttpScheduler;
@@ -46,6 +49,7 @@ export async function composeForServe(
   const store = new FileStore({ stateRoot });
   await store.init();
   const workspace = new FileWorkspace();
+  const sessionLogs = new FileSessionLogStore(stateRoot);
   const schedulerUrl = config.scheduler.url;
   if (schedulerUrl === null) throw new Error("serve 需要 [scheduler].url");
   const transport = new HttpTransport({ baseUrl: schedulerUrl, token: config.scheduler.token });
@@ -83,10 +87,11 @@ export async function composeForServe(
     runtime,
     workspace,
     assets,
+    sessionLogs,
     journal: store,
     dshHome: config.acp.dshHome,
     maxResultBytes: 262144,
     ...(config.executor.idleTimeoutMs > 0 ? { idleTimeoutMs: config.executor.idleTimeoutMs } : {}),
   });
-  return { config, env, io, store, executor, runtime, gateway, logger };
+  return { config, env, io, store, workspace, sessionLogs, executor, runtime, gateway, logger };
 }

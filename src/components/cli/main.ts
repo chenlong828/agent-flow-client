@@ -28,7 +28,7 @@ const HELP = `agent-flow-client ${VERSION}
   agent-flow-client <command> [options]
 
 命令：
-  serve      常驻模式：领取并执行节点（S1 接入调度器；S0 只校验配置）
+  serve      常驻模式：长轮询领取任务、执行并回传结果（契约 v3）
   run        单次模式：执行一个本地任务（--request <file>）
   doctor     本地环境自检（不依赖调度器）
   version    打印版本

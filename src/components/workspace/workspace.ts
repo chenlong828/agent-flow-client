@@ -74,6 +74,59 @@ export class FileWorkspace implements WorkspacePort {
     return { ok: issues.length === 0, root: container.root, repos, issues };
   }
 
+  /** 绝对路径 + 位于工作区之下（含符号链接逃逸检查）；不创建。 */
+  async assertInsideWorkspace(workspaceRoot: string, path: string): Promise<string> {
+    if (!isAbsolute(path)) throw new WorkspaceError("not_prepared", `必须是绝对路径：${path}`);
+    const root = resolve(workspaceRoot);
+    const target = resolve(path);
+    const lexical = relative(root, target);
+    if (lexical.startsWith("..") || isAbsolute(lexical)) {
+      throw new WorkspaceError("path_escape", `路径越界：${path}`);
+    }
+    // `/var` → `/private/var` 这类系统符号链接：两侧都用「最近存在祖先的真实路径」比较，避免误判。
+    const realRoot = await this.#realAncestor(root);
+    const realAncestor = await this.#realAncestor(target);
+    if (!inside(realAncestor, realRoot)) {
+      throw new WorkspaceError("path_escape", `符号链接逃逸：${path}`);
+    }
+    return target;
+  }
+
+  async #realAncestor(path: string): Promise<string> {
+    let ancestor = path;
+    while ((await lstat(ancestor).catch(() => null)) === null) {
+      const parent = dirname(ancestor);
+      if (parent === ancestor) break;
+      ancestor = parent;
+    }
+    return await realpath(ancestor).catch(() => ancestor);
+  }
+
+  /** `C-10`：校验后确保目录存在；只建目录、不写内容。 */
+  async ensureTaskSpace(workspaceRoot: string, taskSpacePath: string): Promise<string> {
+    const target = await this.assertInsideWorkspace(workspaceRoot, taskSpacePath);
+    try {
+      await mkdir(target, { recursive: true, mode: 0o700 });
+    } catch (error) {
+      throw new WorkspaceError("permission_denied", `创建 task-space 失败：${(error as Error).message}`);
+    }
+    const real = await realpath(target).catch(() => target);
+    if (!inside(real, await realpath(workspaceRoot).catch(() => resolve(workspaceRoot)))) {
+      throw new WorkspaceError("path_escape", `task-space 逃逸工作区：${taskSpacePath}`);
+    }
+    return real;
+  }
+
+  /** `P-05`：tar.gz 打包 task-space，条目相对根。 */
+  async packTaskSpace(taskSpacePath: string, targetPath: string): Promise<{ path: string; bytes: number }> {
+    await mkdir(dirname(targetPath), { recursive: true, mode: 0o700 });
+    const child = Bun.spawn(["tar", "czf", targetPath, "-C", taskSpacePath, "."], { stdout: "pipe", stderr: "pipe" });
+    const [stderr, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
+    if (code !== 0) throw new WorkspaceError("pack_failed", `打包 task-space 失败：${stderr.trim()}`);
+    const info = await stat(targetPath);
+    return { path: targetPath, bytes: info.size };
+  }
+
   async resolve(container: ContainerPaths, relPath: string): Promise<string> {
     const target = resolve(container.root, relPath);
     if (!inside(target, container.root)) throw new WorkspaceError("path_escape", `路径越界：${relPath}`);

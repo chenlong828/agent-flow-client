@@ -14,7 +14,7 @@ export type HttpResult = {
 
 const BASE_PATH = "/api/v1/executor";
 const PROTOCOL_HEADER = "X-Executor-Protocol";
-const PROTOCOL_VERSION = "2";
+const PROTOCOL_VERSION = "3";
 
 /** HTTP 传输（CMP-gateway）：公共头、超时、错误归一；不重试。 */
 export class HttpTransport {
@@ -32,6 +32,10 @@ export class HttpTransport {
     return await this.#request("GET", path, { timeoutMs, headers, binary: true });
   }
 
+  async postBytes(path: string, bytes: Uint8Array, timeoutMs: number, headers: Record<string, string> = {}): Promise<HttpResult> {
+    return await this.#request("POST", path, { timeoutMs, headers, raw: bytes });
+  }
+
   get baseUrl(): string {
     return this.#options.baseUrl;
   }
@@ -43,7 +47,7 @@ export class HttpTransport {
   async #request(
     method: "GET" | "POST",
     path: string,
-    options: { body?: unknown; timeoutMs: number; headers?: Record<string, string>; binary?: boolean },
+    options: { body?: unknown; timeoutMs: number; headers?: Record<string, string>; binary?: boolean; raw?: Uint8Array },
   ): Promise<HttpResult> {
     const { body, timeoutMs, headers: extraHeaders = {}, binary = false } = options;
     const url = `${this.#options.baseUrl}${BASE_PATH}${path}`;
@@ -54,6 +58,7 @@ export class HttpTransport {
     };
     if (this.#options.token !== null) headers.Authorization = `Bearer ${this.#options.token}`;
     if (body !== undefined) headers["Content-Type"] = "application/json; charset=utf-8";
+    const payload = options.raw ?? (body === undefined ? undefined : JSON.stringify(body));
 
     const controller = new AbortController();
     let timedOut = false;
@@ -66,7 +71,7 @@ export class HttpTransport {
       const response = await (this.#options.fetchImpl ?? fetch)(url, {
         method,
         headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: payload as BodyInit,
         signal: controller.signal,
       });
       if (binary && response.status === 304) return { status: 304, body: null, bytes: null };

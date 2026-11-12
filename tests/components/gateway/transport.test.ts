@@ -8,13 +8,13 @@ function transportFor(stub: StubScheduler, token = "t"): HttpTransport {
   return new HttpTransport({ baseUrl: stub.url, token });
 }
 
-describe("v2 HTTP 传输", () => {
+describe("v3 HTTP 传输", () => {
   test("公共头：Bearer、X-Executor-Protocol、X-Request-Id", async () => {
     const stub = new StubScheduler({ token: "t" });
     await transportFor(stub).post("/poll", { capacity: { free: 0 }, running: [], finished: [] }, 1000);
     const request = stub.requests[0];
     expect(request?.headers.authorization).toBe("Bearer t");
-    expect(request?.headers["x-executor-protocol"]).toBe("2");
+    expect(request?.headers["x-executor-protocol"]).toBe("3");
     expect(request?.headers["x-request-id"]).toMatch(/^[0-9a-f-]{36}$/);
     expect(request?.headers["x-client-run-id"]).toBeUndefined();
     await stub.close();

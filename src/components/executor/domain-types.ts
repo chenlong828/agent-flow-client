@@ -55,6 +55,14 @@ export type SessionEvent = {
   detail?: string;
 };
 
+/** `P-04` 会话日志的一行：原始 ACP 通知/请求，未脱敏（契约 C-11）。 */
+export type RawAcpEvent = {
+  ts: string;
+  sessionId: SessionId;
+  method: string;
+  params: unknown;
+};
+
 export type RuntimeFailure = {
   code: string;
   message: string;
@@ -74,6 +82,8 @@ export type PromptOptions = {
   timeoutMs: number;
   idleTimeoutMs?: number;
   onEvent?: (event: SessionEvent) => void;
+  /** 原始 ACP 事件出口（`P-04` 日志用）；与 `onEvent` 并存，互不影响。 */
+  onRawEvent?: (event: RawAcpEvent) => void;
 };
 
 export type ShutdownMode = "graceful" | "force";

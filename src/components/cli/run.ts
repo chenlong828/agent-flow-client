@@ -22,7 +22,7 @@ export async function runOnce(options: RunOptions): Promise<number> {
     io.err(`运行时装配失败：${(error as Error).message}`);
     return ExitCode.runtime;
   }
-  const { store, runtime, executor, scheduler } = bundle;
+  const { store, runtime, executor, scheduler, sessionLogs } = bundle;
   await reapOrphans(store, runtime);
 
   const controller = new AbortController();
@@ -42,6 +42,7 @@ export async function runOnce(options: RunOptions): Promise<number> {
   try {
     result = await executor.executeTask(local.task, { signal: controller.signal, ...(config.executor.idleTimeoutMs > 0 ? { idleTimeoutMs: config.executor.idleTimeoutMs } : {}) });
     await scheduler.reportResult(result).catch(() => undefined);
+    await sessionLogs.clear(local.task.taskId, local.task.attempt).catch(() => undefined);
   } finally {
     process.off("SIGINT", sigint);
     process.off("SIGTERM", sigterm);

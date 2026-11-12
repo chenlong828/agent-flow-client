@@ -3,7 +3,7 @@
  * 联调用最小桩调度器（executor contract v2）。
  *
  * 用法：
- *   bun run scripts/mock-scheduler.ts --token dev-token --task ./task.json [--skill name=dir] [--port 17999]
+ *   bun run scripts/mock-scheduler.ts --token dev-token --task ./task.json [--archive <runId>:<workspacePath>] [--port 17999]
  *
  * 仅用于本机联调：内存任务列表、首份结果为准、按 free 批量下发、可选 stop/cancel 演示。
  * 不实现静默回队/超时回队（这些由真实调度器负责）。
@@ -17,6 +17,7 @@ type Options = {
   port: number;
   tasks: TaskRequest[];
   stopAfter: number | null;
+  archives: { runId: string; workspacePath: string }[];
 };
 
 function parseArgs(argv: string[]): Options {
@@ -24,20 +25,26 @@ function parseArgs(argv: string[]): Options {
   let port = Number(process.env.MOCK_SCHEDULER_PORT ?? "17999");
   const taskFiles: string[] = [];
   let stopAfter: number | null = null;
+  const archives: { runId: string; workspacePath: string }[] = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--token") token = argv[++index] as string;
     else if (arg === "--port") port = Number(argv[++index]);
     else if (arg === "--task") taskFiles.push(argv[++index] as string);
     else if (arg === "--stop-after") stopAfter = Number(argv[++index]);
+    else if (arg === "--archive") {
+      const [runId, workspacePath] = (argv[++index] as string).split(":");
+      if (runId === undefined || workspacePath === undefined) throw new Error("--archive 需要 <runId>:<workspacePath>");
+      archives.push({ runId, workspacePath });
+    }
     else if (arg === "--help" || arg === "-h") {
-      console.log("用法：bun run scripts/mock-scheduler.ts --task <task.json> [--token t] [--port 17999] [--stop-after N]");
+      console.log("用法：bun run scripts/mock-scheduler.ts --task <task.json> [--archive <runId>:<workspacePath>] [--token t] [--port 17999] [--stop-after N]");
       process.exit(0);
     } else throw new Error(`未知参数：${arg}`);
   }
   if (taskFiles.length === 0) throw new Error("至少需要一个 --task <file>");
   const tasks = taskFiles.map((file) => JSON.parse(readFileSync(file, "utf8")) as TaskRequest);
-  return { token, port, tasks, stopAfter };
+  return { token, port, tasks, stopAfter, archives };
 }
 
 const options = parseArgs(process.argv.slice(2));
@@ -64,6 +71,16 @@ const server = Bun.serve({
 for (const task of options.tasks) {
   stub.enqueueTask(task);
   console.error(`[mock] 入队 taskId=${task.taskId} instance=${task.instanceId} attempt=${task.attempt}`);
+}
+for (const item of options.archives) {
+  const taskSpacePath = `${item.workspacePath}/.agent-flow/task/${item.runId}`;
+  stub.requestArchive({
+    runId: item.runId,
+    instanceId: options.tasks[0]?.instanceId ?? "mock-instance",
+    workspacePath: item.workspacePath,
+    taskSpacePath,
+  });
+  console.error(`[mock] 待归档 runId=${item.runId} taskSpace=${taskSpacePath}`);
 }
 let finishedCount = 0;
 if (options.stopAfter !== null) {

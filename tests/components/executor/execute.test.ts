@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { NodeExecutor } from "../../../src/components/executor/executor.ts";
 import type { TaskRequest } from "../../../src/components/executor/types.ts";
-import { FakeAssets, FakeRuntime, FakeWorkspace, MemoryJournal } from "./fakes.ts";
+import { FakeAssets, FakeRuntime, FakeSessionLogs, FakeWorkspace, MemoryJournal } from "./fakes.ts";
 
 function task(overrides: Partial<TaskRequest> = {}): TaskRequest {
   return {
@@ -11,6 +11,7 @@ function task(overrides: Partial<TaskRequest> = {}): TaskRequest {
     attempt: 1,
     prompt: "HELLO",
     workspacePath: "/tmp/afc-v2-container",
+    taskSpacePath: "/tmp/afc-v2-container/.agent-flow/task/task-1",
     timeoutMs: 5000,
     skillSet: { digest: "sha256:d", packages: [] },
     ...overrides,
@@ -22,16 +23,18 @@ function setup() {
   const runtime = new FakeRuntime();
   const workspace = new FakeWorkspace();
   const assets = new FakeAssets();
+  const sessionLogs = new FakeSessionLogs();
   const executor = new NodeExecutor({
     runtime,
     workspace,
     assets,
+    sessionLogs,
     journal,
     dshHome: "/tmp/afc-home",
     maxResultBytes: 1024,
     now: () => new Date("2026-11-10T00:00:00.000Z"),
   });
-  return { journal, runtime, assets, executor };
+  return { journal, runtime, assets, workspace, sessionLogs, executor };
 }
 
 const signal = () => new AbortController().signal;
@@ -47,6 +50,14 @@ describe("v2 任务执行", () => {
     expect(runtime.prompts).toEqual(["HELLO"]);
     expect(assets.installed).toEqual(["sha256:d"]);
     expect(runtime.closed).toEqual(["s-1"]);
+  });
+
+  test("v3：先建 task-space、再执行；原始事件落会话日志", async () => {
+    const { workspace, sessionLogs, executor } = setup();
+    await executor.executeTask(task(), { signal: signal() });
+    expect(workspace.taskSpaces).toEqual(["/tmp/afc-v2-container/.agent-flow/task/task-1"]);
+    expect(sessionLogs.lines).toHaveLength(1);
+    expect(JSON.parse(sessionLogs.lines[0] as string)).toMatchObject({ method: "session/update" });
   });
 
   test("同 taskId 并发只执行一次；不同 taskId 可并发", async () => {

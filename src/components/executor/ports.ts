@@ -25,6 +25,7 @@ export type {
   LayoutReport,
   PermissionDecision,
   PromptOptions,
+  RawAcpEvent,
   RuntimeFailure,
   SessionEvent,
   SessionOutcome,
@@ -49,6 +50,17 @@ export interface WorkspacePort {
   ensureContainer(instance: InstanceHandle, path: string): Promise<ContainerPaths>;
   validate(container: ContainerPaths): Promise<LayoutReport>;
   resolve(container: ContainerPaths, relPath: string): Promise<string>;
+  /** `C-10`：校验绝对路径且位于工作区之下，不存在则建目录；只建目录、不写内容。 */
+  ensureTaskSpace(workspaceRoot: string, taskSpacePath: string): Promise<string>;
+  /** `P-05`：把 task-space 打成 tar.gz（条目相对根），返回临时文件路径与字节数。 */
+  packTaskSpace(taskSpacePath: string, targetPath: string): Promise<{ path: string; bytes: number }>;
+}
+
+/** `P-04` 会话日志的本地持久化（CMP-store 实现）：按 `taskId+attempt` 存原始 JSONL 行。 */
+export interface SessionLogPort {
+  append(taskId: TaskId, attempt: number, line: string): Promise<void>;
+  read(taskId: TaskId, attempt: number): Promise<Uint8Array | null>;
+  clear(taskId: TaskId, attempt: number): Promise<void>;
 }
 
 /** 技能集安装（CMP-assets 实现）。 */

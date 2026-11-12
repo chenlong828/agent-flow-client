@@ -2,7 +2,12 @@ export type GatewayErrorCode =
   | "unsupported_protocol"
   | "unauthorized"
   | "task_not_found"
+  | "run_not_found"
   | "package_not_found"
+  | "session_log_missing"
+  | "invalid_state"
+  | "invalid_archive"
+  | "validation_error"
   | "payload_too_large"
   | "unreachable"
   | "timeout"
@@ -29,10 +34,15 @@ export class GatewayError extends Error {
   get terminal(): boolean {
     return this.code === "unauthorized" || this.code === "unsupported_protocol";
   }
+
+  /** 需要先补传日志再重试结果（`P-02` 前置未满足）。 */
+  get logMissing(): boolean {
+    return this.code === "session_log_missing";
+  }
 }
 
 const STATUS_TO_CODE: Record<number, GatewayErrorCode> = {
-  400: "unsupported_protocol",
+  400: "validation_error",
   401: "unauthorized",
   404: "task_not_found",
   413: "payload_too_large",
@@ -44,7 +54,12 @@ const ENVELOPE_TO_CODE: Record<string, GatewayErrorCode> = {
   unsupported_protocol: "unsupported_protocol",
   unauthorized: "unauthorized",
   task_not_found: "task_not_found",
+  run_not_found: "run_not_found",
   package_not_found: "package_not_found",
+  session_log_missing: "session_log_missing",
+  invalid_state: "invalid_state",
+  invalid_archive: "invalid_archive",
+  validation_error: "validation_error",
   payload_too_large: "payload_too_large",
   internal: "unreachable",
   service_unavailable: "unreachable",
@@ -56,7 +71,8 @@ export function mapHttpError(status: number, body: unknown, path: string): Gatew
   const envelopeCode = typeof envelope?.code === "string" ? envelope.code : undefined;
   const code =
     (envelopeCode === undefined ? undefined : ENVELOPE_TO_CODE[envelopeCode]) ??
-    (status === 404 && path.includes("/skill-packages/") ? "package_not_found" : STATUS_TO_CODE[status]) ??
+    (status === 404 && path.includes("/skill-packages/") ? "package_not_found" : undefined) ??
+    (status === 400 ? "unsupported_protocol" : STATUS_TO_CODE[status]) ??
     "unreachable";
   const message =
     typeof envelope?.message === "string" && envelope.message !== "" ? envelope.message : `调度器返回 HTTP ${status}`;

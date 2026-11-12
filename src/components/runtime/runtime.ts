@@ -88,6 +88,11 @@ export class AcpRuntime implements RuntimePort {
     state.lastEventAt = Date.now();
 
     const cancelPrompt = (): void => acp.notify("session/cancel", { sessionId: session.sessionId });
+    this.#state.setRawSink(
+      opts.onRawEvent === undefined
+        ? undefined
+        : (method, params) => opts.onRawEvent?.({ ts: new Date().toISOString(), sessionId: session.sessionId, method, params }),
+    );
     const stopTimers = startPromptTimers(state, opts, cancelPrompt);
     opts.signal.addEventListener("abort", cancelPrompt, { once: true });
 
@@ -105,6 +110,7 @@ export class AcpRuntime implements RuntimePort {
       }
     } finally {
       stopTimers();
+      this.#state.setRawSink(undefined);
       opts.signal.removeEventListener("abort", cancelPrompt);
     }
 

@@ -4,6 +4,7 @@ import type { InstanceHandle, InstanceSpec } from "../executor/ports.ts";
 import { AcpConnection } from "./acp-client.ts";
 import { RuntimeError } from "./errors.ts";
 import { S0_MODEL, writeProfilePatch } from "./profile.ts";
+import { permissionDecision } from "./permission.ts";
 import type { RuntimeOptions } from "./runtime-options.ts";
 import type { RuntimeState } from "./runtime-state.ts";
 
@@ -25,7 +26,7 @@ export async function startInstance(
       initializeTimeoutMs: 10_000,
       ...(options.onStderr === undefined ? {} : { onStderr: options.onStderr }),
       onNotification: (method, params) => state.applyNotification(method, params),
-      onServerRequest: (method, params) => Promise.resolve(state.permission(method, params, options.permission)),
+      onServerRequest: (method, params) => Promise.resolve(permissionDecision(method, params, options.permission)),
       onExit: (code) => {
         options.onStderr?.(`DSH 进程退出：code=${String(code)}`);
         state.removeInstance(instance.instanceId);

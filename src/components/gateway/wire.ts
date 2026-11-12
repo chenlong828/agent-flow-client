@@ -1,4 +1,14 @@
-import type { PollRequest, PollResponse, ResultAck, SkillPackage, TaskRequest } from "../executor/types.ts";
+import type {
+  ArchiveAck,
+  ArchiveRequest,
+  PollRequest,
+  PollResponse,
+  ResultAck,
+  SessionLogAck,
+  SkillPackage,
+  StoredStatus,
+  TaskRequest,
+} from "../executor/types.ts";
 import { GatewayError } from "./errors.ts";
 
 export type WireRecord = Record<string, unknown>;
@@ -39,6 +49,7 @@ export function serializePollRequest(request: PollRequest): unknown {
       attempt: task.attempt,
       finishedAt: task.finishedAt,
     })),
+    ...(request.archivedRuns === undefined ? {} : { archivedRuns: request.archivedRuns }),
   };
 }
 
@@ -49,7 +60,11 @@ export function parsePollResponse(body: unknown): PollResponse {
   if (typeof stop !== "boolean") throw new GatewayError("protocol_error", "stop 必须是布尔值");
   const cancelInstances = asArray(root.cancelInstances, "cancelInstances").map((raw) => asString(raw, "cancelInstances[]"));
   const nextPollAfterMs = typeof root.nextPollAfterMs === "number" ? root.nextPollAfterMs : 0;
-  return { tasks, stop, cancelInstances, nextPollAfterMs };
+  const archiveRequests =
+    root.archiveRequests === undefined
+      ? []
+      : asArray(root.archiveRequests, "archiveRequests").map((raw) => parseArchiveRequest(raw));
+  return { tasks, stop, cancelInstances, archiveRequests, nextPollAfterMs };
 }
 
 function parseTask(raw: unknown): TaskRequest {
@@ -61,6 +76,7 @@ function parseTask(raw: unknown): TaskRequest {
     attempt: asNumber(task.attempt, "attempt"),
     prompt: asString(task.prompt, "prompt"),
     workspacePath: asString(task.workspacePath, "workspacePath"),
+    taskSpacePath: asString(task.taskSpacePath, "taskSpacePath"),
     timeoutMs: asNumber(task.timeoutMs, "timeoutMs"),
     skillSet: parseSkillSet(task.skillSet),
   };
@@ -88,6 +104,42 @@ export function parseSkillSet(value: unknown): TaskRequest["skillSet"] {
 export function parseResultAck(body: unknown): ResultAck {
   const ack = asRecord(body, "result");
   return { taskId: asString(ack.taskId, "taskId"), accepted: ack.accepted === true };
+}
+
+function parseArchiveRequest(raw: unknown): ArchiveRequest {
+  const item = asRecord(raw, "archiveRequests[]");
+  return {
+    runId: asString(item.runId, "archiveRequests[].runId"),
+    instanceId: asString(item.instanceId, "archiveRequests[].instanceId"),
+    workspacePath: asString(item.workspacePath, "archiveRequests[].workspacePath"),
+    taskSpacePath: asString(item.taskSpacePath, "archiveRequests[].taskSpacePath"),
+  };
+}
+
+function parseStored(value: unknown, label: string): StoredStatus {
+  if (value === "created" || value === "replaced" || value === "unchanged") return value;
+  throw new GatewayError("protocol_error", `${label}.stored 非法`);
+}
+
+export function parseSessionLogAck(body: unknown): SessionLogAck {
+  const ack = asRecord(body, "sessionLog");
+  return {
+    taskId: asString(ack.taskId, "sessionLog.taskId"),
+    attempt: asNumber(ack.attempt, "sessionLog.attempt"),
+    bytes: asNumber(ack.bytes, "sessionLog.bytes"),
+    sha256: asString(ack.sha256, "sessionLog.sha256"),
+    stored: parseStored(ack.stored, "sessionLog"),
+  };
+}
+
+export function parseArchiveAck(body: unknown): ArchiveAck {
+  const ack = asRecord(body, "archive");
+  return {
+    runId: asString(ack.runId, "archive.runId"),
+    bytes: asNumber(ack.bytes, "archive.bytes"),
+    sha256: asString(ack.sha256, "archive.sha256"),
+    stored: parseStored(ack.stored, "archive"),
+  };
 }
 
 export function parsePackage(pkg: SkillPackage): SkillPackage {

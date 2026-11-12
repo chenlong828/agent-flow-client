@@ -1,4 +1,5 @@
 export type WorkspaceErrorCode =
+  | "pack_failed"
   | "not_prepared"
   | "layout_invalid"
   | "path_escape"

@@ -1,4 +1,4 @@
-import type { AssetPort, ContainerPaths, InstalledSkills, InstanceHandle, JournalPort, PromptOptions, SessionOutcome, SessionRef, SkillPackageRef, WorkspacePort } from "../../../src/components/executor/ports.ts";
+import type { AssetPort, ContainerPaths, InstalledSkills, InstanceHandle, JournalPort, PromptOptions, SessionLogPort, SessionOutcome, SessionRef, SkillPackageRef, WorkspacePort } from "../../../src/components/executor/ports.ts";
 import type { InstanceId, OrphanRecord, TaskRecord, TaskResult, TaskState } from "../../../src/components/executor/types.ts";
 
 export const container: ContainerPaths = {
@@ -55,6 +55,7 @@ export class FakeRuntime {
   }
   async prompt(session: SessionRef, text: string, opts: PromptOptions): Promise<SessionOutcome> {
     this.prompts.push(text);
+    opts.onRawEvent?.({ ts: "2026-11-12T00:00:00.000Z", sessionId: session.sessionId, method: "session/update", params: { sessionId: session.sessionId, update: { sessionUpdate: "agent_message_chunk" } } });
     if (this.behavior === "ok") return { sessionId: session.sessionId, finalText: this.finalText, stopReason: "end_turn", usage: null };
     if (this.behavior === "fail") {
       return { sessionId: session.sessionId, finalText: "", stopReason: null, usage: null, error: { code: "prompt_failed", message: "x", class: "runtime" } };
@@ -82,6 +83,7 @@ export class FakeRuntime {
 }
 
 export class FakeWorkspace implements WorkspacePort {
+  taskSpaces: string[] = [];
   async ensureContainer(): Promise<ContainerPaths> {
     return container;
   }
@@ -90,6 +92,30 @@ export class FakeWorkspace implements WorkspacePort {
   }
   async resolve(_container: ContainerPaths, relPath: string): Promise<string> {
     return relPath;
+  }
+  async assertInsideWorkspace(_root: string, path: string): Promise<string> {
+    return path;
+  }
+  async ensureTaskSpace(_root: string, path: string): Promise<string> {
+    this.taskSpaces.push(path);
+    return path;
+  }
+  async packTaskSpace(taskSpacePath: string, targetPath: string): Promise<{ path: string; bytes: number }> {
+    this.taskSpaces.push(taskSpacePath);
+    return { path: targetPath, bytes: 0 };
+  }
+}
+
+export class FakeSessionLogs implements SessionLogPort {
+  lines: string[] = [];
+  async append(_taskId: string, _attempt: number, line: string): Promise<void> {
+    this.lines.push(line);
+  }
+  async read(): Promise<Uint8Array | null> {
+    return null;
+  }
+  async clear(): Promise<void> {
+    this.lines = [];
   }
 }
 

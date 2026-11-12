@@ -1,3 +1,5 @@
+import type { SkillSet } from "./contract-types.ts";
+
 /**
  * CMP-executor 值类型（executor-http-v2 §5）。
  * 端口接口在 `ports.ts`，调度器端口在 `scheduler-port.ts`。
@@ -7,6 +9,20 @@ export type TaskId = string;
 export type InstanceId = string;
 export type NodeId = string;
 export type SessionId = string;
+
+export type {
+  ArchiveAck,
+  ArchiveRequest,
+  FinishedTask,
+  PollRequest,
+  PollResponse,
+  ResultAck,
+  RunningTask,
+  SessionLogAck,
+  SkillPackage,
+  SkillSet,
+  StoredStatus,
+} from "./contract-types.ts";
 
 /** 本地状态：received → running → settled（结果落盘） → reported（已 accepted）。 */
 export type TaskState = "received" | "running" | "settled" | "reported";
@@ -48,21 +64,6 @@ export type TaskResult = {
   finishedAt?: string;
 };
 
-export type SkillPackage = {
-  packageId: string;
-  name: string;
-  version: string;
-  digest: string;
-  sizeBytes: number;
-  downloadUrl: string;
-  etag?: string;
-};
-
-export type SkillSet = {
-  digest: string;
-  packages: SkillPackage[];
-};
-
 export type TaskRequest = {
   taskId: TaskId;
   instanceId: InstanceId;
@@ -70,39 +71,9 @@ export type TaskRequest = {
   attempt: number;
   prompt: string;
   workspacePath: string;
+  taskSpacePath: string;
   timeoutMs: number;
   skillSet: SkillSet;
-};
-
-export type RunningTask = {
-  taskId: TaskId;
-  instanceId: InstanceId;
-  startedAt: string;
-  lastEventAt?: string;
-};
-
-export type FinishedTask = {
-  taskId: TaskId;
-  attempt: number;
-  finishedAt: string;
-};
-
-export type PollRequest = {
-  capacity: { free: number };
-  running: RunningTask[];
-  finished: FinishedTask[];
-};
-
-export type PollResponse = {
-  tasks: TaskRequest[];
-  stop: boolean;
-  cancelInstances: InstanceId[];
-  nextPollAfterMs: number;
-};
-
-export type ResultAck = {
-  taskId: TaskId;
-  accepted: boolean;
 };
 
 export type TaskRecord = {

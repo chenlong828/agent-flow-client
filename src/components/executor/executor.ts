@@ -5,6 +5,7 @@ import type {
   InstanceHandle,
   JournalPort,
   PromptOptions,
+  SessionLogPort,
   RuntimeFailure,
   RuntimePort,
   SessionRef,
@@ -14,6 +15,7 @@ import type { SchedulerPort } from "./scheduler-port.ts";
 import type { SessionOutcome } from "./ports.ts";
 import type { TaskRequest, TaskResult } from "./types.ts";
 import { assemble, classify } from "../result/result.ts";
+import { cancelledOutcome, codeOf } from "./executor-helpers.ts";
 
 export type ExecutionContext = {
   signal: AbortSignal;
@@ -31,6 +33,7 @@ export type NodeExecutorOptions = {
   runtime: RuntimePort;
   workspace: WorkspacePort;
   assets: AssetPort;
+  sessionLogs: SessionLogPort;
   journal: JournalPort;
   dshHome: string;
   maxResultBytes?: number;
@@ -127,6 +130,7 @@ export class NodeExecutor {
         { instanceId: task.instanceId, pid: 0 },
         task.workspacePath,
       );
+      await this.#options.workspace.ensureTaskSpace(task.workspacePath, task.taskSpacePath);
       const handle = await this.#options.runtime.ensureInstance({
         instanceId: task.instanceId,
         dshHome: this.#options.dshHome,
@@ -146,6 +150,7 @@ export class NodeExecutor {
       if (active !== undefined) active.session = session;
       await this.#options.journal.mark(task.taskId, "running", { sessionId: session.sessionId });
       await this.#options.assets.install(task.skillSet, container);
+      await this.#options.sessionLogs.clear(task.taskId, task.attempt);
       outcome = controller.signal.aborted
         ? cancelledOutcome(session.sessionId)
         : await this.#prompt(session, task, controller);
@@ -170,28 +175,23 @@ export class NodeExecutor {
   }
 
   async #prompt(session: SessionRef, task: TaskRequest, controller: AbortController): Promise<SessionOutcome> {
+    // 原始 ACP 事件按到达顺序落盘为 JSONL；`P-04` 由 CLI 在报结果前上传。
+    let appends = Promise.resolve();
+    const onRawEvent = (event: { ts: string; method: string; params: unknown }): void => {
+      appends = appends.then(() =>
+        this.#options.sessionLogs.append(task.taskId, task.attempt, JSON.stringify({ ...event, sessionId: session.sessionId })),
+      );
+    };
     const options: PromptOptions = {
       signal: controller.signal,
       timeoutMs: task.timeoutMs,
+      onRawEvent,
       ...(this.#options.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.#options.idleTimeoutMs }),
     };
-    return await this.#options.runtime.prompt(session, task.prompt, options);
+    try {
+      return await this.#options.runtime.prompt(session, task.prompt, options);
+    } finally {
+      await appends;
+    }
   }
 }
-
-function cancelledOutcome(sessionId: string): SessionOutcome {
-  return {
-    sessionId,
-    finalText: "",
-    stopReason: null,
-    usage: null,
-    error: { code: "cancelled", message: "任务被取消", class: "cancelled" },
-  };
-}
-
-function codeOf(error: unknown): string {
-  const code = (error as { code?: unknown }).code;
-  return typeof code === "string" ? code : "internal_error";
-}
-
-export type { ContainerPaths };

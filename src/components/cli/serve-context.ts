@@ -1,4 +1,4 @@
-import type { PollRequest, TaskRequest, TaskResult } from "../executor/types.ts";
+import type { ArchiveRequest, PollRequest, TaskRequest, TaskResult } from "../executor/types.ts";
 import type { ServeDeps } from "./serve-compose.ts";
 
 export const POLL_FLOOR_MS = 10;
@@ -6,6 +6,7 @@ export const MAX_UNREACHABLE = 10;
 
 export type RunningEntry = { task: TaskRequest; startedAt: string };
 export type FinishedEntry = { result: TaskResult; finishedAt: string };
+export type { ArchiveRequest };
 
 export type ServeContext = {
   deps: ServeDeps;
@@ -14,6 +15,10 @@ export type ServeContext = {
   finished: Map<string, FinishedEntry>;
   reporting: Set<string>;
   inflight: Set<Promise<void>>;
+  archives: Map<string, Promise<void>>;
+  archivedRuns: Set<string>;
+  archivesDone: Set<string>;
+  logReady: Set<string>;
   stopRequested: boolean;
   stopCode: number | null;
   unreachable: number;
@@ -27,6 +32,10 @@ export function createContext(deps: ServeDeps): ServeContext {
     finished: new Map(),
     reporting: new Set(),
     inflight: new Set(),
+    archives: new Map(),
+    archivedRuns: new Set(),
+    archivesDone: new Set(),
+    logReady: new Set(),
     stopRequested: false,
     stopCode: null,
     unreachable: 0,
@@ -48,6 +57,7 @@ export function buildPollRequest(ctx: ServeContext): PollRequest {
     capacity: { free: Math.max(0, ctx.deps.config.capacity.maxConcurrent - running.length) },
     running,
     finished,
+    ...(ctx.archivedRuns.size === 0 ? {} : { archivedRuns: [...ctx.archivedRuns] }),
   };
 }
 
