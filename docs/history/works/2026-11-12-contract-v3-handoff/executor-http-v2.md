@@ -1,13 +1,16 @@
 ---
-layer: design
+layer: history
 module: execution-plane
-status: current
-updated: 2026-11-10
+status: frozen
+updated: 2026-11-12
 contract: executor-http-v2
 protocolVersion: 2
+superseded_by: executor-http-v3
 ---
 
-# 执行面契约 v2：任务下发与结果回收
+# 执行面契约 v2：任务下发与结果回收（已归档）
+
+> 归档于 2026-11-12：调度器侧发布 v3（五端点、task-space、会话日志、运行归档、协议 3）替换本版；本文件只作历史记录，不是设计依据。
 
 > 权威在调度器侧：`agent-flow-orchaster/docs/works/2026-11-10-executor-contract-v2/contract-v2.md`（2026-11-10）。
 > 本文件是 client 仓库的现行副本，字段与语义以调度器侧为准；双方冲突时按调度器侧修订本副本。

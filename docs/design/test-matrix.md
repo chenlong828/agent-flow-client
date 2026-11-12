@@ -5,7 +5,7 @@ status: current
 updated: 2026-11-10
 ---
 
-# 场景 UC → 测试矩阵（executor contract v2）
+# 场景 UC → 测试矩阵（executor contract v3）
 
 > 用途：把 `SCN-0001` / `SCN-0002` 的用例映射到测试文件，作为验收与覆盖证明的单一入口（`OQ-024` / `AH-08`）。
 > 状态：`planned` 表示尚未创建；`existing` 表示已有测试。测试 ID 唯一，测试标题以 ID 开头。
@@ -56,7 +56,7 @@ updated: 2026-11-10
 | N1 | 非法配置 | S0 | cli | `tests/components/cli/config.test.ts` | `TC-CONFIG-004` | existing |
 | 补充 | `doctor` 缺 DSH/凭据/残留 | S0 | cli/observability | `tests/components/cli/commands.test.ts` | TBD | existing |
 
-## 3. 契约 v2 专项
+## 3. 契约 v3 专项
 
 | 契约面 | 测试文件 |
 |---|---|
@@ -64,9 +64,13 @@ updated: 2026-11-10
 | `P-02` result 首份为准/404/accepted=false | `tests/components/gateway/gateway.test.ts` |
 | `P-03` 下载/304/404/摘要 | `tests/components/gateway/gateway.test.ts`、`tests/components/assets/package.test.ts` |
 | 头部/错误码/重试 | `tests/components/gateway/transport.test.ts` |
-| `running[]`/`finished[]` | `tests/scenarios/v2-serve.test.ts` |
+| `running[]`/`finished[]`/`archivedRuns` | `tests/scenarios/v2-serve.test.ts` |
+| `P-04` 日志先于结果、空日志、413 | `tests/components/gateway/gateway.test.ts`、`tests/components/executor/execute.test.ts`、`tests/scenarios/v3-serve.test.ts` |
+| `P-05` 归档后到覆盖、`invalid_state`、后台归档 | `tests/components/gateway/gateway.test.ts`、`tests/scenarios/v3-serve.test.ts` |
+| task-space 校验/创建（不写内容） | `tests/components/workspace/task-space.test.ts`、`tests/components/executor/execute.test.ts`、`tests/scenarios/v3-serve.test.ts` |
+| `archiveRequests`/`archivedRuns` 电平 | `tests/scenarios/v3-serve.test.ts` |
 
 ## 4. 覆盖门禁
 
 - `TC-EXEC-001`…`004` 与 `TC-CONFIG-001`…`004` 是锚点；新增/改 UC 时同步更新本表。
-- v2 关键门禁：120s 静默回队（调度器侧）、结果先落盘后补报、`finished[]` 防重发、并发不串、取消无残留。
+- v3 关键门禁：空日志可结算、日志先于结果、task-space 只建目录、归档后台不阻塞 poll、`archivedRuns` 确认、结果先落盘后补报、并发不串、取消无残留。

@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-runtime
 status: active
-updated: 2026-11-04
+updated: 2026-11-12
 ---
 
 # CMP-runtime 组件规格
@@ -100,7 +100,7 @@ opening ──▶ open ──▶ prompting ──▶ open
 - `session/prompt` 响应 → `stopReason`。
 - JSON-RPC error / 进程退出 → `RuntimeFailure`（`protocol_error` / `prompt_failed` / `process_exited`）。
 - `session/request_permission` → 由 `PermissionPolicy` 裁决；允许时返回 `allow_once`/`allow_always` 的 `optionId`，拒绝时返回 `cancelled`。
-- 不把完整会话记录跨边界；`SessionOutcome` 只含控制信息。
+- `SessionOutcome` 只含控制信息；原始 ACP 事件（`method`/`params`）经 `PromptOptions.onRawEvent` 导出，供 executor 落盘并由 `P-04` 上传（v3，未脱敏）。
 
 ### 2.6 取消、关闭与回收
 

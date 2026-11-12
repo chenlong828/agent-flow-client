@@ -3,33 +3,35 @@ layer: design
 module: execution-plane
 component: CMP-executor
 status: active
-updated: 2026-11-10
+updated: 2026-11-12
 ---
 
-# CMP-executor 组件规格（v2）
+# CMP-executor 组件规格（v3）
 
-> 状态：`active`（executor contract v2，2026-11-10）。端口与值类型的唯一来源：`ports.ts`、`domain-types.ts`、`scheduler-port.ts`。
+> 状态：`active`（executor contract v3，2026-11-12）。端口与值类型的唯一来源：`ports.ts`、`domain-types.ts`、`scheduler-port.ts`。
 >
-> 上游：`architecture.md` §4–§6；`SCN-0001`；[`contracts/executor-http-v2.md`](../../contracts/executor-http-v2.md)。
+> 上游：`architecture.md` §4–§6；`SCN-0001`；[`contracts/executor-http-v3.md`](../../contracts/executor-http-v3.md)。
 
 ## 1. 职责与边界
 
-- **业务价值**：保证「一个任务怎么执行」的顺序与失败语义：容器校验 → 实例 → session → 技能 → prompt → 结果落盘。
-- **负责**：任务状态 `received → running → settled`；同 `taskId` 单飞；实例级取消；结果组装与落盘；孤儿记录。
+- **业务价值**：保证「一个任务怎么执行」的顺序与失败语义：容器校验 → task-space → 实例 → session → 技能 → prompt → 日志上传 → 结果落盘。
+- **负责**：任务状态 `received → running → settled`；同 `taskId` 单飞；实例级取消；`P-04` 日志上传时序（含 0 行空日志）；结果组装与落盘；孤儿记录。
 - **不负责**：调度器协议（gateway）、HTTP/ACP/文件细节（L0）、结果字段语义（result）、编排决策。
 - **删除测试**：删掉后「先装技能再 prompt」「一任务一 session」「结果先落盘」会散到 CLI 与 L0。
 
 ## 2. 执行序列
 
 1. `journal.append(received)`。
-2. `workspace.ensureContainer` → `runtime.ensureInstance` → `recordOrphan`。
-3. `runtime.newSession(cwd=容器根)` → `journal.mark(running, {sessionId})`。
-4. `assets.install(task.skillSet, container)`：同 digest 短路；同容器安装由 assets 串行。
-5. `runtime.prompt(task.prompt, {signal, timeoutMs, idleTimeoutMs?})`。
-6. `result.assemble` → `journal.mark(settled, {result})` → `runtime.closeSession`。
-7. 返回 `TaskResult`；上报与 `accepted` 由 CLI 负责。
+2. `workspace.ensureContainer` → `workspace.ensureTaskSpace(task, container)`（校验绝对路径且在 `workspacePath` 之下；不存在则建目录；**只建目录、不写内容**）。
+3. `runtime.ensureInstance` → `recordOrphan`。
+4. `runtime.newSession(cwd=容器根)` → `journal.mark(running, {sessionId})`。
+5. `assets.install(task.skillSet, container)`：同 digest 短路；同容器安装由 assets 串行。
+6. `runtime.prompt(task.prompt, {signal, timeoutMs, idleTimeoutMs?, onEvent})`：`onEvent` 把原始 ACP 事件写入本次 attempt 的会话日志。
+7. `scheduler.uploadSessionLog(taskId, attempt, gz)`：**先传日志、拿到 `200` 再报结果**；无事件时传 0 行 gzip ndjson；`413` 时改为上传空日志并把结果置 `failed(session_log_too_large)`；`404` 时丢弃上传与结果。
+8. `result.assemble` → `journal.mark(settled, {result})` → `runtime.closeSession`。
+9. 返回 `TaskResult`；上报与 `accepted` 由 CLI 负责。
 
-- 任何 prompt 之前的失败都进 `settled`，不 prompt。
+- 任何 prompt 之前的失败都进 `settled`，不 prompt；这些失败同样按第 7 步先传 0 行空日志再报结果。
 - 同 `taskId` 并发调用返回同一 Promise；不同 `taskId`（同实例）可并发。
 - 取消：`cancelInstance` abort 该实例所有在跑任务并 `runtime.cancel`；`cancelAll` 用于停机。
 - `shutdownInstances` 关闭所有实例进程并清孤儿记录。

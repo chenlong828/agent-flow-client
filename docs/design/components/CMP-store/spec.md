@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-store
 status: active
-updated: 2026-11-10
+updated: 2026-11-12
 ---
 
 # CMP-store 组件规格（v2）
@@ -12,7 +12,7 @@ updated: 2026-11-10
 
 ## 1. 职责与边界
 
-- **负责**：`journal.jsonl` 追加/折叠；`settled()` 查询；孤儿进程记录；损坏行降级。
+- **负责**：`journal.jsonl` 追加/折叠；`settled()` 查询；孤儿进程记录；损坏行降级；v3 起持久化 `P-04` 会话日志原始行（`FileSessionLogStore`）。
 - **不负责**：恢复决策、调度器状态、工作区内容、日志轮转。
 - **变化轴**：本地持久化格式。
 
@@ -21,6 +21,8 @@ updated: 2026-11-10
 ```text
 <stateRoot>/
 ├── journal.jsonl       # 一行一条 TaskRecord，v=2
+├── session-logs/<taskId>-a<attempt>.jsonl  # P-04 原始 ACP 事件（上传成功后清理）
+├── archives/<runId>.tar.gz                 # P-05 打包临时文件（上传后删除）
 └── orphans/<pid>.json
 ```
 

@@ -9,7 +9,7 @@ updated: 2026-11-08
 
 ## 当前状态
 
-- **契约已升级到 v2**（2026-11-10，at-least-once、三端点）：client 已按 v2 完成迁移；v1 归档于 `docs/history/works/2026-11-10-contract-v2-migration/`，现行权威 `docs/design/contracts/executor-http-v2.md`。
+- **契约已升级到 v3**（2026-11-12，五端点、task-space、会话日志、运行归档、协议 3）：client 已按 v3 实现（`T-CV3-01`–`T-CV3-09`，见 `docs/works/2026-11-12-contract-v3-handoff/client-plan.md`），待调度器侧联调（`T-RUN-09`）；现行权威 `docs/design/contracts/executor-http-v3.md`，v1/v2 已归档。
 - S0 本地执行闭环已落地（2026-11-08）：`run`/`doctor`/`version` 可用。见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
 - 当前目标：S3 安全与交付；真实调度器联调等到调度器侧有实现。
 - 已完成 DSH ACP 对接预研并归档：启动方式、协议序列、权限/取消/关闭边界与本机版本基线，见 `docs/history/works/2026-11-03-dsh-acp-preflight/result.md`。
@@ -34,12 +34,13 @@ updated: 2026-11-08
 ## 依赖
 
 - S0 不依赖调度器，可独立开始。
-- S1 依赖的字段级契约已升级为 v2（`design/contracts/executor-http-v2.md`），client 已按 v2 实现。
+- S1 依赖的字段级契约已升级为 v3（`design/contracts/executor-http-v3.md`），client 迁移中。
 - 上游边界设计：`../../../agent-flow-orchaster/docs/works/2026-11-03-client-boundary/boundary-design.md`。
+- 执行面契约 v3：调度器侧权威 `../../agent-flow-orchaster/docs/design/contracts/executor-http-v3.md`；交接工序见 `docs/works/2026-11-12-contract-v3-handoff/`。
 
 ## 下一步工作计划
 
-> 当前活跃工序：`docs/works/2026-11-10-execution-semantics-proposal/`（执行容错语义提议，待调度层评审）；`docs/works/2026-11-06-observability-http/`（观测 HTTP P1 设计稿，独立轨道）；S0/S1/S2（A 方案内）/M1 已归档。
+> 当前活跃工序：`docs/works/2026-11-12-contract-v3-handoff/`（执行面契约 v3 交接与实现，P1）；`docs/works/2026-11-10-execution-semantics-proposal/`（执行容错语义提议，待调度层评审）；`docs/works/2026-11-06-observability-http/`（观测 HTTP P1 设计稿，独立轨道）；S0/S1/S2（A 方案内）/M1 已归档。
 
 ### 批次 1：S0 本地执行闭环（已完成，2026-11-08）
 
@@ -64,7 +65,7 @@ S1 收口（2026-11-08）：7 个任务全部落地，`serve` 接桩调度器单
 
 ### 批次 2：S1 契约骨架（已完成，2026-11-08；v1 语义，已被 2026-11-10 的 v2 取代）
 
-> 下表是 v1 时期的计划，保留作历史；当前契约与实现以 `design/contracts/executor-http-v2.md` 为准。
+> 下表是 v1 时期的计划，保留作历史；当前契约与实现以 `design/contracts/executor-http-v3.md` 为准。
 
 目标：接桩调度器，跑通单节点全链路。
 

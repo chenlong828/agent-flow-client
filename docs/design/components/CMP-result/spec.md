@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-result
 status: active
-updated: 2026-11-10
+updated: 2026-11-12
 ---
 
 # CMP-result 组件规格（v2）
@@ -13,7 +13,7 @@ updated: 2026-11-10
 ## 1. 职责
 
 - 从 `SessionOutcome` 组装 `TaskResult`；
-- 组件错误码 → `ErrorClass`（v2 无 `retryable`）；
+- 组件错误码 → `ErrorClass`（v2 无 `retryable`）；v3 增 `session_log_too_large` → `runtime`；
 - UTF-8 安全截断（上限 256 KiB）；
 - 停止原因归一。
 

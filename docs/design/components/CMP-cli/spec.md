@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-cli
 status: active
-updated: 2026-11-08
+updated: 2026-11-12
 ---
 
 # CMP-cli 组件规格
@@ -105,13 +105,13 @@ type AppConfig = Readonly<{
 - 加载后 `Object.freeze` 快照；运行期不重读。
 - `DSH_HOME` 由 CLI 创建并校验 `0700`、拒绝 `~/.dsh`；运行期不删；实例终结由 `CMP-runtime.shutdownInstance` 删除。
 
-### 2.4 `serve` 循环（v2 单 poll 循环）
+### 2.4 `serve` 循环（v3 单 poll 循环）
 
 1. 加载配置、组合根装配；清理孤儿；把 journal 中 `settled` 结果放入 `finished`。
-2. 常驻 `poll`：请求带 `capacity.free = maxConcurrent - running.length`、`running[]`、`finished[]`；服务端挂起 30s，客户端 40s 超时。
+2. 常驻 `poll`：请求带 `capacity.free = maxConcurrent - running.length`、`running[]`、`finished[]`、`archivedRuns[]`；服务端挂起 30s，客户端 40s 超时；响应里的 `archiveRequests` 转后台归档，不阻塞 poll。
 3. 收到 `tasks[]`：先登记 in-flight，再发起下一次 poll；对每个任务启动执行。
 4. 执行：`executor.executeTask`（容器 → 实例 → session → 技能 → prompt → 结果落盘）。
-5. 结果：先落 journal `settled`，进 `finished[]`，再 `reportResult`；`accepted=true` 后记 `reported` 并移出；`accepted=false` 丢弃。
+5. 结果：先落 journal `settled`，进 `finished[]`；`reportResult` 之前先确保 `P-04` 日志已上传（无事件传 0 行；`413` 转空日志 + `failed(session_log_too_large)`）；`accepted=true` 后记 `reported` 并移出，同时清理本地日志；`accepted=false` 丢弃。
 6. `finished[]` 每轮 poll 都会重报；上报失败保留，直到 accepted。
 7. `stop: true`：停止领取，跑完手上任务后退出 0。
 8. `cancelInstances`：中止这些实例全部在跑任务，结果 `cancelled`；同批任务中属于这些实例的条目丢弃。

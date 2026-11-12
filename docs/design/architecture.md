@@ -9,7 +9,7 @@ updated: 2026-11-08
 
 > 范围：client 的对外接口面、组件切分、主流程、数据所有权与关键不变量。字段级契约、DSH/ACP 细节与实现细节不在本文。
 >
-> 调度器契约的字段级权威：[`contracts/executor-http-v2.md`](contracts/executor-http-v2.md)（v2，2026-11-10，三端点、at-least-once）。本文只定接口面与跨组件关系，**不复述字段**。
+> 调度器契约的字段级权威：[`contracts/executor-http-v3.md`](contracts/executor-http-v3.md)（v3，2026-11-12，五端点、task-space、会话日志、运行归档、协议 3）。本文只定接口面与跨组件关系，**不复述字段**。
 >
 > 设计过程与取舍见 `docs/history/works/2026-11-03-client-concept-design/`（历史记录，不作为现行依据）。
 >
@@ -40,11 +40,13 @@ updated: 2026-11-08
 
 | 契约面 | 操作 | 目的 |
 |---|---|---|
-| `P-01` 取任务 | `POST /poll`（长轮询） | 取任务、上报 `running[]`/`finished[]`、收 `stop`/`cancelInstances` |
+| `P-01` 取任务 | `POST /poll`（长轮询） | 取任务、上报 `running[]`/`finished[]`/`archivedRuns`、收 `stop`/`cancelInstances`/`archiveRequests` |
 | `P-02` 交结果 | `POST /tasks/{taskId}/result` | 交 `TaskResult`；首份为准，`accepted` 确认 |
 | `P-03` 技能包 | `GET /skill-packages/{packageId}` | 取 zip；304 命中缓存 |
+| `P-04` 会话日志 | `POST /tasks/{taskId}/session-log?attempt=n` | 上传该次尝试的 ACP 事件流（gzip JSONL，允许 0 行） |
+| `P-05` 运行归档 | `POST /runs/{runId}/archive` | 上传 task-space 的 tar.gz；后台执行，不阻塞 poll |
 
-字段、错误码、容量与超时全部以 [`contracts/executor-http-v2.md`](contracts/executor-http-v2.md) 为准；client 只实现消费端，不自定义字段。控制面只出站，调度器不主动连 client。
+字段、错误码、容量与超时全部以 [`contracts/executor-http-v3.md`](contracts/executor-http-v3.md) 为准；client 只实现消费端，不自定义字段。控制面只出站，调度器不主动连 client。
 
 ### 3.2 CLI 操作面
 
@@ -102,7 +104,7 @@ updated: 2026-11-08
 | `AssetPort` | `install`、`verify`、`currentDigest` | executor → 技能包；同 digest `install` 为空操作；失败回滚 |
 | `JournalPort` | `append`、`mark`、`settled`、`recordOrphan`、`listOrphans`、`clearOrphan` | executor/CLI → 本地存储；追加不覆盖 |
 
-值类型：`TaskRequest`、`TaskResult`、`TaskRecord`、`SkillSet`、`PollRequest`、`PollResponse`、`ResultAck`、`RunningTask`、`FinishedTask`、`SessionOutcome`、`ContainerPaths`、`InstalledSkills`、`OrphanRecord`。字段见 [`contracts/executor-http-v2.md`](contracts/executor-http-v2.md) §5；组件只依赖语义，不自行扩展字段。
+值类型：`TaskRequest`、`TaskResult`、`TaskRecord`、`SkillSet`、`PollRequest`、`PollResponse`、`ResultAck`、`RunningTask`、`FinishedTask`、`ArchiveRequest`、`SessionLogAck`、`ArchiveAck`、`SessionOutcome`、`ContainerPaths`、`InstalledSkills`、`OrphanRecord`。字段见 [`contracts/executor-http-v3.md`](contracts/executor-http-v3.md) §5；组件只依赖语义，不自行扩展字段。
 
 契约规则：
 
@@ -125,7 +127,7 @@ updated: 2026-11-08
 | 日志/`doctor` JSON | v1 | 字段可加；已有字段语义不变 | 消费方忽略未知字段 |
 | ACP | v1 | 按 DSH 基线；升级前复跑关键用例 | 版本不兼容退出 3 |
 | 技能包/digest | v1 | digest 覆盖内容；格式变更换 digest | 旧包缓存可失效 |
-| 调度器契约 | **v2（2026-11-10）** | 三端点、at-least-once；`X-Executor-Protocol: 2` | 不兼容 `400 unsupported_protocol`，停止并退出 |
+| 调度器契约 | **v3（2026-11-12）** | 五端点、task-space、会话日志、运行归档；`X-Executor-Protocol: 3` | 不兼容 `400 unsupported_protocol`，停止并退出 |
 
 ### 4.3 依赖矩阵与禁止边
 
@@ -299,7 +301,7 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 ## 12. 后续
 
 - 组件规格已建（2026-11-04，`planned`）：9 份 `docs/design/components/<id>/spec.md` 覆盖职责、内部功能、端口实现、数据所有权、验证计划与预算；组件级确认前不写实现代码。
-- 调度器契约已升级到 v2（2026-11-10）：三端点、at-least-once、`X-Executor-Protocol: 2`；字段级权威见 [`contracts/executor-http-v2.md`](contracts/executor-http-v2.md)。v1 已归档。
+- 调度器契约已升级到 v3（2026-11-12）：五端点、task-space、会话日志、运行归档、`X-Executor-Protocol: 3`；字段级权威见 [`contracts/executor-http-v3.md`](contracts/executor-http-v3.md)。v1/v2 已归档。
 - 场景与可靠性：`SCN-0002`（配置 client 并完成自检）、`SCN-0001`（执行节点并回传结果）与 `REQ-0002`（执行稳定性与可靠性）已建；S0 先按两个场景的 S0 用例落地。
 - S0 本地闭环工序：以冻结稿的用例与不变量为输入；优先验证取消/崩溃清理、容器根技能可见性、结果回传与 `doctor` 守门。
 - 只读观测 HTTP（`/api/v1/observability`）仍是独立 P1 设计稿（`docs/works/2026-11-06-observability-http/`），未进本架构；确认后另立工序回填。
@@ -318,7 +320,8 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
   - `run` 退出码 `1`、SIGTERM `143`；`run --permission`；
   - `stateRoot` 默认 `<runDir>/.agent-flow-client`（键名待 OQ-014）；
   - `doctor` 由 CLI 编排、各组件 `diagnose()` 提供检查项。
-- **契约 v2（2026-11-10）**：调度器侧将执行语义改为 at-least-once，端点收敛为 `poll`/`result`/`skill-packages`；删除 register/heartbeat/claim/renew/bindSession/cleanup、租约、`runId` fencing、`late_result`、`cleanupPending`、`seq/ackSeq`。client 已按 v2 改造，字段权威见 `contracts/executor-http-v2.md`，迁移记录见 `docs/history/works/2026-11-10-contract-v2-migration/`。
+- **契约 v3（2026-11-12）**：新增 task-space、`P-04` 会话日志、`P-05` 运行归档、`archiveRequests`/`archivedRuns`、协议 3；client 迁移在 `docs/works/2026-11-12-contract-v3-handoff/`（进行中）。
+- **契约 v2（2026-11-10，已被 v3 取代）**：调度器侧将执行语义改为 at-least-once，端点收敛为 `poll`/`result`/`skill-packages`；删除 register/heartbeat/claim/renew/bindSession/cleanup、租约、`runId` fencing、`late_result`、`cleanupPending`、`seq/ackSeq`。client 已按 v2 改造，字段权威见 `contracts/executor-http-v2.md`，迁移记录见 `docs/history/works/2026-11-10-contract-v2-migration/`。
 - **配置键已冻结（2026-11-08，OQ-014 关闭）**：`[acp].dsh_home`/`permission`、`[state].root`、`[logging].level`、`[capacity].max_instances`；`stateRoot` 默认 `<runDir>/.agent-flow-client`。
 - **退出码已冻结（2026-11-08，OQ-015 关闭）**：`run` 非成功 `NodeResult` 用 `1`，SIGINT `130`、SIGTERM `143`；其余按 §3.2。
 - **S0 已落地（2026-11-08）**：8 个组件转 `active`；`run`/`doctor` 可用，`SCN-0002` 3+1 与 `SCN-0001` S0 用例通过；见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
