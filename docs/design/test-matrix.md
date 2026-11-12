@@ -18,6 +18,7 @@ updated: 2026-11-12
 | UC-02 | 顺序/并发两任务 | S2 | executor/cli | `tests/scenarios/v2-serve.test.ts` | `TC-EXEC-002` | existing |
 | UC-03 | 同实例 fan-out 并发 | S2 | executor/cli | `tests/scenarios/v2-serve.test.ts` | TBD | existing |
 | UC-04 | 技能切换 | S2 | assets/executor | `tests/components/assets/assets.test.ts` | TBD | existing |
+| UC-04a | 多技能包布局（OQ-33） | S1 | assets | `tests/components/assets/package.test.ts`、`tests/components/assets/assets.test.ts` | `TC-ASSET-001` | existing |
 | UC-05 | 容器非法 | S0 | workspace | `tests/components/workspace/workspace.test.ts` | TBD | existing |
 | UC-06 | 技能包异常 | S0 | assets | `tests/scenarios/s0-exec.test.ts` | `TC-EXEC-004` | existing |
 | UC-07 | 运行时不可用 | S0 | runtime | `tests/components/runtime/runtime.test.ts` | TBD | existing |

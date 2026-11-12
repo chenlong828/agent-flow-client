@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { lstat, mkdir, mkdtemp, readdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -128,6 +128,24 @@ describe("技能安装", () => {
       packages: [{ ...pkg.skillSet.packages[0]!, digest: `sha256:${"0".repeat(64)}` }],
     };
     await expect(new LocalAssets().install(set, container)).rejects.toMatchObject({ code: "checksum_mismatch" });
+  });
+
+  test("旧布局（平铺 SKILL.md）在缺少布局标记时重装为目录布局", async () => {
+    const { container } = await makeContainer();
+    const pkg = await makePackage("alpha");
+    const assets = new LocalAssets();
+    await assets.install(pkg.skillSet, container);
+    expect(await readFile(join(container.root, ".dsh", ".skills-layout"), "utf8")).toBe("dir-v1");
+
+    // 模拟旧客户端产物：平铺 SKILL.md + 相同 digest，但没有布局标记。
+    await rm(container.skillRoot, { recursive: true, force: true });
+    await mkdir(container.skillRoot, { recursive: true, mode: 0o700 });
+    await writeFile(join(container.skillRoot, "SKILL.md"), skill("alpha", "旧平铺"));
+    await rm(join(container.root, ".dsh", ".skills-layout"));
+
+    const again = await assets.install(pkg.skillSet, container);
+    expect(again.changed).toBe(true);
+    expect((await readdir(container.skillRoot)).sort()).toEqual(["alpha", "flat.md"]);
   });
 
   test("包内符号链接判 unpack_failed", async () => {

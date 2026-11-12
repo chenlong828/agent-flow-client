@@ -84,7 +84,7 @@ updated: 2026-11-12
 | 策略 | 行为 |
 |---|---|
 | `keep`（默认） | 不动容器；只清 client 临时文件（如有） |
-| `clean-skills` | 删除 `.dsh/skills`、`.staging`、`.skills-digest`；保留 `.dsh` 目录 |
+| `clean-skills` | 删除 `.dsh/skills`、`.staging`、`.skills-digest`、`.skills-layout`；保留 `.dsh` 目录 |
 | `clean-client` | 在 `clean-skills` 基础上清 client 生成的临时目录；不删预置仓库与产物 |
 
 - 幂等；不跟随符号链接删除；不删除子仓库内容。

@@ -14,9 +14,14 @@ import { copyTree, type CopyLimits } from "./copy.ts";
 import { validateSkillsTree } from "./format.ts";
 import { digestSlug, exists, installedNames } from "./installed.ts";
 import { materializePackage } from "./package-source.ts";
+import { mergePackageRoot } from "./skill-layout.ts";
 import { resolveLocalSource } from "./local-source.ts";
 
 const DEFAULT_LIMITS: CopyLimits = { maxBytes: 64 * 1024 * 1024, maxFiles: 10_000 };
+/** 暂存区内「每包独立解包」的临时目录名；合并后立即删除，不进最终技能根。 */
+const PACKAGES_DIRNAME = ".packages";
+/** 技能目录布局版本：`<skills>/<name>/SKILL.md`。旧容器（平铺）靠它触发一次重装。 */
+const SKILLS_LAYOUT = "dir-v1";
 
 export type AssetOptions = {
   cacheRoot?: string;
@@ -57,7 +62,7 @@ export class LocalAssets implements AssetPort {
 
   async #installExclusive(skillSet: SkillSet, container: ContainerPaths): Promise<InstalledSkills> {
     const current = await this.currentDigest(container);
-    if (current === skillSet.digest && (await exists(container.skillRoot))) {
+    if (current === skillSet.digest && (await this.#layoutCurrent(container)) && (await exists(container.skillRoot))) {
       return { digest: skillSet.digest, skills: await installedNames(container.skillRoot), changed: false };
     }
 
@@ -66,9 +71,16 @@ export class LocalAssets implements AssetPort {
     try {
       await rm(staging, { recursive: true, force: true });
       await mkdir(staging, { recursive: true, mode: 0o700 });
-      for (const pkg of skillSet.packages) {
-        await materializePackage(pkg, staging, this.#limits, this.#options);
+      // 每包先解到独立临时目录，再按技能名并入技能根：多个包不再共写同一个根，
+      // 重名技能报冲突而不是静默覆盖（OQ-33）。
+      const packagesRoot = join(staging, PACKAGES_DIRNAME);
+      for (const [index, pkg] of skillSet.packages.entries()) {
+        const packageRoot = join(packagesRoot, `${index}-${digestSlug(pkg.digest)}`);
+        await mkdir(packageRoot, { recursive: true, mode: 0o700 });
+        await materializePackage(pkg, packageRoot, this.#limits, this.#options);
+        await mergePackageRoot(packageRoot, staging);
       }
+      await rm(packagesRoot, { recursive: true, force: true });
       const report = await validateSkillsTree(staging);
       await this.#swap(container, staging, skillSet.digest);
       return { digest: skillSet.digest, skills: report.skills, changed: true };
@@ -92,6 +104,15 @@ export class LocalAssets implements AssetPort {
       return text === "" ? null : text;
     } catch {
       return null;
+    }
+  }
+
+  async #layoutCurrent(container: ContainerPaths): Promise<boolean> {
+    try {
+      const text = (await readFile(join(container.root, ".dsh", ".skills-layout"), "utf8")).trim();
+      return text === SKILLS_LAYOUT;
+    } catch {
+      return false;
     }
   }
 
@@ -127,12 +148,17 @@ export class LocalAssets implements AssetPort {
     if (hadSkills) await rename(container.skillRoot, previous);
     try {
       await rename(staging, container.skillRoot);
-      await writeFile(join(container.root, ".dsh", ".skills-digest"), digest, { mode: 0o600 });
-      await rm(previous, { recursive: true, force: true });
     } catch (error) {
-      await rm(container.skillRoot, { recursive: true, force: true }).catch(() => undefined);
       if (hadSkills) await rename(previous, container.skillRoot).catch(() => undefined);
       throw new AssetError("io_error", `技能集替换失败：${(error as Error).message}`);
+    }
+    await rm(previous, { recursive: true, force: true }).catch(() => undefined);
+    // 标记在技能树就位后写：写失败不回滚已生效的技能，只让下次任务重装（fail-safe）。
+    try {
+      await writeFile(join(container.root, ".dsh", ".skills-digest"), digest, { mode: 0o600 });
+      await writeFile(join(container.root, ".dsh", ".skills-layout"), SKILLS_LAYOUT, { mode: 0o600 });
+    } catch (error) {
+      throw new AssetError("io_error", `技能集标记写入失败：${(error as Error).message}`);
     }
   }
 }

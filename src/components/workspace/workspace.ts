@@ -27,7 +27,7 @@ async function pathKind(path: string): Promise<"missing" | "dir" | "file" | "sym
   }
 }
 
-const CLEAN_TARGETS = [".dsh/skills", ".dsh/.staging", ".dsh/.skills.previous", ".dsh/.skills-digest", ".dsh/.install.lock"];
+const CLEAN_TARGETS = [".dsh/skills", ".dsh/.staging", ".dsh/.skills.previous", ".dsh/.skills-digest", ".dsh/.skills-layout", ".dsh/.install.lock"];
 
 /**
  * 工作区容器（CMP-workspace）：校验预置容器、约束路径、安装点与清理。

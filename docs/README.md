@@ -66,6 +66,10 @@ docs/
 │   │   ├── brief.md
 │   │   ├── review.md
 │   │   └── result.md
+│   └── 2026-11-12-skill-multi-package/     ← 多技能包安装布局 OQ-33（P2，收口）
+│       ├── brief.md
+│       ├── review.md
+│       └── result.md
 └── history/                                ← 记忆：怎么走到这里的
     ├── works/                              ← 已归档工序（frozen）
     │   ├── 2026-11-10-execution-semantics-proposal/ ← 执行容错语义提议（已被 v2 取代）

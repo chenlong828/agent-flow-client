@@ -29,7 +29,7 @@ updated: 2026-11-12
 | 实例 | 一实例一个 DSH 进程；同一实例允许多个任务并发（共享容器与同一技能集 digest） |
 | 任务 | 一个 `taskId` 一个 session；技能集随任务下发；任务结束关 session，不复用 |
 | 工作区 | 一实例一个**容器**：准备阶段预置，含 0..N 个带 `.git` 的仓库；任务共享；产物默认保留 |
-| 技能 | 任务级集合；落地在容器根 `.dsh/skills`；替换不叠加、按 digest 幂等；同容器安装串行 |
+| 技能 | 任务级集合；落地在容器根 `.dsh/skills/<name>/SKILL.md`（每技能一目录，包内 `scripts/`、`references/` 随之）；替换不叠加、按 digest 幂等；同容器安装串行 |
 | 容量 | 本地 `maxConcurrent`；`poll` 上报 `capacity.free`；调度器不超卖 |
 | 判活 | `poll` 长轮询（服务端挂起 30s、客户端 40s 超时）；没有独立心跳端点 |
 | 控制 | `stop` / `cancelInstances` 电平信号；实例级取消，立即终止 |
@@ -217,7 +217,7 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 2. 登记：收到任务先登记到本地 in-flight，再发起下一次 `poll`（`C-01`）。
 3. 准备：`CMP-workspace` 校验预置容器；`CMP-runtime` 确保实例 DSH 进程。
 4. 建 session：`session/new`，`cwd` 固定为容器根。
-5. 刷技能：`CMP-assets` 原子替换容器根 `.dsh/skills`；同 digest 直接短路；同容器安装串行。
+5. 刷技能：`CMP-assets` 逐包独立解包后按技能名归位 `<name>/`，再原子替换容器根 `.dsh/skills`；同 digest 且布局版本一致直接短路；同容器安装串行。
 6. 执行：下发 prompt，消费 ACP 事件，强制 `timeoutMs` 与可选 idle 看门狗。
 7. 结算：`CMP-result` 组装 `TaskResult` → journal 记 `settled`（结果先落盘）→ `reportResult` → `accepted` 后记 `reported`；未 accepted 前保留在 `finished[]`。
 8. 收尾：关 session；实例进程保留供后续任务；`stop` 时跑完手上任务退出 0；`cancelInstances` 立即中止并上报 `cancelled`。

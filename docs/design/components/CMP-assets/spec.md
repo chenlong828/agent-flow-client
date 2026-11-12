@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-assets
 status: active
-updated: 2026-11-07
+updated: 2026-11-12
 ---
 
 # CMP-assets 组件规格
@@ -11,6 +11,7 @@ updated: 2026-11-07
 > 状态：`active`（executor contract v2，2026-11-10）。技能集随 `TaskRequest` 下发，无 `bindSession`；`P-03` 下载器由组合根注入；保留 digest 短路、原子替换与安装临界区。
 >
 > 上游：`docs/design/architecture.md` §5、§8、§10；`SCN-0001` UC-04/06/25；`REQ-0002` R-05/R-10；决策 D9（同容器并发同集）。
+> 2026-11-12 更新（`OQ-33`）：多包按技能名落独立目录，重名报错；支持包内 `scripts/**`、`references/**`；新增 `.dsh/.skills-layout` 让旧容器重装一次。
 
 ## 1. 职责与边界
 
@@ -37,18 +38,19 @@ updated: 2026-11-07
 ### 2.1 安装流程
 
 1. **计算/确认 digest**：以 `SkillSet` 的 digest 为准；若同时给了包清单，校验 digest 与清单一致（不一致 → `checksum_mismatch`）。
-2. **幂等短路**：`currentDigest(container) === digest` 且 `.dsh/skills` 存在 → `noop`，不替换。
+2. **幂等短路**：`currentDigest(container) === digest`、`.dsh/.skills-layout === dir-v1` 且 `.dsh/skills` 存在 → `noop`，不替换；缺布局标记的旧容器（平铺布局）重装一次。
 3. **取容器锁**：`<container>/.dsh/.install.lock` 独占创建；已有锁且未超时 → `io_error`/忙等；超时视为陈旧锁，记录并接管。
-4. **暂存**：`<container>/.dsh/.staging/<digest>/`；逐个包获取/解包/校验，全部成功后才进入替换。
-5. **格式校验**：只接受顶层 `<name>/SKILL.md` 或 `<name>.md`；frontmatter 必须有 `name`（kebab-case）与 `description`；嵌套 `**/SKILL.md` 跳过/判非法（按包严格模式）。
-6. **脚本赋权**：`<bundle>/scripts/**` 置 `0755`；其余文件 `0644`；不改变工作区其他文件。
-7. **原子替换**：
+4. **逐包独立解包**：`<container>/.dsh/.staging/<digest>/.packages/<n>-<digestSlug>/` 每包一个目录，互不共写；全部成功后才进入合并与替换。
+5. **按技能名归位**（`OQ-33`）：包根有 `SKILL.md`（编排侧 `P-03` 包形状）→ 读其 frontmatter `name`，改名为 `<staging>/<name>/`，包内 `scripts/**`、`references/**` 随之落在技能目录内；包根没有 `SKILL.md`（S0 本地多技能树）→ 逐项并入 `<staging>/<entry>`。目标已存在即**技能名冲突** → `invalid_skill_format`，不覆盖。合并后删除 `.packages`。
+6. **格式校验**：只接受 `<name>/SKILL.md` 或 `<name>.md`；frontmatter 必须有 `name`（kebab-case）与 `description`；技能目录内出现更深的 `**/SKILL.md` 判非法。
+7. **脚本赋权**：`<bundle>/scripts/**` 置 `0755`；其余文件 `0644`；不改变工作区其他文件（远端 zip 由 zip 内的模式位决定，本地目录来源由 `copyTree` 赋权）。
+8. **原子替换**：
    - 现有 `.dsh/skills` → `.dsh/.skills.previous`；
    - 暂存 `skills` → `.dsh/skills`；
-   - 写 `.dsh/.skills-digest`；
    - 删除 `.skills.previous`；
-   - 任一步失败 → 恢复 `.skills.previous`，清理暂存，返回错误。
-8. **释放锁**；失败路径也必须释放。
+   - 写 `.dsh/.skills-digest` 与 `.dsh/.skills-layout = dir-v1`（写在技能树就位之后：标记写失败不回滚已生效的技能，只让下次任务重装）；
+   - rename 失败 → 恢复 `.skills.previous`，清理暂存，返回错误。
+9. **释放锁**；失败路径也必须释放。
 
 ### 2.2 包来源
 
@@ -77,7 +79,7 @@ type SkillPackageRef = {
 ### 2.4 缓存
 
 - 缓存目录：`<stateRoot>/cache/skills/<digest>/`（`stateRoot` 由组合根注入；不放在容器内）。
-- 命中条件：digest + 校验和一致；命中后复制/硬链接到暂存区，仍需格式校验。
+- 命中条件：digest + 校验和一致；命中后复制/硬链接到该包的独立暂存目录，仍需格式校验。
 - 失效：digest 不再被引用时按保留策略清理；损坏缓存删除并重新获取。
 - 缓存是派生状态，不是真相；容器内 `.dsh/skills` 才是当前生效集。
 
@@ -108,7 +110,8 @@ type SkillPackageRef = {
   1. 替换不是叠加：安装后只存在当前 skillSet 的技能。
   2. 原子生效：任何时刻 `.dsh/skills` 要么是旧集，要么是新集，不出现半套。
   3. 失败回滚：下载/校验/解包/替换任一失败，当前技能集不被破坏。
-  4. 同 digest 重复安装为空操作。
+  4. 同 digest 且布局版本一致时重复安装为空操作。
+  7. 每个技能占一个独立目录：多个包不会互相覆盖，重名技能显式失败。
   5. 脚本落地即可执行；权限不扩散到工作区其他文件。
   6. 不把包内容或凭据写入日志。
 
@@ -119,7 +122,7 @@ type SkillPackageRef = {
 | `download_failed` | 网络/文件读取/超限 | 是 | 节点失败（asset）；不 prompt |
 | `checksum_mismatch` | 摘要不符 | 是（重新获取） | 节点失败；不 prompt |
 | `unpack_failed` | 损坏包/路径穿越/超限 | 是（换包） | 节点失败；不 prompt |
-| `invalid_skill_format` | 缺 frontmatter/嵌套/非法 name | 否 | 节点失败；不 prompt |
+| `invalid_skill_format` | 缺 frontmatter/嵌套/非法 name/多包技能名冲突 | 否 | 节点失败；不 prompt |
 | `io_error` | 锁/rename/权限/磁盘 | 否（同机） | 节点失败；不 prompt |
 | `asset_skill_set_conflict` | 同容器不同 digest 并发 | 否 | 显式失败；调度器换实例/重排 |
 
@@ -161,6 +164,7 @@ interface AssetAdmin {
 | `.dsh/skills`（当前技能集） | `CMP-assets`（唯一写入口） | DSH/runtime、executor | 原子替换；失败保持旧集 |
 | `.dsh/.staging` / `.skills.previous` | `CMP-assets` | 自身 | 临时；成功/失败后清理 |
 | `.dsh/.skills-digest` | `CMP-assets` | executor、assets | 与 skills 同步 |
+| `.dsh/.skills-layout` | `CMP-assets` | assets | 布局版本（当前 `dir-v1`）；缺失视为旧布局 |
 | 技能缓存 | `CMP-assets` | assets | 派生；可失效/清理 |
 
 ## 6. 冷热与资源
@@ -175,6 +179,8 @@ interface AssetAdmin {
 | 类型 | 用例 | 证明 |
 |---|---|---|
 | 正常 | 首次安装、同 digest 重装、切换 A→B→A | 只看到当前集；幂等 |
+| 多包 | 两个包各带 `SKILL.md`、同名技能、包内 `scripts`/`references` | 落 `<name>/` 互不覆盖；同名 `invalid_skill_format`；附件在技能目录内 |
+| 迁移 | 旧容器平铺 `SKILL.md` + 无布局标记 | 同 digest 也重装为 `<name>/` |
 | 失败 | 损坏包、checksum 不符、路径穿越、符号链接、缺 frontmatter | 回滚无半套；不触碰旧集 |
 | 原子性 | 替换中断（注入 rename 失败） | 旧集完整；无 `.skills.previous` 残留 |
 | 脚本 | `scripts/**` 权限、非 scripts 不变 | `0755` / `0644` |
@@ -186,7 +192,7 @@ interface AssetAdmin {
 
 - 预算：目标 ≤30k token，上限 120k。
 - 单独运行：`bun test tests/components/assets/`；用本地夹具包，不联网。
-- 实现入口（T3/S1）：`src/components/assets/assets.ts#LocalAssets`、`digest.ts#digestDirectory`、`format.ts#validateSkillsTree`、`copy.ts#copyTree`、`local-source.ts#resolveLocalSource`、`download.ts#fetchPackage`、`unpack.ts#unpackZip`、`package-source.ts#materializePackage`、`package-cache.ts#installRemotePackage`；测试 `tests/components/assets/`。
+- 实现入口（T3/S1）：`src/components/assets/assets.ts#LocalAssets`、`format.ts#validateSkillsTree`、`skill-layout.ts#mergePackageRoot`、`digest.ts#digestDirectory`、`copy.ts#copyTree`、`local-source.ts#resolveLocalSource`、`download.ts#fetchPackage`、`unpack.ts#unpackZip`、`package-source.ts#materializePackage`、`package-cache.ts#installRemotePackage`；测试 `tests/components/assets/`。
 - 状态：`active`（`C-05` 已实现；Windows 解包待 S3）。
 
 ## 9. 开放问题

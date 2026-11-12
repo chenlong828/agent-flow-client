@@ -15,10 +15,10 @@ export async function validateSkillsTree(root: string): Promise<SkillFormatRepor
     if (entry.isDirectory()) {
       const nested = await findNestedSkill(path, 1);
       if (nested !== null) throw new AssetError("invalid_skill_format", `不支持嵌套技能：${nested}`);
-      await readSkill(join(path, "SKILL.md"));
+      await readSkillName(join(path, "SKILL.md"));
       skills.push(entry.name);
     } else if (entry.isFile() && entry.name.endsWith(".md")) {
-      await readSkill(path);
+      await readSkillName(path);
       skills.push(basename(entry.name, ".md"));
     }
   }
@@ -38,7 +38,7 @@ async function findNestedSkill(dir: string, depth: number): Promise<string | nul
   return null;
 }
 
-async function readSkill(path: string): Promise<void> {
+export async function readSkillName(path: string): Promise<string> {
   let text: string;
   try {
     text = await readFile(path, "utf8");
@@ -62,4 +62,5 @@ async function readSkill(path: string): Promise<void> {
   if (typeof description !== "string" || description.trim() === "") {
     throw new AssetError("invalid_skill_format", `技能 description 不能为空：${path}`);
   }
+  return name;
 }
