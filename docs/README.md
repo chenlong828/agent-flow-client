@@ -73,10 +73,17 @@ docs/
 │   ├── 2026-11-12-skill-name-proposal/     ← 技能展示名/系统名分离提案（交调度层）
 │   │   ├── brief.md
 │   │   └── proposal.md
-│   └── 2026-11-14-superproject-workspace/  ← 工作区根支持 git 超项目（P2，收口）
+│   ├── 2026-11-14-superproject-workspace/  ← 工作区根支持 git 超项目（P2，收口）
+│   │   ├── brief.md
+│   │   ├── review.md
+│   │   └── result.md
+│   └── 2026-11-14-acp-progress-feedback/   ← 任务执行过程信息反馈调研（ACP 侧，调研完成）
 │       ├── brief.md
-│       ├── review.md
-│       └── result.md
+│       ├── result.md
+│       ├── report.md
+│       ├── design-progress-5s.md
+│       ├── sim-progress-live.md
+│       └── probe/
 └── history/                                ← 记忆：怎么走到这里的
     ├── works/                              ← 已归档工序（frozen）
     │   ├── 2026-11-10-execution-semantics-proposal/ ← 执行容错语义提议（已被 v2 取代）

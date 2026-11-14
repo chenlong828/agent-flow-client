@@ -1,0 +1,142 @@
+{
+  "dshBin": "/Users/chenlong/agent/deepseek-harness/apps/cli/lib/bin.js",
+  "commandArgs": [
+    "/Users/chenlong/agent/deepseek-harness/apps/cli/lib/bin.js",
+    "--profile",
+    "acp",
+    "--patch",
+    "/tmp/acp-progress-probe-70434/home/af/profile.skill-patch.yml"
+  ],
+  "home": "/tmp/acp-progress-probe-70434/home",
+  "cwd": "/private/tmp/acp-progress-probe-70434/ws",
+  "prompt": "用 bash 工具执行 `sleep 3`，然后只回复：ACP-PROBE-DONE",
+  "sessionId": "dfb1fdd7-9fd7-44cb-afbf-ad9ba2623f34",
+  "initialize": {
+    "protocolVersion": 1,
+    "agentCapabilities": {
+      "mcpCapabilities": {
+        "http": true
+      },
+      "promptCapabilities": {
+        "image": false,
+        "audio": false,
+        "embeddedContext": false
+      },
+      "sessionCapabilities": {
+        "close": {},
+        "list": {},
+        "resume": {}
+      }
+    }
+  },
+  "promptResult": {
+    "stopReason": "end_turn"
+  },
+  "elapsedMs": 5099,
+  "assistantText": "ACP-PROBE-DONE",
+  "permissions": [
+    {
+      "at": "2026-11-14T14:25:16.967Z",
+      "tMs": 1457,
+      "toolCall": {
+        "toolCallId": "call_00_4BIIr8FmUCdVyRLSmuNG7197"
+      },
+      "options": [
+        {
+          "kind": "allow_once",
+          "name": "Allow once"
+        },
+        {
+          "kind": "reject_once",
+          "name": "Reject"
+        }
+      ],
+      "decision": "allow"
+    }
+  ],
+  "updates": [
+    {
+      "kind": "usage_update",
+      "at": "2026-11-14T14:25:16.050Z",
+      "tMs": 540,
+      "used": 5521,
+      "size": 1000000
+    },
+    {
+      "kind": "tool_call",
+      "at": "2026-11-14T14:25:16.050Z",
+      "tMs": 540,
+      "toolCallId": "call_00_ET_a42iFh4sIKETRB6nwk446305",
+      "title": "bash",
+      "toolKind": "other",
+      "status": "in_progress",
+      "rawInput": {
+        "description": "Run sleep 3 for probe",
+        "command": "sleep 3"
+      }
+    },
+    {
+      "kind": "tool_call_update",
+      "at": "2026-11-14T14:25:16.075Z",
+      "tMs": 565,
+      "toolCallId": "call_00_ET_a42iFh4sIKETRB6nwk446305",
+      "status": "failed",
+      "contentBlocks": 1,
+      "contentText": "Error: sandbox mode \"workspace-write\" is requested but no sandbox backend is usable on this host; refusing to run the command unconfined. Install bubblewrap or run a Landlock-enforcing kernel (Linux),"
+    },
+    {
+      "kind": "agent_thought_chunk",
+      "at": "2026-11-14T14:25:16.959Z",
+      "tMs": 1449,
+      "messageId": "f9b0e2c4-efa0-42de-be84-e36aa94fe34f",
+      "textLength": 218
+    },
+    {
+      "kind": "usage_update",
+      "at": "2026-11-14T14:25:16.960Z",
+      "tMs": 1450,
+      "used": 5793,
+      "size": 1000000
+    },
+    {
+      "kind": "tool_call",
+      "at": "2026-11-14T14:25:16.960Z",
+      "tMs": 1450,
+      "toolCallId": "call_00_4BIIr8FmUCdVyRLSmuNG7197",
+      "title": "bash",
+      "toolKind": "other",
+      "status": "in_progress",
+      "rawInput": {
+        "command": "sleep 3",
+        "description": "Run sleep 3 for probe",
+        "justification": "The configured workspace-write sandbox backend is unusable on this host (sandbox-exec: Operation not permitted), so the requested sleep command cannot run without danger-full-access.",
+        "sandbox_permissions": "danger-full-access"
+      }
+    },
+    {
+      "kind": "tool_call_update",
+      "at": "2026-11-14T14:25:19.990Z",
+      "tMs": 4480,
+      "toolCallId": "call_00_4BIIr8FmUCdVyRLSmuNG7197",
+      "status": "completed",
+      "contentBlocks": 1,
+      "contentText": "(no output)"
+    },
+    {
+      "kind": "agent_message_chunk",
+      "at": "2026-11-14T14:25:20.609Z",
+      "tMs": 5099,
+      "messageId": "ca424aa2-c946-4053-975f-0c05000a2ff7",
+      "contentType": "text",
+      "text": "ACP-PROBE-DONE"
+    },
+    {
+      "kind": "usage_update",
+      "at": "2026-11-14T14:25:20.609Z",
+      "tMs": 5099,
+      "used": 5814,
+      "size": 1000000
+    }
+  ],
+  "stderrTail": ""
+}
