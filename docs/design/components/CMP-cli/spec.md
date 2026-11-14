@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-cli
 status: active
-updated: 2026-11-12
+updated: 2026-11-14
 ---
 
 # CMP-cli 组件规格
@@ -149,7 +149,7 @@ type AppConfig = Readonly<{
   - 配置：home 来源、绝对路径、不是 `~/.dsh`、存在/可写、权限；
   - DSH：二进制定位、版本、与基线兼容；
   - 凭据：`DEEPSEEK_API_KEY` 或 `.credentials.yaml` 是否存在（只显示“已配置/未配置”）；
-  - 工作区（传 `--workspace` 时）：容器布局、`findProjectRoot(容器根) === 容器根`、可写；
+  - 工作区（传 `--workspace` 时）：容器布局（`layout=superproject|container`）、`findProjectRoot(容器根) === 容器根`、可写、未初始化子模块告警（warn，不阻断）；
   - 残留：journal 未收口 attempt、实例锁、孤儿进程、残留 session；
   - 调度器连通性（S1；S0 标 `none`）；
   - 调度器身份（开发期）：`scheduler.client_id` 报生效值与来源（env/config/hostname）、非法值 fail；`scheduler.identity` 在无 token 时 warn「以 `X-Client-Id` 自报身份（开发期），服务端 `EXECUTOR_AUTH=on` 时会返回 401」。

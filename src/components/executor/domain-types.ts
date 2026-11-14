@@ -9,8 +9,12 @@ export type ContainerPaths = {
 export type LayoutReport = {
   ok: boolean;
   root: string;
+  /** 容器形态：根自身是 git 超项目，或普通目录容器。 */
+  layout: "superproject" | "container";
   repos: string[];
   issues: string[];
+  /** 不阻断任务的布局问题（如子模块未初始化）；`ok` 只由 `issues` 决定。 */
+  warnings: string[];
 };
 
 export type CleanupPolicy = "keep" | "clean-skills" | "clean-client";

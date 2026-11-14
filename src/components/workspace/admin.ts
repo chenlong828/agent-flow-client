@@ -19,20 +19,32 @@ export class WorkspaceAdmin {
     const writable = await access(root, constants.R_OK | constants.W_OK)
       .then(() => true)
       .catch(() => false);
-    return [
+    const checks: CheckResult[] = [
       {
         id: "workspace.container",
         title: "容器布局",
         status: report.ok ? "pass" : "fail",
-        detail: report.ok ? `repos=${report.repos.length}` : report.issues.join("；"),
-        ...(report.ok ? {} : { remediation: "修正容器布局：根无 .git、位于任何仓库之外、.dsh 不是符号链接" }),
+        detail: report.ok ? `repos=${report.repos.length}，layout=${report.layout}` : report.issues.join("；"),
+        ...(report.ok
+          ? {}
+          : { remediation: "修正容器布局：位于任何仓库之外（工作区根可以是超项目）、.dsh 不是符号链接" }),
       },
+    ];
+    if (report.warnings.length > 0) {
+      checks.push({
+        id: "workspace.submodules",
+        title: "子模块",
+        status: "warn",
+        detail: report.warnings.join("；"),
+      });
+    }
+    checks.push(
       {
         id: "workspace.project_root",
         title: "project root 不上浮",
         status: projectRoot === root ? "pass" : "fail",
         detail: `findProjectRoot=${projectRoot}`,
-        ...(projectRoot === root ? {} : { remediation: "把容器移到任何 git 仓库之外" }),
+        ...(projectRoot === root ? {} : { remediation: "把容器移出所在 git 仓库（容器根自身可以是仓库或超项目）" }),
       },
       {
         id: "workspace.writable",
@@ -47,6 +59,7 @@ export class WorkspaceAdmin {
         status: "pass",
         detail: container.stagingRoot,
       },
-    ];
+    );
+    return checks;
   }
 }

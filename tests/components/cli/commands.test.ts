@@ -112,6 +112,25 @@ describe("cli 命令面", () => {
     expect(result.out).toContain("scheduler.connectivity");
   });
 
+  test("doctor --workspace 识别超项目形态并告警未初始化子模块", async () => {
+    const runDir = await mkdtemp(join(tmpdir(), "afc-doc-"));
+    const bin = join(runDir, "fake-dsh");
+    await writeFile(bin, "#!/bin/sh\necho 0.2.2-alpha.2\n", { mode: 0o755 });
+    const workspace = join(runDir, "workspace");
+    await mkdir(join(workspace, ".git"), { recursive: true });
+    await writeFile(join(workspace, ".gitmodules"), `[submodule "uumail"]\n\tpath = uumail\n`);
+    await mkdir(join(workspace, "uumail"));
+    const result = await run(["doctor", "--workspace", workspace], {
+      runDir,
+      env: { DSH_BIN: bin, HUNDSUN_PUBLIC_API_KEY: "test-key" },
+    });
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("[PASS] workspace.container");
+    expect(result.out).toContain("layout=superproject");
+    expect(result.out).toContain("[WARN] workspace.submodules");
+    expect(result.out).toContain("子模块未初始化：uumail（目录为空）");
+  });
+
   test("doctor 报告自报身份的取值、来源与开发期提示", async () => {
     const runDir = await mkdtemp(join(tmpdir(), "afc-doc-"));
     const bin = join(runDir, "fake-dsh");

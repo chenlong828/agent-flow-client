@@ -8,7 +8,7 @@ import { isUserDshPath } from "./config.ts";
 import { isValidClientId } from "./client-identity.ts";
 import type { CheckResult } from "../observability/doctor.ts";
 import { resolveDshCommand, dshCommandExists, probeDshVersion } from "../runtime/dsh.ts";
-import { findProjectRoot } from "../workspace/project-root.ts";
+import { WorkspaceAdmin } from "../workspace/admin.ts";
 import { FileStore } from "../store/store.ts";
 import { StoreAdmin } from "../store/admin.ts";
 import { RuntimeAdmin } from "../runtime/admin.ts";
@@ -140,23 +140,6 @@ async function pathChecks(config: AppConfig): Promise<CheckResult[]> {
   ];
 }
 
-function workspaceChecks(workspacePath: string): CheckResult[] {
-  const root = findProjectRoot(workspacePath);
-  const hasGit = fileExists(join(workspacePath, ".git"));
-  return [
-    {
-      id: "workspace.project_root",
-      title: "project root 不上浮",
-      status: root !== workspacePath || hasGit ? "fail" : "pass",
-      detail: `findProjectRoot=${root}${hasGit ? "，容器根存在 .git" : ""}`,
-      remediation:
-        root !== workspacePath || hasGit
-          ? "容器根必须位于任何 git 仓库之外且自身没有 .git，否则 DSH 看不到 .dsh/skills"
-          : undefined,
-    },
-  ];
-}
-
 async function dshChecks(env: Record<string, string | undefined>): Promise<CheckResult[]> {
   const dsh = resolveDshCommand(env);
   if (dsh === null) {
@@ -223,7 +206,7 @@ export async function collectDoctorChecks(options: DoctorOptions): Promise<Check
     ...(await new RuntimeAdmin().diagnose(config.acp.dshHome)),
   ];
   if (options.workspacePath !== undefined) {
-    checks.push(...workspaceChecks(options.workspacePath));
+    checks.push(...(await new WorkspaceAdmin().diagnose(options.workspacePath)));
   }
   checks.push({
     id: "scheduler.connectivity",

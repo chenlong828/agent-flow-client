@@ -1,4 +1,4 @@
-import type { AssetPort, ContainerPaths, InstalledSkills, InstanceHandle, JournalPort, PromptOptions, SessionLogPort, SessionOutcome, SessionRef, SkillPackageRef, WorkspacePort } from "../../../src/components/executor/ports.ts";
+import type { AssetPort, ContainerPaths, InstalledSkills, InstanceHandle, JournalPort, LayoutReport, PromptOptions, SessionLogPort, SessionOutcome, SessionRef, SkillPackageRef, WorkspacePort } from "../../../src/components/executor/ports.ts";
 import type { InstanceId, OrphanRecord, TaskRecord, TaskResult, TaskState } from "../../../src/components/executor/types.ts";
 
 export const container: ContainerPaths = {
@@ -87,8 +87,8 @@ export class FakeWorkspace implements WorkspacePort {
   async ensureContainer(): Promise<ContainerPaths> {
     return container;
   }
-  async validate() {
-    return { ok: true, root: container.root, repos: [], issues: [] };
+  async validate(): Promise<LayoutReport> {
+    return { ok: true, root: container.root, layout: "container", repos: [], issues: [], warnings: [] };
   }
   async resolve(_container: ContainerPaths, relPath: string): Promise<string> {
     return relPath;

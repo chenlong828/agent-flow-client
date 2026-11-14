@@ -11,27 +11,14 @@ import type {
 } from "../executor/ports.ts";
 import { findProjectRoot } from "./project-root.ts";
 import { WorkspaceError } from "./errors.ts";
-
-function inside(child: string, parent: string): boolean {
-  const rel = relative(parent, child);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
-
-async function pathKind(path: string): Promise<"missing" | "dir" | "file" | "symlink"> {
-  try {
-    const info = await lstat(path);
-    if (info.isSymbolicLink()) return "symlink";
-    return info.isDirectory() ? "dir" : "file";
-  } catch {
-    return "missing";
-  }
-}
+import { inside, pathKind } from "./fs-path.ts";
+import { readLayout, submoduleWarnings } from "./superproject.ts";
 
 const CLEAN_TARGETS = [".dsh/skills", ".dsh/.staging", ".dsh/.skills.previous", ".dsh/.skills-digest", ".dsh/.skills-layout", ".dsh/.install.lock"];
 
 /**
  * 工作区容器（CMP-workspace）：校验预置容器、约束路径、安装点与清理。
- * client 只写 `.dsh` 下自己生成的内容（不 clone、不检出、不建仓库）。
+ * client 只写 `.dsh` 下自己生成的内容（不 clone、不检出、不建仓库、不执行任何 git 命令）。
  */
 export class FileWorkspace implements WorkspacePort {
   readonly #containers = new Map<InstanceId, ContainerPaths>();
@@ -58,20 +45,21 @@ export class FileWorkspace implements WorkspacePort {
 
   async validate(container: ContainerPaths): Promise<LayoutReport> {
     const issues: string[] = [];
+    let layout: LayoutReport["layout"] = "container";
+    let warnings: string[] = [];
     if ((await pathKind(container.root)) !== "dir") {
       issues.push(`容器根不存在或不是目录：${container.root}`);
     } else {
       if (findProjectRoot(container.root) !== container.root) {
         issues.push("容器根位于 git 仓库内，projectRoot 上浮");
       }
-      if ((await pathKind(join(container.root, ".git"))) !== "missing") {
-        issues.push("容器根不应有 .git");
-      }
+      layout = await readLayout(container.root);
+      if (layout === "superproject") warnings = await submoduleWarnings(container.root);
       const dshKind = await pathKind(join(container.root, ".dsh"));
       if (dshKind === "symlink" || dshKind === "file") issues.push(".dsh 必须是容器内目录，不能是符号链接/文件");
     }
     const repos = await readRepos(container.root);
-    return { ok: issues.length === 0, root: container.root, repos, issues };
+    return { ok: issues.length === 0, root: container.root, layout, repos, issues, warnings };
   }
 
   /** 绝对路径 + 位于工作区之下（含符号链接逃逸检查）；不创建。 */

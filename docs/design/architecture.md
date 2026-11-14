@@ -2,7 +2,7 @@
 layer: design
 module: global
 status: current
-updated: 2026-11-12
+updated: 2026-11-14
 ---
 
 # 执行面客户端架构
@@ -28,7 +28,7 @@ updated: 2026-11-12
 | 进程 | 一个 client 进程；`serve` 常驻，`run` 单次；同一执行内核 |
 | 实例 | 一实例一个 DSH 进程；同一实例允许多个任务并发（共享容器与同一技能集 digest） |
 | 任务 | 一个 `taskId` 一个 session；技能集随任务下发；任务结束关 session，不复用 |
-| 工作区 | 一实例一个**容器**：准备阶段预置，含 0..N 个带 `.git` 的仓库；任务共享；产物默认保留 |
+| 工作区 | 一实例一个**容器**：准备阶段预置，含 0..N 个带 `.git` 的仓库；根自身可以是 git 超级项目（提交子模块指针）；任务共享；产物默认保留 |
 | 技能 | 任务级集合；落地在容器根 `.dsh/skills/<name>/SKILL.md`（每技能一目录，包内 `scripts/`、`references/` 随之）；替换不叠加、按 digest 幂等；同容器安装串行 |
 | 容量 | 本地 `maxConcurrent`；`poll` 上报 `capacity.free`；调度器不超卖 |
 | 判活 | `poll` 长轮询（服务端挂起 30s、客户端 40s 超时）；没有独立心跳端点 |
@@ -234,7 +234,7 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 6. 取消是实例级：`cancelInstances` 命中该实例全部在跑任务，立即终止，结果 `cancelled`。
 7. 跨边界只传控制信息；产物、完整会话记录、日志不出本机。
 8. 路径限制在容器内，拒绝越界与跟随越界符号链接；容器根即技能根。
-9. 容器预置：client 不 clone、不检出、不建仓库；容器根不建 `.git`，位于任何仓库之外。
+9. 容器预置：client 不 clone、不检出、不建仓库、不执行 git 命令；容器根自身可以是 git 仓库/超项目，但必须满足 `findProjectRoot(容器根) === 容器根`（不能位于别人的仓库内）；`.dsh` 必须是真实目录。
 10. 工作区默认保留；v2 没有清理指令，回收由运维按 `instanceId` 处理。
 11. `poll` 的 `running[]` 必须包含全部在跑任务；`finished[]` 必须包含全部「有结果未确认」任务。
 12. `stop` 后停止领取，跑完手上任务退出 0；第二次信号强杀。
@@ -260,14 +260,17 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 ## 8. 工作区与技能可见性
 
 ```
-<workspace>/                    ← 容器根：技能根、session cwd；位于任何 git 仓库之外
+<workspace>/                    ← 容器根：技能根、session cwd；可以是 git 超项目根
+├── .git/ (.gitmodules)         ← 可选：超级项目
 ├── .dsh/skills/                ← 当前节点的技能集（替换式刷新；脚本随包）
 ├── repo-a/    (.git)           ← 准备阶段预置的代码/文档容器
-└── repo-b/    (.git)
+└── uumail/    (.git)           ← 子模块；未初始化时 doctor warn，不阻断
 ```
 
 - 容器由准备阶段预置，`TaskRequest.workspacePath` 带容器路径（编排层参数）；仓库清单由目录本身表达。
-- 容器根不建 `.git`，且必须位于任何仓库之外；否则 `projectRoot` 上浮，`.dsh/skills` 不可见。
+- 容器根可以是 git 仓库/超项目，也可以在任何仓库之外；两种情况都必须满足 `findProjectRoot(容器根) === 容器根`（不能位于别人的仓库内），否则 `.dsh/skills` 不可见。
+- `.git` 可以是目录或文件（worktree、submodule 指针）；client 不执行任何 git 命令（不 clone、不 submodule update、不 commit）。
+- 子模块未初始化（目录不存在/为空/缺 `.git`）只产生 doctor 告警，不阻断任务；由人或节点在项目目录内执行 `git submodule update --init`。
 - DSH 的项目根取 `cwd` 向上最近的 `.git`，否则 `cwd`；因此 cwd 必须是容器根。
 - 技能可见性：实例 profile 保留 `includeDefaultRoots: true`，把 `dshHome` / `agentsHome` / `bundledSkillDir` 指向三个真实空目录；**只屏蔽全局根，保留项目 `.dsh` / `.agents`**。项目自带 `.agents/skills` 仍可见，同名时 `.dsh` 优先（rank 100 < 200）。
 - 不要用 `DSH_HOME` 环境变量关技能；它同时影响 settings、credentials 等插件。

@@ -4,12 +4,31 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileWorkspace } from "../../../src/components/workspace/workspace.ts";
 import { WorkspaceError } from "../../../src/components/workspace/errors.ts";
-import type { InstanceHandle } from "../../../src/components/executor/ports.ts";
+import type { ContainerPaths, InstanceHandle } from "../../../src/components/executor/ports.ts";
 
 const instance: InstanceHandle = { instanceId: "i-1", pid: process.pid };
 
 async function container(): Promise<string> {
   return await mkdtemp(join(tmpdir(), "afc-ws-"));
+}
+
+function paths(root: string): ContainerPaths {
+  return { root, skillRoot: join(root, ".dsh", "skills"), stagingRoot: join(root, ".dsh", ".staging") };
+}
+
+/** 夹具：根是 git 超项目，`.gitmodules` 声明子模块 uumail。 */
+async function superproject(submodule: "initialized" | "empty" | "no-git" | "missing"): Promise<string> {
+  const root = await container();
+  await mkdir(join(root, ".git"));
+  await writeFile(join(root, ".gitmodules"), `[submodule "uumail"]\n\tpath = uumail\n\turl = https://example.com/uumail.git\n`);
+  if (submodule !== "missing") await mkdir(join(root, "uumail"));
+  if (submodule === "initialized") {
+    await writeFile(join(root, "uumail", ".git"), "gitdir: ../.git/modules/uumail\n");
+    await writeFile(join(root, "uumail", "README.md"), "uumail\n");
+  } else if (submodule === "no-git") {
+    await writeFile(join(root, "uumail", "README.md"), "uumail\n");
+  }
+  return root;
 }
 
 describe("容器校验", () => {
@@ -24,20 +43,81 @@ describe("容器校验", () => {
     expect((await workspace.validate(paths)).ok).toBe(true);
   });
 
-  test("容器根有 .git 判 layout_invalid 且不创建 .dsh", async () => {
-    const root = await container();
-    await mkdir(join(root, ".git"));
+  test("根是 superproject（.git 目录 + .gitmodules + 已初始化子模块）通过且无告警", async () => {
+    const root = await superproject("initialized");
     const workspace = new FileWorkspace();
-    await expect(workspace.ensureContainer(instance, root)).rejects.toMatchObject({ code: "layout_invalid" });
-    await expect(lstat(join(root, ".dsh"))).rejects.toThrow();
+    const report = await workspace.validate(paths(root));
+    expect(report.ok).toBe(true);
+    expect(report.layout).toBe("superproject");
+    expect(report.warnings).toEqual([]);
+    const created = await workspace.ensureContainer(instance, root);
+    expect(created.root).toBe(await realpath(root));
+    expect((await lstat(join(await realpath(root), ".dsh"))).isDirectory()).toBe(true);
   });
 
-  test("容器根位于外层仓库下判 layout_invalid", async () => {
+  test("superproject 子模块目录为空：ok=true，warnings 报子模块未初始化", async () => {
+    const root = await superproject("empty");
+    const workspace = new FileWorkspace();
+    const report = await workspace.validate(paths(root));
+    expect(report.ok).toBe(true);
+    expect(report.warnings).toEqual(["子模块未初始化：uumail（目录为空）"]);
+    const created = await workspace.ensureContainer(instance, root);
+    expect(created.root).toBe(await realpath(root));
+  });
+
+  test("superproject 子模块缺 .git：ok=true，warnings 报子模块未初始化", async () => {
+    const root = await superproject("no-git");
+    const report = await new FileWorkspace().validate(paths(root));
+    expect(report.ok).toBe(true);
+    expect(report.warnings).toEqual(["子模块未初始化：uumail（缺少 .git）"]);
+  });
+
+  test("superproject 子模块目录不存在：ok=true，warnings 报子模块未初始化", async () => {
+    const root = await superproject("missing");
+    const report = await new FileWorkspace().validate(paths(root));
+    expect(report.ok).toBe(true);
+    expect(report.warnings).toEqual(["子模块未初始化：uumail（目录不存在）"]);
+  });
+
+  test("根 .git 是文件（worktree/子模块指针）也接受", async () => {
+    const root = await container();
+    await writeFile(join(root, ".git"), "gitdir: ../.git/worktrees/container\n");
+    const report = await new FileWorkspace().validate(paths(root));
+    expect(report.ok).toBe(true);
+    expect(report.layout).toBe("container");
+    expect(report.warnings).toEqual([]);
+  });
+
+  test("根不是仓库、子目录是仓库：通过且 repos 列出子仓库", async () => {
+    const root = await container();
+    await mkdir(join(root, "repo-a", ".git"), { recursive: true });
+    const report = await new FileWorkspace().validate(paths(root));
+    expect(report.ok).toBe(true);
+    expect(report.layout).toBe("container");
+    expect(report.repos).toEqual(["repo-a"]);
+    expect(report.warnings).toEqual([]);
+  });
+
+  test("容器根位于外层仓库下仍判 layout_invalid，文案不变", async () => {
     const base = await container();
     await mkdir(join(base, ".git"));
     const root = join(base, "container");
     await mkdir(root);
     const workspace = new FileWorkspace();
+    const error = await workspace.ensureContainer(instance, root).catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(WorkspaceError);
+    expect(error).toMatchObject({ code: "layout_invalid" });
+    expect((error as WorkspaceError).message).toBe("容器根位于 git 仓库内，projectRoot 上浮");
+  });
+
+  test(".dsh 是符号链接仍判 layout_invalid", async () => {
+    const root = await container();
+    const outside = await container();
+    await symlink(outside, join(root, ".dsh"));
+    const workspace = new FileWorkspace();
+    const report = await workspace.validate(paths(root));
+    expect(report.ok).toBe(false);
+    expect(report.issues).toEqual([".dsh 必须是容器内目录，不能是符号链接/文件"]);
     await expect(workspace.ensureContainer(instance, root)).rejects.toMatchObject({ code: "layout_invalid" });
   });
 
