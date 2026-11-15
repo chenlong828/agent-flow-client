@@ -58,7 +58,7 @@ docs/
 │   │   └── result.md
 │   ├── 2026-11-12-contract-v3-handoff/     ← 执行面契约 v3 交接与实现（进行中）
 │   │   ├── brief.md
-│   │   ├── executor-http-v3.md             ← 调度器侧权威副本
+│   │   ├── executor-http-v3.md             ← 2026-11-12 交接快照（§4.1 #3 已由 W-01 修订）
 │   │   ├── contract-diff.md
 │   │   ├── response.md                     ← 调度器侧对 client 评审的回复
 │   │   └── review.md                       ← client 评审与两轮确认

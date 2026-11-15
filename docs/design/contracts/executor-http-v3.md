@@ -2,7 +2,7 @@
 layer: design
 module: execution-plane
 status: current
-updated: 2026-11-12
+updated: 2026-11-15
 contract: executor-http-v3
 protocolVersion: 3
 supersedes: executor-http-v2
@@ -10,9 +10,9 @@ supersedes: executor-http-v2
 
 # 执行面契约 v3：任务、会话日志与运行归档
 
-> 权威在本文件（调度器侧）。client 仓库的同步副本：`agent-flow-client/docs/design/contracts/executor-http-v3.md`（交接件见 `agent-flow-client/docs/works/2026-11-12-contract-v3-handoff/`）；冲突时以本文件为准。
+> 本文件是调度器仓库权威文件的同步副本：`agent-flow-orchaster/docs/design/contracts/executor-http-v3.md`（交接快照见 `docs/works/2026-11-12-contract-v3-handoff/`）；冲突时以调度器侧为准。
 > 状态：**现行契约**。`P-01`–`P-03` 已实现（2026-11-11）；`P-04`/`P-05`、`taskSpacePath`、归档电平字段随运行编排实现（`T-RUN-06`）。相对 v2 的差异见 §11。
-> 修订：2026-11-12 按 client 评审（`agent-flow-client/docs/works/2026-11-12-contract-v3-handoff/review.md`）修订 `B-01`–`B-04`、`D-01`–`D-09`；见 §11.4。
+> 修订：2026-11-12 按 client 评审（`docs/works/2026-11-12-contract-v3-handoff/review.md`）修订 `B-01`–`B-04`、`D-01`–`D-09`；见 §11.4。2026-11-15 修订 `workspacePath` 前置条件，允许根自身是 git 仓库/超项目；见 §11.5。
 > v2 已由本版取代并归档：`docs/history/works/2026-11-12-contract-v3-handoff/executor-http-v2.md`，不再作为设计依据。v2 → v3 是开发期版本替换，不设兼容窗口、不保留双版本并行期。
 
 **端点**：`poll`（取任务 + 上报在跑状态 + 收停止/取消 + 收归档指令）、`result`（交结果）、`skill-packages`（取制品）、`session-log`（上传会话日志）、`run archive`（上传运行归档）。
@@ -201,7 +201,7 @@ v3 在此之上加两件事：**执行前有 task-space**（工作区内按 run 
 
 1. `taskId` 是任务的唯一标识（UUIDv7 字符串），重派时不变；`attempt` 单调递增。
 2. `prompt` 是 opaque 文本，client 不解析；超过 `maxPromptBytes` 的任务 client 拒绝执行并以 `failed(scheduler)` 上报（此时按不变式 5 先传 0 行空日志）。
-3. `workspacePath` 是准备阶段预置的容器根：绝对、存在、可写、位于任何 git 仓库之外；client 只校验，不创建、不 clone。
+3. `workspacePath` 是准备阶段预置的容器根：绝对、存在、可写；根自身可以是 git 仓库或超项目，但不得位于任何其它 git 仓库之内（向上最近的 `.git` 只能是根本身或不存在）；client 只校验，不创建、不 clone、不执行任何 git 命令。
 4. `taskSpacePath` 是本次运行的 task-space：绝对路径、位于 `workspacePath` 之下。client 收到后：校验绝对路径且在 `workspacePath` 之下 → 不存在则 `mkdir -p` 创建 → 建 session。client **只创建目录，不写目录内容**；`intent.md` 等文件由节点内的模型按 prompt 指令写入。
 5. 启动诉求**不通过独立字段下发**：编排侧把它写进首个执行节点的 `prompt`，并要求该节点把诉求落到 `<taskSpacePath>/intent.md`；后续节点从 prompt 得知 task-space 路径与「诉求在 intent.md」。`prompt` 总长受 `maxPromptBytes` 约束。
 6. `skillSet` 随任务下发；同一容器上并发任务共享同一 `digest`（调度器保证，见 §6 `S-06`）。
@@ -612,6 +612,12 @@ type ArchiveAck = {
 | `D-10` | 归档确认后仍保留本地 task-space（`C-12`） |
 | `H-01` | 响应与 `details` 的 `bytes` 明确为压缩后大小 |
 | `H-02` | `P-04` 的 `404 task_not_found` → client 丢弃上传与结果，停止重试 |
+
+### 11.5 2026-11-15 修订（工作区根允许超项目）
+
+| 编号 | 修订 |
+|---|---|
+| `W-01` | §4.1 #3：`workspacePath` 不再要求「位于任何 git 仓库之外」；根自身可以是 git 仓库/超项目，约束改为「不位于任何其它 git 仓库之内」，与 client 的 `findProjectRoot(workspacePath) === workspacePath` 校验一致。无 wire 变化，不升协议版本 |
 
 ## 12 待定与已接受风险
 

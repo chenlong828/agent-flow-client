@@ -1,8 +1,8 @@
 ---
-layer: design
+layer: works
 module: execution-plane
-status: current
-updated: 2026-11-12
+status: active
+updated: 2026-11-15
 contract: executor-http-v3
 protocolVersion: 3
 supersedes: executor-http-v2
@@ -10,8 +10,8 @@ supersedes: executor-http-v2
 
 # 执行面契约 v3：任务、会话日志与运行归档
 
-> 权威在本文件（调度器侧）。client 仓库的同步副本：`agent-flow-client/docs/design/contracts/executor-http-v3.md`（交接件见 `agent-flow-client/docs/works/2026-11-12-contract-v3-handoff/`）；冲突时以本文件为准。
-> 状态：**现行契约**。`P-01`–`P-03` 已实现（2026-11-11）；`P-04`/`P-05`、`taskSpacePath`、归档电平字段随运行编排实现（`T-RUN-06`）。相对 v2 的差异见 §11。
+> 快照说明：本文件是 2026-11-12 交接时的契约副本，仅作记录，不再作为现行依据；§4.1 #3 已于 2026-11-15 修订（`W-01`）。现行文本以调度器仓库 `agent-flow-orchaster/docs/design/contracts/executor-http-v3.md` 为准，client 同步副本见 [`docs/design/contracts/executor-http-v3.md`](../../design/contracts/executor-http-v3.md) §11.5。
+> 交接时状态：**现行契约**。`P-01`–`P-03` 已实现（2026-11-11）；`P-04`/`P-05`、`taskSpacePath`、归档电平字段随运行编排实现（`T-RUN-06`）。相对 v2 的差异见 §11。
 > 修订：2026-11-12 按 client 评审（`agent-flow-client/docs/works/2026-11-12-contract-v3-handoff/review.md`）修订 `B-01`–`B-04`、`D-01`–`D-09`；见 §11.4。
 > v2 已由本版取代并归档：`docs/history/works/2026-11-10-executor-contract-v2/executor-http-v2.md`，不再作为设计依据。v2 → v3 是开发期版本替换，不设兼容窗口、不保留双版本并行期。
 

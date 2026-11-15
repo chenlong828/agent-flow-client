@@ -35,7 +35,8 @@ updated: 2026-11-14
 
 ## Hold
 
-1. `docs/design/contracts/executor-http-v3.md` §4.1 不变式 3 的「位于任何 git 仓库之外」旧表述未改（契约权威在调度器侧，本次要求无契约变更）。已记入 `result.md` 未决问题，转调度器侧契约维护。
+1. ~~`docs/design/contracts/executor-http-v3.md` §4.1 不变式 3 的「位于任何 git 仓库之外」旧表述未改（契约权威在调度器侧，本次要求无契约变更）。已记入 `result.md` 未决问题，转调度器侧契约维护。~~
+   已解除（2026-11-15）：`W-01` 修订落地，权威契约与 client 同步副本同批更新；无 wire 变化，不升协议版本。
 2. `.gitignore` 缺项提示未做（可选项），已记入 `CMP-workspace` 规格开放问题。
 
 ## 确认记录

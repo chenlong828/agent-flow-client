@@ -21,7 +21,7 @@ updated: 2026-11-12
 | 开发环境的 DSH 构建落后源码 | 插件静默缺失（实测 7 个 bundle 跳过），能力与生产不一致 | 固定发行版与版本 pin；`doctor` 检查加载结果；不用源码 checkout 的陈旧 `lib/` 做验收。S0 验证前已重建 checkout（install + build:lib） |
 | 崩溃后工具子进程变孤儿 | 重启后残留 sleep/脚本进程，可能占端口、写文件或泄漏资源 | client 取消/关闭/崩溃统一按进程组/作业树强杀，重启前清理；S0-11 实测 dsh 被 SIGKILL 后 bash 子进程仍存活 |
 | 默认技能根串味 | 节点看到用户级/打包技能，行为不可控 | 实例 profile 保留 `includeDefaultRoots`，把 `dshHome` / `agentsHome` / `bundledSkillDir` 指向三个真实空目录；项目 `.dsh` / `.agents` 保留；不用 `DSH_HOME` 关技能（S0-05 的严格隔离只作探针） |
-| 容器根位于外层 git 仓库下 | `projectRoot` 上浮，`.dsh/skills` 不可见，模型看不到节点技能 | 容器根放 client 自有目录、位于任何仓库之外；`doctor` 校验 `findProjectRoot(容器根) === 容器根`；不给容器根建 `.git` |
+| 容器根位于外层 git 仓库下 | `projectRoot` 上浮，`.dsh/skills` 不可见，模型看不到节点技能 | 容器根不放在其它仓库内（根自身可为仓库/超项目）；`doctor` 校验 `findProjectRoot(容器根) === 容器根`；client 不建 `.git`、不执行 git 命令 |
 | 长轮询被代理/NAT 空闲断开 | 误判离线、控制事件延迟 | 心跳间隔 30s（小于空闲超时）；自动重连 + 退避；最终以租约过期裁决 |
 | 嵌套沙箱下 bash 后台/越界命令失败 | 验证与运行环境受限，工具调用报 SANDBOX_UNAVAILABLE | 让 dsh 运行在非嵌套沙箱；脚本/命令写工作区内；S0-06/11 已验证工作区内前台脚本可用 |
 | 权限请求缺少工具标识 | 无法按工具名做细粒度白名单 | 按会话/节点整体授权；必要时从 `tool_call` update 关联工具；S0-06 实测 title/kind 为 null |
