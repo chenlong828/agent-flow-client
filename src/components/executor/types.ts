@@ -69,6 +69,8 @@ export type TaskRequest = {
   instanceId: InstanceId;
   nodeId: NodeId;
   attempt: number;
+  /** v3 加法：运行归属；手工任务可缺。 */
+  runId?: string;
   prompt: string;
   workspacePath: string;
   taskSpacePath: string;

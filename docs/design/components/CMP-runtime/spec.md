@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-runtime
 status: active
-updated: 2026-11-12
+updated: 2026-11-17
 ---
 
 # CMP-runtime 组件规格
@@ -226,3 +226,10 @@ interface RuntimeAdmin {
 - DSH 版本兼容窗口与升级策略（OQ-003/OQ-008）。
 - ACP `session/close` 在 prompt 进行中的行为，需 S0 复验。
 - 孤儿进程回收的跨平台实现（macOS/Linux 进程组；Windows 后补，OQ-007）。
+
+## 8. 观测面 v1（2026-11-17）
+
+- `session/new`/`prompt`/`session/update`/`request_permission`/`close` 经 `ObservationPort` 回调输出 attempt/session 事件；`ObservationRecorder` 负责写入。
+- `session/request_permission` 的裁决方向（allow/deny）通过 `RuntimeOptions.onPermission` 回调交给 recorder；request 的 toolCallId 由 mapper 关联工具名/参数摘要。
+- session 关闭后由 executor 调用 `ObservationRecorder.archive`：从实例 `DSH_HOME/sessions/<project>/<sessionId>/session.*` 找到原始文件，复制到 `<stateRoot>/observability/sessions/<sessionId>/session.v4.jsonl.zstd`，计算 sha256。
+- raw 归档是冷路径；失败只标记 `archive=failed`，不影响任务结果。

@@ -2,12 +2,13 @@
 layer: works
 module: global
 status: active
-updated: 2026-11-07
+updated: 2026-11-17
 ---
 
-# 观测 HTTP P1 评审记录（调度器附评处置）
+# 观测面 P1 评审记录（v1，调度器附评处置）
 
-> 评审对象：[`proposal.md`](proposal.md)（2026-11-06 设计稿）。
+> **适用范围**：本文件只评审 v1（attempt 索引 + 归一化日志），对应 [`proposal-v1.md`](proposal-v1.md)。2026-11-17 已重写为 v2（session 为中心），v2 需重新评审；`OB-01` 的默认绑定/内容风险在 v2 变化最大。
+> 评审对象：[`proposal-v1.md`](proposal-v1.md)（2026-11-06 设计稿）。
 > 评审来源：`../../../../agent-flow-orchaster/docs/works/2026-11-05-scheduler-contract-review/review.md` §9（2026-11-06，P1 附评，独立对象）。
 > 结论：**方向通过；`OB-02`–`OB-09` 已落稿；`OB-01` 经产品确认（2026-11-07）保持默认 `0.0.0.0` + 可选 token，作为已接受风险，P1 确认门签字完成**。
 

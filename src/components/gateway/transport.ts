@@ -7,6 +7,8 @@ export type TransportOptions = {
   clientId?: string | null;
   /** 可选接入地址（`X-Client-Address`），仅供服务端展示。 */
   clientAddress?: string | null;
+  /** 观测面 URL（`X-Observability-Url`）；仅 enabled 时设置。 */
+  observabilityUrl?: string | null;
   fetchImpl?: typeof fetch;
 };
 
@@ -55,10 +57,11 @@ export class HttpTransport {
       "X-Request-Id": crypto.randomUUID(),
       ...extraHeaders,
     };
-    const { token, clientId, clientAddress } = this.#options;
+    const { token, clientId, clientAddress, observabilityUrl } = this.#options;
     if (token !== null) headers.Authorization = `Bearer ${token}`;
     if (clientId !== undefined && clientId !== null) headers["X-Client-Id"] = clientId;
     if (clientAddress !== undefined && clientAddress !== null) headers["X-Client-Address"] = clientAddress;
+    if (observabilityUrl !== undefined && observabilityUrl !== null && observabilityUrl !== "") headers["X-Observability-Url"] = observabilityUrl;
     if (hasBody) headers["Content-Type"] = "application/json; charset=utf-8";
     return headers;
   }

@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-cli
 status: active
-updated: 2026-11-14
+updated: 2026-11-17
 ---
 
 # CMP-cli 组件规格
@@ -266,3 +266,11 @@ config → observability → store → workspace → assets → runtime → gate
 - 打包态 `process.execPath` 与源码态包根解析需在 S0 实测（REQ-0001 待确认项）。
 - ~~`stateRoot` 默认与平台目录~~ 已定（2026-11-08）：`<runDir>/.agent-flow-client`；不可写退出 4，不静默回退。
 - 权限策略默认值（`allow` / `deny`）与是否可配置，需在 S0 定。
+
+## 观测面 v1（2026-11-17）
+
+- 新增 `[observability]` / `[observability.http]` 配置：enabled/required/bind/port/advertise_url/token/max_streams/raw_enabled/rich_stream_enabled/retention。
+- 非 loopback 无 token 在配置层拒绝（`observability_insecure`）；token 空时回退 `[scheduler].token`。
+- `serve-compose` 启动 `CMP-observer`（`required=false` 失败降级为 `observability_disabled`），并把 `ObservationRecorder` 注入 executor；`run` 不启动。
+- poll 请求在 enabled 时带 `X-Observability-Url`；`TaskRequest.runId` 写 `FileRunRegistry`。
+- 退出时停止 observer；`ServeDeps` 增加 `runs`/`observer`。

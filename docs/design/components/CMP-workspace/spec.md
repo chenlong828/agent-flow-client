@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-workspace
 status: active
-updated: 2026-11-14
+updated: 2026-11-17
 ---
 
 # CMP-workspace 组件规格
@@ -199,3 +199,11 @@ interface WorkspaceAdmin {
 - 大目录清理是否分片/后台化，需 S0 实测。
 - 磁盘空间阈值与低空间行为（M1）。
 - 是否在 `doctor` 增加 `.gitignore` 缺项提示（可选，本版未做）。
+
+## 观测面 v1（2026-11-17）
+
+- 新增只读 `WorkspaceFileReader`：`list` 一层目录、`read` 文本前 1 MiB；供 `O-09`/`O-10`。
+- 路径只接受 run-scoped 相对 POSIX 路径；拒绝 `..`/`.`/空段/绝对路径/反斜杠/NUL/超长；符号链接读取拒绝，realpath 必须仍在根内。
+- 二进制/非法 UTF-8 返回 `content=null,binary=true`；目录/符号链接当文件读返回 `unsupported_file`。
+- 不写、不缓存、不做一致性快照；读操作异步，单请求不阻塞 poll/SSE。
+- 验证：`tests/components/observer/files.test.ts`。

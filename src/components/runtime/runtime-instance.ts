@@ -26,7 +26,15 @@ export async function startInstance(
       initializeTimeoutMs: 10_000,
       ...(options.onStderr === undefined ? {} : { onStderr: options.onStderr }),
       onNotification: (method, params) => state.applyNotification(method, params),
-      onServerRequest: (method, params) => Promise.resolve(permissionDecision(method, params, options.permission)),
+      onServerRequest: (method, params) => {
+        const decision = permissionDecision(method, params, options.permission);
+        if (method === "session/request_permission") {
+          const sessionId = String((params as { sessionId?: unknown } | undefined)?.sessionId ?? "");
+          const allowed = (decision as { outcome?: { outcome?: string } }).outcome?.outcome === "selected";
+          options.onPermission?.(sessionId, params, allowed ? "allow" : "deny");
+        }
+        return Promise.resolve(decision);
+      },
       onExit: (code) => {
         options.onStderr?.(`DSH 进程退出：code=${String(code)}`);
         state.removeInstance(instance.instanceId);

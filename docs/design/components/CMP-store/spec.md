@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-store
 status: active
-updated: 2026-11-12
+updated: 2026-11-17
 ---
 
 # CMP-store 组件规格（v2）
@@ -61,3 +61,11 @@ type TaskRecord = {
 ## 5. 开放问题
 
 - journal 保留窗口（OQ-021）；v2 无压缩，长期运行需运维轮转。
+
+## 观测面 v1（2026-11-17）
+
+- 新增 `FileRunRegistry`：`<stateRoot>/runs/<runId>.json`，记录 `runId/instanceId/workspacePath/taskSpacePath/firstSeenAt/updatedAt/archivedAt`。
+- 唯一写入口；临时文件 + rename 原子写；从磁盘重建，损坏文件跳过；runId 安全映射防目录逃逸。
+- 保留：活跃 run 不清理；归档 run 默认 7 天、未归档 30 天；清理只删注册表，不删 workspace/task-space。
+- `CMP-executor` 在任务接收时 upsert；`serve-loops` 在 ArchiveRequest 时 upsert `archivedAt`。
+- 验证：`tests/components/store/runs.test.ts`。

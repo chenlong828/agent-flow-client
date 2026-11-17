@@ -9,6 +9,7 @@ import type { PollResponse, TaskRequest, TaskResult } from "../executor/types.ts
 const MAX_PROMPT_BYTES = 1048576;
 const MAX_SESSION_LOG_BYTES = 67108864;
 const MAX_ARCHIVE_BYTES = 536870912;
+const ignore = (): undefined => undefined;
 
 /** 单条 poll 循环：取任务、上报 running/finished、收 stop/cancelInstances。 */
 export async function pollLoop(ctx: ServeContext): Promise<void> {
@@ -124,6 +125,13 @@ async function archiveRun(ctx: ServeContext, request: import("../executor/types.
       logger.log({ level: "warn", event: "archive.skipped", msg: `runId=${request.runId} 本地无 task-space` });
       return;
     }
+    await ctx.deps.runs.upsert({
+      runId: request.runId,
+      instanceId: request.instanceId,
+      workspacePath: request.workspacePath,
+      taskSpacePath: request.taskSpacePath,
+      archivedAt: new Date().toISOString(),
+    }).catch(ignore);
     const packed = await workspace.packTaskSpace(request.taskSpacePath, target);
     if (packed.bytes > MAX_ARCHIVE_BYTES) {
       logger.log({ level: "warn", event: "archive.too_large", msg: `runId=${request.runId} bytes=${packed.bytes}` });
@@ -146,7 +154,7 @@ async function archiveRun(ctx: ServeContext, request: import("../executor/types.
     }
     logger.log({ level: "warn", event: "archive.retry", msg: `runId=${request.runId}：${(error as Error).message}` });
   } finally {
-    await rm(target, { force: true }).catch(() => undefined);
+    await rm(target, { force: true }).catch(ignore);
   }
 }
 
@@ -162,7 +170,7 @@ async function ensureSessionLog(ctx: ServeContext, entry: { result: TaskResult }
     return "ok";
   } catch (error) {
     if (error instanceof GatewayError && error.code === "task_not_found") {
-      await ctx.deps.store.mark(taskId, "reported").catch(() => undefined);
+      await ctx.deps.store.mark(taskId, "reported").catch(ignore);
       ctx.finished.delete(taskId);
       return "drop";
     }
@@ -206,14 +214,14 @@ async function reportOne(ctx: ServeContext, taskId: string): Promise<void> {
     if (ack.accepted) {
       await ctx.deps.store.mark(taskId, "reported");
       ctx.finished.delete(taskId);
-      await ctx.deps.sessionLogs.clear(taskId, entry.result.attempt).catch(() => undefined);
+      await ctx.deps.sessionLogs.clear(taskId, entry.result.attempt).catch(ignore);
       ctx.logReady.delete(`${taskId}#${entry.result.attempt}`);
       ctx.deps.logger.log({ level: "info", event: "task.reported", attemptId: taskId, msg: `status=${entry.result.status}` });
       return;
     }
     await ctx.deps.store.mark(taskId, "reported");
     ctx.finished.delete(taskId);
-    await ctx.deps.sessionLogs.clear(taskId, entry.result.attempt).catch(() => undefined);
+    await ctx.deps.sessionLogs.clear(taskId, entry.result.attempt).catch(ignore);
     ctx.logReady.delete(`${taskId}#${entry.result.attempt}`);
     ctx.deps.logger.log({ level: "info", event: "task.rejected", attemptId: taskId, msg: "accepted=false，丢弃本地副本" });
   } catch (error) {
@@ -228,7 +236,7 @@ async function reportOne(ctx: ServeContext, taskId: string): Promise<void> {
     }
     if (error instanceof GatewayError && (error.code === "payload_too_large" || error.code === "protocol_error")) {
       ctx.deps.logger.log({ level: "warn", event: "result.rejected", attemptId: taskId, msg: error.message });
-      await ctx.deps.store.mark(taskId, "reported").catch(() => undefined);
+      await ctx.deps.store.mark(taskId, "reported").catch(ignore);
       ctx.finished.delete(taskId);
       return;
     }

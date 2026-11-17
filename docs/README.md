@@ -17,7 +17,8 @@ docs/
 ├── design/                                 ← 真相：系统现在是什么
 │   ├── architecture.md                     ← 系统层：组件、依赖、契约、主流程
 │   ├── contracts/
-│   │   └── executor-http-v3.md             ← 调度器执行面契约 v3（五端点、task-space、日志、归档）
+│   │   ├── executor-http-v3.md             ← 调度器执行面契约 v3（五端点、task-space、日志、归档）
+│   │   └── client-observability-v1.md      ← client 只读观测面 v1（O-01–O-11）
 │   ├── test-matrix.md                      ← SCN UC → 测试文件映射
 │   ├── components/                         ← 组件规格（9 份，planned）
 │   │   ├── CMP-cli/spec.md
@@ -28,7 +29,8 @@ docs/
 │   │   ├── CMP-workspace/spec.md
 │   │   ├── CMP-assets/spec.md
 │   │   ├── CMP-store/spec.md
-│   │   └── CMP-observability/spec.md
+│   │   ├── CMP-observability/spec.md
+│   │   └── CMP-observer/spec.md
 │   └── scenarios/                          ← 业务场景
 │       ├── _index.md                       ← 生成物：场景索引
 │       └── execution-plane/

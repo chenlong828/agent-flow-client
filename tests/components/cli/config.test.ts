@@ -312,3 +312,47 @@ allow_unauthenticated = "yes"
     expect((error as ConfigError).exitCode).toBe(2);
   });
 });
+
+describe("观测面配置", () => {
+  test("默认 loopback、enabled、无 token", async () => {
+    const { runDir, homeDir } = await fixture();
+    const config = await loadConfig({ runDir, env: {}, homeDir });
+    expect(config.observability).toMatchObject({
+      enabled: true,
+      required: false,
+      bind: "127.0.0.1",
+      port: 17890,
+      token: null,
+      maxStreams: 20,
+      rawEnabled: true,
+      richStreamEnabled: true,
+    });
+  });
+
+  test("非 loopback 无 token 拒绝启动", async () => {
+    const { runDir, homeDir } = await fixture(`
+[observability.http]
+bind = "0.0.0.0"
+`);
+    const error = await loadConfig({ runDir, env: {}, homeDir }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ConfigError);
+    expect((error as ConfigError).code).toBe("observability_insecure");
+  });
+
+  test("token 回退 scheduler token；可关闭 rich/raw", async () => {
+    const { runDir, homeDir } = await fixture(`
+[scheduler]
+url = "http://127.0.0.1:3100"
+token = "secret"
+[observability.http]
+bind = "0.0.0.0"
+token = ""
+raw_enabled = false
+rich_stream_enabled = false
+`);
+    const config = await loadConfig({ runDir, env: {}, homeDir });
+    expect(config.observability.token).toBe("secret");
+    expect(config.observability.rawEnabled).toBe(false);
+    expect(config.observability.richStreamEnabled).toBe(false);
+  });
+});

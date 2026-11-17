@@ -1,4 +1,4 @@
-import type { InstanceId, OrphanRecord, SkillSet, TaskId, TaskRecord, TaskState } from "./types.ts";
+import type { InstanceId, OrphanRecord, SkillSet, TaskId, TaskRecord, TaskResult, TaskState } from "./types.ts";
 
 export type { InstanceId, OrphanRecord, SkillSet, TaskId, TaskRecord, TaskState } from "./types.ts";
 import type {
@@ -43,6 +43,35 @@ export interface RuntimePort {
   closeSession(session: SessionRef): Promise<void>;
   shutdownInstance(instance: InstanceHandle, mode: ShutdownMode): Promise<void>;
   activeSessions(instanceId: InstanceId): number;
+}
+
+/** 只读观测（CMP-observer/recorder 实现）：attempt/session 事件与原文归档；失败不得影响执行。 */
+export interface ObservationPort {
+  startAttempt(input: {
+    taskId: string;
+    attemptNo: number;
+    instanceId: string;
+    nodeId: string;
+    runId?: string;
+    startedAt: string;
+  }): Promise<string | null>;
+  session(attemptId: string, sessionId: string, cwd: string): Promise<void>;
+  prompt(attemptId: string, sessionId: string, text: string): Promise<void>;
+  observe(attemptId: string, sessionId: string, method: string, params: unknown): Promise<void>;
+  permission(sessionId: string, params: unknown, decision: "allow" | "deny"): Promise<void>;
+  settle(attemptId: string, result: TaskResult): Promise<void>;
+  archive(attemptId: string, sessionId: string, dshHome: string): Promise<void>;
+}
+
+/** run 注册表写入口（CMP-store 实现）；只用于 O-09/O-10 定位文件根。 */
+export interface RunRegistryPort {
+  upsert(input: {
+    runId: string;
+    instanceId: string;
+    workspacePath: string;
+    taskSpacePath: string;
+    archivedAt?: string;
+  }): Promise<unknown>;
 }
 
 /** 容器校验与路径约束（CMP-workspace 实现）。 */

@@ -74,6 +74,7 @@ function parseTask(raw: unknown): TaskRequest {
     instanceId: asString(task.instanceId, "instanceId"),
     nodeId: asString(task.nodeId, "nodeId"),
     attempt: asNumber(task.attempt, "attempt"),
+    ...(typeof task.runId === "string" ? { runId: task.runId } : {}),
     prompt: asString(task.prompt, "prompt"),
     workspacePath: asString(task.workspacePath, "workspacePath"),
     taskSpacePath: asString(task.taskSpacePath, "taskSpacePath"),

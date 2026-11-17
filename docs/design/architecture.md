@@ -2,7 +2,7 @@
 layer: design
 module: global
 status: current
-updated: 2026-11-14
+updated: 2026-11-17
 ---
 
 # 执行面客户端架构
@@ -18,7 +18,7 @@ updated: 2026-11-14
 ## 1. 定位
 
 - client 是**执行面**：把调度器下发的节点在本机执行出来，只回少量控制信息；编排决策全部在调度器。
-- 单进程 Bun CLI：常驻 `serve` 与单次 `run` 共用一个执行内核；**不提供本地控制面 HTTP 服务或 IPC**。只读观测面是独立 P1（未定稿，见 §12），不属于当前真相。
+- 单进程 Bun CLI：常驻 `serve` 与单次 `run` 共用一个执行内核；**不提供本地控制面 HTTP 服务或 IPC**。只读观测面 `CMP-observer` 已实现（2026-11-17），只读、不承接控制。
 - 跨边界只走 HTTP，client 主动出站；调度器不主动连 client。编排事件随 client 的心跳长轮询下发。
 
 ## 2. 运行模型
@@ -64,7 +64,8 @@ updated: 2026-11-14
 | L0 | `CMP-workspace` | 容器校验、`.dsh/skills` 安装点、路径约束、清理 |
 | L0 | `CMP-assets` | 技能包获取/校验、原子替换、脚本赋权、缓存与失效 |
 | L0 | `CMP-store` | journal、实例锁、孤儿进程记录 |
-| L0 | `CMP-observability` | 结构化日志、`doctor`、脱敏、可选进度事件 |
+| L0 | `CMP-observability` | 结构化日志、`doctor`、脱敏、attempt/session 观测事件存储 |
+| L0 | `CMP-observer` | 只读观测 HTTP、SSE、运行文件查询（O-01–O-11） |
 
 端口（`SchedulerPort` / `RuntimePort` / `WorkspacePort` / `AssetPort` / `JournalPort`）全部定义在 `CMP-executor`，L0 实现并在组合根注入。依赖方向：L2 → L1 → 端口 ← L0，L0 之间不横向调用。
 
@@ -80,7 +81,8 @@ updated: 2026-11-14
 | L0 | `CMP-workspace` | [`components/CMP-workspace/spec.md`](components/CMP-workspace/spec.md) | planned | 容器布局、清理策略、路径约束 |
 | L0 | `CMP-assets` | [`components/CMP-assets/spec.md`](components/CMP-assets/spec.md) | planned | 包格式、来源、校验方式 |
 | L0 | `CMP-store` | [`components/CMP-store/spec.md`](components/CMP-store/spec.md) | planned | 本地持久化格式与保留策略 |
-| L0 | `CMP-observability` | [`components/CMP-observability/spec.md`](components/CMP-observability/spec.md) | planned | 观测字段、sink、脱敏规则 |
+| L0 | `CMP-observability` | [`components/CMP-observability/spec.md`](components/CMP-observability/spec.md) | active | 观测字段、sink、脱敏规则 |
+| L0 | `CMP-observer` | [`components/CMP-observer/spec.md`](components/CMP-observer/spec.md) | active | 观测 API、SSE、文件查询 |
 
 ### 4.2 跨组件契约总览
 
@@ -93,6 +95,8 @@ updated: 2026-11-14
 | `WorkspacePort` | `CMP-executor` | `CMP-workspace` | executor | 容器校验、路径解析 |
 | `AssetPort` | `CMP-executor` | `CMP-assets` | executor | 技能集安装与 digest |
 | `JournalPort` | `CMP-executor` | `CMP-store` | executor/CLI | 任务状态、结果与孤儿记录 |
+| `ObservationPort` | `CMP-executor` | `CMP-observer` 的 recorder | executor | attempt/session 事件与 raw 归档 |
+| `RunRegistryPort` | `CMP-executor` | `CMP-store` | executor | run → workspace/task-space |
 
 **端口方法速查**（完整签名见 `CMP-executor` §3.4）：
 
@@ -307,7 +311,7 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 - 调度器契约已升级到 v3（2026-11-12）：五端点、task-space、会话日志、运行归档、`X-Executor-Protocol: 3`；字段级权威见 [`contracts/executor-http-v3.md`](contracts/executor-http-v3.md)。v1/v2 已归档。
 - 场景与可靠性：`SCN-0002`（配置 client 并完成自检）、`SCN-0001`（执行节点并回传结果）与 `REQ-0002`（执行稳定性与可靠性）已建；S0 先按两个场景的 S0 用例落地。
 - S0 本地闭环工序：以冻结稿的用例与不变量为输入；优先验证取消/崩溃清理、容器根技能可见性、结果回传与 `doctor` 守门。
-- 只读观测 HTTP（`/api/v1/observability`）仍是独立 P1 设计稿（`docs/works/2026-11-06-observability-http/`），未进本架构；确认后另立工序回填。
+- 只读观测面 v1 已落地（2026-11-17）：`CMP-observer` 提供 O-01–O-11（health/attempts/logs/SSE/session/raw/files/富 session SSE），契约见 [`contracts/client-observability-v1.md`](contracts/client-observability-v1.md)；`CMP-observability` 存 attempt/session 事件，`CMP-runtime` 管 raw，`CMP-store` 管 run 注册表。调度器侧 runId/URL/适配器仍待交接（`scheduler-handoff.md`）。
 
 ## 13. 分级与确认
 

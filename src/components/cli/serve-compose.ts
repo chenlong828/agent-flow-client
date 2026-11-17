@@ -10,6 +10,8 @@ import { HttpScheduler } from "../gateway/gateway.ts";
 import { HttpTransport } from "../gateway/transport.ts";
 import { JsonLogger } from "../observability/logger.ts";
 import { S0_MODEL } from "../runtime/profile.ts";
+import { FileRunRegistry } from "../store/runs.ts";
+import { setupObserver, type ObserverSetup } from "./observer-setup.ts";
 import type { AppConfig } from "./config.ts";
 import type { CliIo } from "./main.ts";
 
@@ -24,6 +26,8 @@ export type ServeDeps = {
   runtime: AcpRuntime;
   gateway: HttpScheduler;
   logger: JsonLogger;
+  runs: FileRunRegistry;
+  observer?: NonNullable<ObserverSetup["observer"]>;
 };
 
 function modelFromEnv(env: Record<string, string | undefined>) {
@@ -32,6 +36,25 @@ function modelFromEnv(env: Record<string, string | undefined>) {
     model: env.AF_MODEL?.trim() || S0_MODEL.model,
     baseUrl: env.AF_LLM_BASE_URL?.trim() || S0_MODEL.baseUrl,
   };
+}
+
+function createRuntime(
+  config: AppConfig,
+  env: Record<string, string | undefined>,
+  logger: JsonLogger,
+  onPermission: (sessionId: string, params: unknown, decision: "allow" | "deny") => void,
+): AcpRuntime {
+  const dsh = resolveDshCommand(env);
+  if (dsh === null) throw new Error("未找到 DSH 入口：设置 DSH_BIN 或把 dsh 放到 PATH");
+  return new AcpRuntime({
+    command: { command: dsh.command, args: dsh.args },
+    env,
+    permission: config.acp.permission,
+    model: modelFromEnv(env),
+    credentialsSource: env.DSH_CREDENTIALS_SOURCE,
+    onStderr: (line) => logger.log({ level: "debug", event: "dsh.stderr", msg: line }),
+    onPermission,
+  });
 }
 
 /** `serve` 的组合根：所有 L0 具体实现只在这里装配（v2 无 clientId/runId）。 */
@@ -50,6 +73,9 @@ export async function composeForServe(
   await store.init();
   const workspace = new FileWorkspace();
   const sessionLogs = new FileSessionLogStore(stateRoot);
+  const runs = new FileRunRegistry({ stateRoot });
+  await runs.init();
+  const setup = await setupObserver({ config, stateRoot, runs, logger });
   const schedulerUrl = config.scheduler.url;
   if (schedulerUrl === null) throw new Error("serve 需要 [scheduler].url");
   const transport = new HttpTransport({
@@ -57,6 +83,7 @@ export async function composeForServe(
     token: config.scheduler.token,
     clientId: config.scheduler.clientId,
     clientAddress: config.scheduler.clientAddress,
+    ...(config.observability.enabled ? { observabilityUrl: config.observability.advertiseUrl } : {}),
   });
   const gateway = new HttpScheduler({
     transport,
@@ -78,15 +105,8 @@ export async function composeForServe(
       return downloaded;
     },
   });
-  const dsh = resolveDshCommand(env);
-  if (dsh === null) throw new Error("未找到 DSH 入口：设置 DSH_BIN 或把 dsh 放到 PATH");
-  const runtime = new AcpRuntime({
-    command: { command: dsh.command, args: dsh.args },
-    env,
-    permission: config.acp.permission,
-    model: modelFromEnv(env),
-    credentialsSource: env.DSH_CREDENTIALS_SOURCE,
-    onStderr: (line) => logger.log({ level: "debug", event: "dsh.stderr", msg: line }),
+  const runtime = createRuntime(config, env, logger, (sessionId, params, decision) => {
+    void setup.recorder.permission(sessionId, params, decision).catch(() => undefined);
   });
   const executor = new NodeExecutor({
     runtime,
@@ -95,8 +115,23 @@ export async function composeForServe(
     sessionLogs,
     journal: store,
     dshHome: config.acp.dshHome,
+    ...(setup.observer === undefined ? {} : { observation: setup.recorder }),
+    runs,
     maxResultBytes: 262144,
     ...(config.executor.idleTimeoutMs > 0 ? { idleTimeoutMs: config.executor.idleTimeoutMs } : {}),
   });
-  return { config, env, io, store, workspace, sessionLogs, executor, runtime, gateway, logger };
+  return {
+    config,
+    env,
+    io,
+    store,
+    workspace,
+    sessionLogs,
+    executor,
+    runtime,
+    gateway,
+    logger,
+    runs,
+    ...(setup.observer === undefined ? {} : { observer: setup.observer }),
+  };
 }

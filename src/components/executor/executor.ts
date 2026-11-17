@@ -10,6 +10,8 @@ import type {
   RuntimePort,
   SessionRef,
   WorkspacePort,
+  ObservationPort,
+  RunRegistryPort,
 } from "./ports.ts";
 import type { SchedulerPort } from "./scheduler-port.ts";
 import type { SessionOutcome } from "./ports.ts";
@@ -38,6 +40,8 @@ export type NodeExecutorOptions = {
   dshHome: string;
   maxResultBytes?: number;
   idleTimeoutMs?: number;
+  observation?: ObservationPort;
+  runs?: RunRegistryPort;
   now?: () => Date;
   host?: string;
 };
@@ -47,10 +51,13 @@ type ActiveTask = {
   controller: AbortController;
   instanceId: string;
   session?: SessionRef;
+  attemptId?: string;
   startedAt: string;
 };
 
 const MAX_RESULT_BYTES = 262144;
+const ignore = (): undefined => undefined;
+const ignoreNull = (): null => null;
 
 /** 任务执行内核（v2）：received → running → settled；结果先落盘再交给 serve 上报。 */
 export class NodeExecutor {
@@ -86,14 +93,14 @@ export class NodeExecutor {
     for (const active of this.#active.values()) {
       if (active.instanceId !== instanceId) continue;
       active.controller.abort();
-      if (active.session !== undefined) await this.#options.runtime.cancel(active.session).catch(() => undefined);
+      if (active.session !== undefined) await this.#options.runtime.cancel(active.session).catch(ignore);
     }
   }
 
   async cancelAll(): Promise<void> {
     for (const active of this.#active.values()) {
       active.controller.abort();
-      if (active.session !== undefined) await this.#options.runtime.cancel(active.session).catch(() => undefined);
+      if (active.session !== undefined) await this.#options.runtime.cancel(active.session).catch(ignore);
     }
   }
 
@@ -107,8 +114,8 @@ export class NodeExecutor {
 
   async shutdownInstances(): Promise<void> {
     for (const handle of this.#instances.values()) {
-      await this.#options.runtime.shutdownInstance(handle, "force").catch(() => undefined);
-      await this.#options.journal.clearOrphan(handle.pid).catch(() => undefined);
+      await this.#options.runtime.shutdownInstance(handle, "force").catch(ignore);
+      await this.#options.journal.clearOrphan(handle.pid).catch(ignore);
     }
     this.#instances.clear();
   }
@@ -116,49 +123,20 @@ export class NodeExecutor {
   async #runTask(task: TaskRequest, controller: AbortController, startedAt: string): Promise<TaskResult> {
     let session: SessionRef | undefined;
     let outcome: SessionOutcome | undefined;
+    let attemptId: string | null = null;
     try {
-      await this.#options.journal.append({
-        v: 2,
-        ts: startedAt,
-        taskId: task.taskId,
-        attempt: task.attempt,
-        instanceId: task.instanceId,
-        nodeId: task.nodeId,
-        state: "received",
-      });
-      const container = await this.#options.workspace.ensureContainer(
-        { instanceId: task.instanceId, pid: 0 },
-        task.workspacePath,
-      );
-      await this.#options.workspace.ensureTaskSpace(task.workspacePath, task.taskSpacePath);
-      const handle = await this.#options.runtime.ensureInstance({
-        instanceId: task.instanceId,
-        dshHome: this.#options.dshHome,
-        containerRoot: container.root,
-      });
-      this.#instances.set(task.instanceId, handle);
-      await this.#options.journal.recordOrphan({
-        pid: handle.pid,
-        ...(handle.pgid === undefined ? {} : { pgid: handle.pgid }),
-        instanceId: task.instanceId,
-        taskId: task.taskId,
-        createdAt: this.#now().toISOString(),
-        host: this.#host,
-      });
-      session = await this.#options.runtime.newSession(handle, container.root);
-      const active = this.#active.get(task.taskId);
-      if (active !== undefined) active.session = session;
-      await this.#options.journal.mark(task.taskId, "running", { sessionId: session.sessionId });
-      await this.#options.assets.install(task.skillSet, container);
-      await this.#options.sessionLogs.clear(task.taskId, task.attempt);
+      const prepared = await this.#prepareTask(task, startedAt);
+      session = prepared.session;
+      attemptId = prepared.attemptId;
       outcome = controller.signal.aborted
         ? cancelledOutcome(session.sessionId)
-        : await this.#prompt(session, task, controller);
+        : await this.#prompt(session, task, controller, attemptId);
     } catch (error) {
+      const code = codeOf(error);
       const failure: RuntimeFailure = {
-        code: codeOf(error),
+        code,
         message: (error as Error).message,
-        class: classify({ code: codeOf(error), message: (error as Error).message }).class as RuntimeFailure["class"],
+        class: classify({ code, message: (error as Error).message }).class as RuntimeFailure["class"],
       };
       outcome = { sessionId: session?.sessionId ?? "", finalText: "", stopReason: null, usage: null, error: failure };
     }
@@ -170,14 +148,76 @@ export class NodeExecutor {
       finishedAt: this.#now().toISOString(),
     });
     await this.#options.journal.mark(task.taskId, "settled", { result });
-    if (session !== undefined) await this.#options.runtime.closeSession(session).catch(() => undefined);
+    if (attemptId !== null) await this.#options.observation?.settle(attemptId, result).catch(ignore);
+    if (session !== undefined) await this.#options.runtime.closeSession(session).catch(ignore);
+    if (attemptId !== null && session !== undefined) {
+      await this.#options.observation?.archive(attemptId, session.sessionId, this.#options.dshHome).catch(ignore);
+    }
     return result;
   }
 
-  async #prompt(session: SessionRef, task: TaskRequest, controller: AbortController): Promise<SessionOutcome> {
+  async #prepareTask(task: TaskRequest, startedAt: string): Promise<{ attemptId: string | null; session: SessionRef }> {
+    const attemptId = await this.#options.observation?.startAttempt({
+      taskId: task.taskId,
+      attemptNo: task.attempt,
+      instanceId: task.instanceId,
+      nodeId: task.nodeId,
+      ...(task.runId === undefined ? {} : { runId: task.runId }),
+      startedAt,
+    }).catch(ignoreNull) ?? null;
+    const current = this.#active.get(task.taskId);
+    if (current !== undefined && attemptId !== null) current.attemptId = attemptId;
+    if (task.runId !== undefined) {
+      await this.#options.runs?.upsert({
+        runId: task.runId,
+        instanceId: task.instanceId,
+        workspacePath: task.workspacePath,
+        taskSpacePath: task.taskSpacePath,
+      }).catch(ignore);
+    }
+    await this.#options.journal.append({
+      v: 2,
+      ts: startedAt,
+      taskId: task.taskId,
+      attempt: task.attempt,
+      instanceId: task.instanceId,
+      nodeId: task.nodeId,
+      state: "received",
+    });
+    const container = await this.#options.workspace.ensureContainer({ instanceId: task.instanceId, pid: 0 }, task.workspacePath);
+    await this.#options.workspace.ensureTaskSpace(task.workspacePath, task.taskSpacePath);
+    const handle = await this.#options.runtime.ensureInstance({
+      instanceId: task.instanceId,
+      dshHome: this.#options.dshHome,
+      containerRoot: container.root,
+    });
+    this.#instances.set(task.instanceId, handle);
+    await this.#options.journal.recordOrphan({
+      pid: handle.pid,
+      ...(handle.pgid === undefined ? {} : { pgid: handle.pgid }),
+      instanceId: task.instanceId,
+      taskId: task.taskId,
+      createdAt: this.#now().toISOString(),
+      host: this.#host,
+    });
+    const session = await this.#options.runtime.newSession(handle, container.root);
+    const active = this.#active.get(task.taskId);
+    if (active !== undefined) active.session = session;
+    if (attemptId !== null) await this.#options.observation?.session(attemptId, session.sessionId, container.root).catch(ignore);
+    await this.#options.journal.mark(task.taskId, "running", { sessionId: session.sessionId });
+    await this.#options.assets.install(task.skillSet, container);
+    await this.#options.sessionLogs.clear(task.taskId, task.attempt);
+    return { attemptId, session };
+  }
+
+  async #prompt(session: SessionRef, task: TaskRequest, controller: AbortController, attemptId: string | null): Promise<SessionOutcome> {
+    if (attemptId !== null) await this.#options.observation?.prompt(attemptId, session.sessionId, task.prompt).catch(ignore);
     // 原始 ACP 事件按到达顺序落盘为 JSONL；`P-04` 由 CLI 在报结果前上传。
     let appends = Promise.resolve();
     const onRawEvent = (event: { ts: string; method: string; params: unknown }): void => {
+      if (attemptId !== null) {
+        void this.#options.observation?.observe(attemptId, session.sessionId, event.method, event.params).catch(ignore);
+      }
       appends = appends.then(() =>
         this.#options.sessionLogs.append(task.taskId, task.attempt, JSON.stringify({ ...event, sessionId: session.sessionId })),
       );

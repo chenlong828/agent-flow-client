@@ -3,6 +3,7 @@ import { access, mkdir, readFile, stat } from "node:fs/promises";
 import { homedir, hostname as osHostname } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { isValidClientId, resolveClientIdentity, type ClientIdSource } from "./client-identity.ts";
+import { resolveObservability } from "./observability-config.ts";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type PermissionMode = "deny" | "allow";
@@ -22,6 +23,20 @@ export type AppConfig = Readonly<{
   logging: Readonly<{ level: LogLevel; source: Extract<ConfigSource, "cli" | "config" | "default"> }>;
   capacity: Readonly<{ maxConcurrent: number; source: "config" | "default" }>;
   executor: Readonly<{ idleTimeoutMs: number; source: "config" | "default" }>;
+  observability: Readonly<{
+    enabled: boolean;
+    required: boolean;
+    bind: string;
+    port: number;
+    advertiseUrl: string;
+    token: string | null;
+    maxStreams: number;
+    rawEnabled: boolean;
+    richStreamEnabled: boolean;
+    retentionDays: number;
+    maxBytes: number;
+    maxAttemptEventBytes: number;
+  }>;
   scheduler: Readonly<{
     url: string | null;
     token: string | null;
@@ -322,6 +337,11 @@ export async function loadConfig(options: {
   const capacity = resolveCapacity(asTable(parsed.capacity, "[capacity]"));
   const executor = resolveExecutor(asTable(parsed.executor, "[executor]"));
   const scheduler = resolveScheduler(asTable(parsed.scheduler, "[scheduler]"), env, hostname);
+  const observability = resolveObservability(
+    asTable(parsed.observability, "[observability]"),
+    asTable(asTable(parsed.observability, "[observability]").http, "[observability.http]"),
+    scheduler.token,
+  );
 
   validatePaths(acp, state, homeDir);
   await ensureDirectory(acp.dshHome, "home_create_failed", "DSH_HOME");
@@ -335,6 +355,7 @@ export async function loadConfig(options: {
     logging: Object.freeze(logging),
     capacity: Object.freeze(capacity),
     executor: Object.freeze(executor),
+    observability: Object.freeze(observability),
     scheduler: Object.freeze(scheduler),
   });
 }

@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-observability
 status: active
-updated: 2026-11-04
+updated: 2026-11-17
 ---
 
 # CMP-observability 组件规格
@@ -188,3 +188,11 @@ interface Doctor {
 - 文件 sink 是否默认开启（当前提案：`serve` 开启，`run` 仅 stderr）。
 - 脱敏是否覆盖模型输出中的疑似凭据（当前只覆盖日志字段与键名；结果透传）。
 - `doctor` 检查项 ID 与退出码优先级需在 S0 固化。
+
+## 9. 观测面 v1（2026-11-17）
+
+- 新增 `FileAttemptStore`：`<stateRoot>/observability/attempts/<attemptId>/{meta.json,events.jsonl}`；attempt meta/事件 seq、session/run 关联、cursor 查询。
+- 新增 `AcpObservationMapper` / `ObservationRecorder`：把 ACP 事件归一化为 preview（O-04/O-05/O-07）与 rich（O-11），写 attempt 事件与内存 hub。
+- 本组件仍是 attempt 事件/meta 的唯一写入口；**不提供 HTTP**（HTTP 在 `CMP-observer`）。
+- 数据保留：单 attempt 事件默认 10 MiB；与 session raw 保留分开。
+- 验证：`tests/components/observer/{attempt-store,mapper,recorder}.test.ts`。

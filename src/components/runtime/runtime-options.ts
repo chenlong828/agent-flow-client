@@ -10,6 +10,8 @@ export type RuntimeOptions = {
   credentialsSource?: string;
   onStderr?: (line: string) => void;
   onEvent?: (event: SessionEvent) => void;
+  /** 权限请求的观测回调；decision 是实际裁决方向。 */
+  onPermission?: (sessionId: string, params: unknown, decision: "allow" | "deny") => void;
 };
 
 export type ReapOrphanResult = boolean;

@@ -27,6 +27,8 @@ export class ServeRunner {
       new Promise((resolve) => setTimeout(resolve, 5000)),
     ]);
     await this.#ctx.deps.executor.shutdownInstances().catch(() => undefined);
+    this.#ctx.deps.observer?.cleanup();
+    this.#ctx.deps.observer?.handle.stop();
     return this.#ctx.stopCode ?? ExitCode.ok;
   }
 
