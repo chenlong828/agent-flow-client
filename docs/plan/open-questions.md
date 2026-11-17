@@ -2,7 +2,7 @@
 layer: plan
 module: global
 status: current
-updated: 2026-11-08
+updated: 2026-11-17
 ---
 
 # 开放问题
@@ -36,3 +36,4 @@ updated: 2026-11-08
 | OQ-025 | `CleanupAck.failed` + `retryable=false` 的终止规则？ | 调度器是否永久重发清理、告警噪声 | **v2 作废**：无 cleanupPending/cleanupAcks；工作区默认保留，回收转运维。 |
 | OQ-026 | S0 的模型路由（`hundsun-public/hs-deepseek-flash-latest`）由谁下发、如何与调度器节点参数解耦？ | 生产环境的模型选择与调度器契约 | S0 用实例 profile 补丁固定 `llm-pi-ai` + `agent-default-model` + `acp` 三处，`AF_MODEL`/`AF_LLM_BASE_URL` 可覆盖；S1 决定进配置键还是由 `NodeRequest` 携带（后者需改契约）。见 `docs/history/works/2026-11-08-s0-local-loop/result.md` §5。 |
 | OQ-027 | Agent 执行任务的容错语义（不承诺 exactly-once、允许顺序重试、同容器单写者）与卡死/超时归属，需调度层确认 | client 重试/超时实现、契约可选字段、容量与清理策略 | 已整理提议 `docs/works/2026-11-10-execution-semantics-proposal/proposal.md`，待 Q1–Q8 结论；结论前按现行 A 方案与既有契约执行。 |
+| OQ-028 | 执行期过程可见性用 5s 推送还是消费方拉取？ | 是否新增进度端点/字段、UI 数据来源 | **已关闭**（2026-11-17，用户确认）：5s 模式 C 暂不实施；UI 经调度器产品 API 主动拉取观测面（O-01–O-11）；client 不新增进度端点/字段，`lastEventAt` 暂不补。见 [`2026-11-17-execution-visibility-pull.md`](../history/decisions/2026-11-17-execution-visibility-pull.md)。 |

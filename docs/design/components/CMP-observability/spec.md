@@ -8,7 +8,7 @@ updated: 2026-11-17
 
 # CMP-observability 组件规格
 
-> 状态：`active`（2026-11-08，T2 落地）。结构化日志、脱敏、文件 sink/轮转与 `doctor` 聚合渲染已实现；进度事件未实现。
+> 状态：`active`（2026-11-08，T2 落地）。结构化日志、脱敏、文件 sink/轮转与 `doctor` 聚合渲染已实现；执行期进度推送不实现（2026-11-17 决策：改由消费方拉取 `CMP-observer` 观测面）。
 >
 > 上游：`docs/design/architecture.md` §3.2、§7、§10；`SCN-0002`；`REQ-0002` R-09/R-10；日志字段与脱敏要求。
 
@@ -20,10 +20,10 @@ updated: 2026-11-17
   - 结构化日志（关联键 instance/node/attempt/session）；
   - 日志级别、sink、轮转；
   - 脱敏（凭据、prompt/结果内容）；
-  - `doctor` 报告渲染与退出码聚合；
-  - 可选进度事件（本地，不跨边界）。
+  - `doctor` 报告渲染与退出码聚合。
 - **不负责 Y**：
   - 跨边界上传日志/全文；
+  - 执行期进度推送（不做 5s 上报；过程数据由 attempt/session 事件承载，消费方主动拉取 `CMP-observer`）；
   - 业务判定；
   - 各组件检查逻辑（由组件 `diagnose()` 提供，CLI 收集）；
   - 进程/文件/网络。
@@ -98,10 +98,10 @@ type DoctorReport = {
 - 退出码聚合：配置 2 > 版本/鉴权 3 > 运行时 4 > 工作区/资产 5；全部 pass/warn → 0。`none` 不阻塞，但必须写原因（例如 S0 无调度器）。
 - `doctor` 不启动执行、不注册调度器、不改配置。
 
-### 2.4 进度事件（可选）
+### 2.4 进度推送（不做）
 
-- `progress(event)`：本地回调/日志，不跨边界、不影响主流程。
-- 关闭时为空操作；不得因进度失败影响执行。
+- 2026-11-17 决策：5s 模式 C（`ProgressSnapshot` + 独立进度端点）暂不实施，执行期可见性改为消费方主动拉取观测面。见 [`2026-11-17-execution-visibility-pull.md`](../../../history/decisions/2026-11-17-execution-visibility-pull.md)。
+- 本组件不提供 `progress(event)` 端口，也不写进度快照；过程数据仍由 attempt/session 事件承载，失败不影响执行。
 
 ## 3. 契约
 
@@ -180,7 +180,7 @@ interface Doctor {
 - 预算：目标 ≤15k token，上限 120k。
 - 单独运行：`bun test tests/components/observability/`；临时日志目录。
 - 实现入口（T2）：`src/components/observability/logger.ts#JsonLogger`/`redactRecord`、`doctor.ts#collect`/`render`/`exitCode`；测试 `tests/components/observability/`。
-- 状态：`active`（进度事件未实现）。
+- 状态：`active`（进度推送不做，见 §2.4）。
 
 ## 9. 开放问题
 

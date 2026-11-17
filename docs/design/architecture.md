@@ -19,7 +19,7 @@ updated: 2026-11-17
 
 - client 是**执行面**：把调度器下发的节点在本机执行出来，只回少量控制信息；编排决策全部在调度器。
 - 单进程 Bun CLI：常驻 `serve` 与单次 `run` 共用一个执行内核；**不提供本地控制面 HTTP 服务或 IPC**。只读观测面 `CMP-observer` 已实现（2026-11-17），只读、不承接控制。
-- 跨边界只走 HTTP，client 主动出站；调度器不主动连 client。编排事件随 client 的心跳长轮询下发。
+- 跨边界只走 HTTP。执行面由 client 主动出站（poll/结果/日志/归档）；只读观测面由调度器主动入站拉取（UI 经产品 API 发起，见 §3.3）。控制类请求仍只由 client 发起，调度器不主动下发控制。编排事件随 client 的心跳长轮询下发。
 
 ## 2. 运行模型
 
@@ -46,11 +46,25 @@ updated: 2026-11-17
 | `P-04` 会话日志 | `POST /tasks/{taskId}/session-log?attempt=n` | 上传该次尝试的 ACP 事件流（gzip JSONL，允许 0 行） |
 | `P-05` 运行归档 | `POST /runs/{runId}/archive` | 上传 task-space 的 tar.gz；后台执行，不阻塞 poll |
 
-字段、错误码、容量与超时全部以 [`contracts/executor-http-v3.md`](contracts/executor-http-v3.md) 为准；client 只实现消费端，不自定义字段。控制面只出站，调度器不主动连 client。
+字段、错误码、容量与超时全部以 [`contracts/executor-http-v3.md`](contracts/executor-http-v3.md) 为准；client 只实现消费端，不自定义字段。控制面只出站；只读观测面是唯一允许调度器主动入站的面（UI 经产品 API 发起），见 §3.3。
 
 ### 3.2 CLI 操作面
 
 `serve` / `run` / `doctor` / `version`；配置启动时一次性加载、校验、冻结。退出码：`0` 成功、`1` `run` 产生非成功任务结果（failed/cancelled/timeout）、`2` 用法/配置、`3` 鉴权或协议版本不兼容、`4` DSH/运行时、`5` 工作区或资产、`6` 调度器不可达、`130` SIGINT、`143` SIGTERM。`run` 的 stdout 只输出 `TaskResult` JSON，日志走 stderr。SIGINT/SIGTERM：停止领取 → 取消活跃任务 → flush journal → 关 session/进程 → 退出；第二次信号强杀并记录未收口任务。
+
+### 3.3 只读观测面（消费方拉取）
+
+`CMP-observer` 提供 `/api/v1/observability` 的 `O-01`–`O-11`，全部 `GET`/SSE；消费方主动拉取或订阅，client 不推送进度。
+
+| 消费方 | 入口 | 用途 |
+|---|---|---|
+| 调度器 `CMP-observability-client` 适配器 | `O-06`–`O-11`（含文件） | 经产品 API `API-48`–`53` 代理 session、事件、raw 与文件 |
+| UI | 调度器产品 API（不直连 client） | 会话 Tab、文件 Tab；执行期按需刷新或订阅 SSE |
+| 运维/排障 | 直连 loopback 或经调度器 | health、attempt、session、raw |
+
+- **边界**：只读、不承接控制；默认 `127.0.0.1`，非 loopback 必须 token；拉取失败只影响观测，不影响任务执行。
+- **不做 5s 进度推送**：阶段、当前工具、最近活动、上下文水位由消费方按事件聚合；决策见 [`2026-11-17-execution-visibility-pull.md`](../history/decisions/2026-11-17-execution-visibility-pull.md)。
+- 字段与错误码以 [`contracts/client-observability-v1.md`](contracts/client-observability-v1.md) 为准。
 
 ## 4. 组件与分层
 
@@ -176,7 +190,7 @@ updated: 2026-11-17
 | `CMP-workspace` | `ensureContainer`、`validate`、`resolve`、`cleanup`、`diagnose` | 容器根即技能根；路径不越界；清理幂等 |
 | `CMP-assets` | `install`、`verify`、`currentDigest`、原子替换、格式校验、缓存 | 替换不叠加；失败回滚；digest 幂等 |
 | `CMP-store` | `append`、`mark`、`settled`、孤儿记录 | 追加不覆盖；结果先落盘；可降级读取 |
-| `CMP-observability` | `log`、`child`、脱敏、`collect`、`render`、`exitCode`、`progress` | 日志不阻塞；不泄漏凭据/原文 |
+| `CMP-observability` | `log`、`child`、脱敏、`collect`、`render`、`exitCode` | 日志不阻塞；不泄漏凭据/原文 |
 
 ### 4.5 需求/场景到组件的追溯
 
@@ -195,6 +209,7 @@ S0 不接调度器：`SCN-0001` 的触发用 `CMP-cli` 的 `run` + `LocalSchedul
 | poll 循环 | **热** | 常驻 30s 长轮询（兼判活） | CLI → `SchedulerPort` → gateway | 1 | 退避重连；鉴权/协议失败退出 3；持续不可达退出 6 | 独立任务，不占执行队列 | `running[]`/`finished[]`；观测延迟/错误率 |
 | 任务执行 | 冷 | 每任务一次；分钟级 | executor → workspace / runtime / assets / result | 4 | 分类失败；结果先落 journal；未 accepted 前留在 finished | 每实例独立进程/容器/home | `settled` 后可重报；观测 taskId/session |
 | 技能安装 | 冷 | 每节点/技能集变化 | executor → `AssetPort` → assets | 0（assets 自持下载） | 原子回滚；不 prompt；失败 asset 类 | 独立 staging/cache；大小上限 | digest + 原子替换；观测包名/大小/耗时 |
+| 观测拉取 | 冷 | 按需（UI/调度器/排障） | UI → 产品 API → 适配器 → `CMP-observer` | 0 | 超时/404/410、SSE 断线；只影响观测 | 独立只读面；不占执行队列 | 事件/SSE；不判活、不触发重派 |
 | 恢复/`doctor` | 冷 | 启动/手动 | CLI → store / runtime / workspace / assets `*Admin` | 0（S0 不查网络） | 降级跳过坏记录；检查失败不阻塞启动 | 实例串行清理；不与执行共享锁 | `pending`/orphan/检查项；脱敏 |
 
 ### 4.7 验证入口与 CI 门禁
@@ -311,7 +326,7 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 - 调度器契约已升级到 v3（2026-11-12）：五端点、task-space、会话日志、运行归档、`X-Executor-Protocol: 3`；字段级权威见 [`contracts/executor-http-v3.md`](contracts/executor-http-v3.md)。v1/v2 已归档。
 - 场景与可靠性：`SCN-0002`（配置 client 并完成自检）、`SCN-0001`（执行节点并回传结果）与 `REQ-0002`（执行稳定性与可靠性）已建；S0 先按两个场景的 S0 用例落地。
 - S0 本地闭环工序：以冻结稿的用例与不变量为输入；优先验证取消/崩溃清理、容器根技能可见性、结果回传与 `doctor` 守门。
-- 只读观测面 v1 已落地（2026-11-17）：`CMP-observer` 提供 O-01–O-11（health/attempts/logs/SSE/session/raw/files/富 session SSE），契约见 [`contracts/client-observability-v1.md`](contracts/client-observability-v1.md)；`CMP-observability` 存 attempt/session 事件，`CMP-runtime` 管 raw，`CMP-store` 管 run 注册表。调度器侧 runId/URL/适配器仍待交接（`scheduler-handoff.md`）。
+- 只读观测面 v1 已落地（2026-11-17）：`CMP-observer` 提供 O-01–O-11（health/attempts/logs/SSE/session/raw/files/富 session SSE），契约见 [`contracts/client-observability-v1.md`](contracts/client-observability-v1.md)；`CMP-observability` 存 attempt/session 事件，`CMP-runtime` 管 raw，`CMP-store` 管 run 注册表。调度器侧 runId 富化、URL 登记与适配器已落地（2026-11-17），UI 的文件/会话视图待 UI 项目接入。执行期可见性按「消费方主动拉取」执行，不设 5s 进度推送（决策见 [`2026-11-17-execution-visibility-pull.md`](../history/decisions/2026-11-17-execution-visibility-pull.md)）。
 
 ## 13. 分级与确认
 

@@ -2,7 +2,7 @@
 layer: plan
 module: global
 status: current
-updated: 2026-11-08
+updated: 2026-11-17
 ---
 
 # 路线图
@@ -10,6 +10,7 @@ updated: 2026-11-08
 ## 当前状态
 
 - **契约已升级到 v3**（2026-11-12，五端点、task-space、会话日志、运行归档、协议 3）：client 已按 v3 实现（`T-CV3-01`–`T-CV3-09`，见 `docs/works/2026-11-12-contract-v3-handoff/client-plan.md`），待调度器侧联调（`T-RUN-09`）；现行权威 `docs/design/contracts/executor-http-v3.md`，v1/v2 已归档。
+- 执行过程可见性已收口（2026-11-17）：5s 模式 C 暂不实施，改由 UI 经调度器产品 API 主动拉取 client 观测面（O-01–O-11）；决策见 [`2026-11-17-execution-visibility-pull.md`](../history/decisions/2026-11-17-execution-visibility-pull.md)，收口记录见 [`result.md`](../history/works/2026-11-17-progress-feedback-closeout/result.md)；UI 会话 Tab 待 UI 项目接入。
 - S0 本地执行闭环已落地（2026-11-08）：`run`/`doctor`/`version` 可用。见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
 - 当前目标：S3 安全与交付；真实调度器联调等到调度器侧有实现。
 - 已完成 DSH ACP 对接预研并归档：启动方式、协议序列、权限/取消/关闭边界与本机版本基线，见 `docs/history/works/2026-11-03-dsh-acp-preflight/result.md`。
@@ -40,7 +41,7 @@ updated: 2026-11-08
 
 ## 下一步工作计划
 
-> 当前活跃工序：`docs/works/2026-11-12-contract-v3-handoff/`（执行面契约 v3 交接与实现，P1）；`docs/works/2026-11-10-execution-semantics-proposal/`（执行容错语义提议，待调度层评审）；`docs/works/2026-11-06-observability-http/`（观测 HTTP P1 设计稿，独立轨道）；S0/S1/S2（A 方案内）/M1 已归档。
+> 当前活跃工序：`docs/works/2026-11-12-contract-v3-handoff/`（执行面契约 v3 交接与实现，P1）；`docs/works/2026-11-10-execution-semantics-proposal/`（执行容错语义提议，待调度层评审）；`docs/works/2026-11-06-observability-http/`（观测面 v1 已实现，O-01–O-11；待归档，UI 接入见交接）；S0/S1/S2（A 方案内）/M1 已归档。
 
 ### 批次 1：S0 本地执行闭环（已完成，2026-11-08）
 
