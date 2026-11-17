@@ -53,7 +53,7 @@ docs/
 │   ├── 2026-11-10-execution-semantics-proposal/ ← 执行容错语义提议（待调度层评审）
 │   │   ├── brief.md
 │   │   └── proposal.md
-│   ├── 2026-11-06-observability-http/      ← 只读观测 HTTP（P1 设计稿，附评已处置）
+│   ├── 2026-11-06-observability-http/      ← 只读观测面 v1（已实现 O-01–O-11，待归档）
 │   │   ├── brief.md
 │   │   ├── proposal.md                     ← /api/v1/observability：日志、SSE、DSH session 归档
 │   │   ├── review.md                       ← 调度器附评 OB-01～OB-09 处置
@@ -111,21 +111,29 @@ docs/
     │   │   ├── review.md                     ← 两轮评审收口为「通过」
     │   │   └── result.md
     │   ├── 2026-11-07-m1-contract-freeze/    ← M1 契约冻结（冻结落盘 + 设计评审收口，已归档）
-    │       ├── brief.md
-    │       ├── freeze-checklist.md           ← 提案 §13 逐行落点 + AB/AD/AH 清单
-    │       ├── review.md                     ← AB/AD/AH/NB/ND2 处置
-    │       └── result.md
-    │   └── 2026-11-14-acp-progress-feedback/ ← 任务执行过程信息反馈调研（ACP 侧，已归档）
+    │   │   ├── brief.md
+    │   │   ├── freeze-checklist.md           ← 提案 §13 逐行落点 + AB/AD/AH 清单
+    │   │   ├── review.md                     ← AB/AD/AH/NB/ND2 处置
+    │   │   └── result.md
+    │   ├── 2026-11-14-acp-progress-feedback/ ← 任务执行过程信息反馈调研（ACP 侧，已归档；2026-11-17 收口：5s 暂停，改拉取）
     │   │   ├── brief.md
     │   │   ├── result.md
     │   │   ├── report.md
     │   │   ├── design-progress-5s.md
     │   │   ├── sim-progress-live.md
     │   │   └── probe/
+    │   ├── 2026-11-17-progress-feedback-closeout/ ← 执行过程可见性收口（已归档）
+    │   │   ├── brief.md
+    │   │   ├── review.md
+    │   │   └── result.md
+    │   └── 2026-11-17-observability-hardening/ ← 观测面发布门禁加固（已归档）
+    │       ├── brief.md
+    │       └── result.md
     └── decisions/
         ├── 2026-11-03-bootstrap.md
         ├── 2026-11-03-system-bun.md
-        └── 2026-11-03-client-concept.md
+        ├── 2026-11-03-client-concept.md
+        └── 2026-11-17-execution-visibility-pull.md ← 5s 模式 C 暂停，改消费方拉取
 ```
 
 组件规格随 S0 任务落地从 `planned` 转 `active`；`design/scenarios/_index.md` 由 `bun run docs:index` 生成，`bun run docs:check` 校验，不手改。

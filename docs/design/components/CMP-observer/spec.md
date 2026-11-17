@@ -14,7 +14,7 @@ updated: 2026-11-17
 ## 1. 职责与边界
 
 - **单元 / 层 / 类型**：组件；L0 技术边界（只读 HTTP 适配器）。
-- **业务价值**：把 client 本地执行过程变成调度器/运维可查询的只读信息面；没有它，执行细节只能靠日志文件与人工登录。
+- **业务价值**：把 client 本地执行过程变成调度器/运维可查询的只读信息面；执行期可见性由消费方主动拉取本面（UI 经调度器产品 API）。没有它，执行细节只能靠日志文件与人工登录。
 - **负责 X**：
   - 只读 HTTP 路由与鉴权（O-01–O-11）；
   - attempt 查询/分页、session 查询、SSE；
@@ -57,12 +57,16 @@ updated: 2026-11-17
 ### 3.2 HTTP
 
 - 端点、字段、错误码以 [`contracts/client-observability-v1.md`](../../contracts/client-observability-v1.md) 为准。
+- 消费方主动拉取/订阅：本面是执行期过程信息的唯一来源；不提供 client 侧进度推送，也不主动通知调用方。
 - 全部 `GET`；`/api/v1/observability`；Bearer；`no-store`、`nosniff`、无 CORS。
 - O-05/O-11 SSE：snapshot、`Last-Event-ID`、15s heartbeat、`end`、慢消费者、`maxStreams`。
+- O-09 超过 `limit` 返回 `limit+1` 扫描子集并置 `truncated`，不保证全局排序（契约 §11）；不要把它当目录索引。
 
 ### 3.3 启动/降级
 
 - `[observability.http].enabled`；`required=false` 时 bind/初始化失败只记 `observability_disabled`。
+- `enabled=true` 时事件记录独立于 HTTP 启动：即使 bind 失败，recorder 仍写 attempt/session 事件；只有 `enabled=false` 才关闭记录。
+- 只有 HTTP 启动成功才在 poll 带 `X-Observability-Url`。
 - `run` 不启动；`serve` 启动/停止。
 - 非 loopback 无 token 在配置层拒绝。
 
