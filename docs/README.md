@@ -79,7 +79,7 @@ docs/
 │   │   ├── brief.md
 │   │   ├── review.md
 │   │   └── result.md
-│   └── 2026-11-18-thought-text/            ← 会话思考全文读取契约（设计，待确认）
+│   └── 2026-11-18-session-text/            ← 会话思考与消息全文读取契约（设计，待确认）
 │       ├── brief.md
 │       └── proposal.md
 └── history/                                ← 记忆：怎么走到这里的

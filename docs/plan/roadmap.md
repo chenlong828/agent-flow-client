@@ -41,7 +41,7 @@ updated: 2026-11-17
 
 ## 下一步工作计划
 
-> 当前活跃工序：`docs/works/2026-11-12-contract-v3-handoff/`（执行面契约 v3 交接与实现，P1）；`docs/works/2026-11-10-execution-semantics-proposal/`（执行容错语义提议，待调度层评审）；`docs/works/2026-11-06-observability-http/`（观测面 v1 已实现，O-01–O-11；待归档，UI 接入见交接）；`docs/works/2026-11-18-thought-text/`（会话思考全文读取契约设计，P2，待确认）；S0/S1/S2（A 方案内）/M1 已归档。
+> 当前活跃工序：`docs/works/2026-11-12-contract-v3-handoff/`（执行面契约 v3 交接与实现，P1）；`docs/works/2026-11-10-execution-semantics-proposal/`（执行容错语义提议，待调度层评审）；`docs/works/2026-11-06-observability-http/`（观测面 v1 已实现，O-01–O-11；待归档，UI 接入见交接）；`docs/works/2026-11-18-session-text/`（会话思考与消息全文读取契约设计，P2，待确认）；S0/S1/S2（A 方案内）/M1 已归档。
 
 ### 批次 1：S0 本地执行闭环（已完成，2026-11-08）
 
