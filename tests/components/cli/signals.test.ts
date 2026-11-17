@@ -30,7 +30,7 @@ describe("UC-14 信号收口", () => {
     const digest = await digestDirectory(pkg);
     await writeFile(
       join(runDir, ".config"),
-      `[acp]\ndsh_home = "dsh-home"\npermission = "allow"\n[state]\nroot = "state"\n[logging]\nlevel = "error"\n`,
+      `[acp]\ndsh_home = "${join(runDir, "dsh-home")}"\npermission = "allow"\n[state]\nroot = "${join(runDir, "state")}"\n[logging]\nlevel = "error"\n`,
     );
     const requestPath = join(runDir, "request.json");
     await writeFile(
@@ -59,15 +59,27 @@ describe("UC-14 信号收口", () => {
       HUNDSUN_PUBLIC_API_KEY: "k",
     };
     delete (env as Record<string, string | undefined>).DSH_HOME;
-    const child = Bun.spawn([process.execPath, "src/cli.ts", "run", "--request", requestPath], {
-      cwd: repoRoot,
-      env: env as Record<string, string>,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const child = Bun.spawn(
+      [process.execPath, "src/cli.ts", "run", "--request", requestPath, "--config", join(runDir, ".config"), "--state-root", join(runDir, "state")],
+      {
+        cwd: repoRoot,
+        env: env as Record<string, string>,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+
+    async function fail(message: string): Promise<never> {
+      child.kill("SIGKILL");
+      const code = await child.exited;
+      const stderr = await new Response(child.stderr).text();
+      throw new Error(`${message}（child exit=${code} stderr=${stderr.trim()}）`);
+    }
 
     const deadline = Date.now() + 10_000;
     while (!(await Bun.file(promptFile).exists()) && Date.now() < deadline) await Bun.sleep(20);
+    if (!(await Bun.file(promptFile).exists())) await fail("fake ACP 未进入 prompt（10s）");
+    if (!(await Bun.file(pidFile).exists())) await fail("fake ACP 未写 child.pid");
     const groupPid = Number((await Bun.file(pidFile).text()).trim());
     child.kill("SIGINT");
     const code = await child.exited;

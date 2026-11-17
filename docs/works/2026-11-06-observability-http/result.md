@@ -139,5 +139,6 @@ updated: 2026-11-17
 
 - `client-observability-v1` = `03336de`（观测面首版）；`client-observability-v1.1` = `58136f7`（含阻塞复核的 P1/P2 修复）。**orchestrator 复跑钉 v1.1**。
 - 后续加固在主分支：观测面启动失败仍落事件（recorder 与 HTTP 解耦）、失败路径测试（410/429/慢消费者）；v1.1 不含这部分，若要用加固版另取主分支或新 tag。
-- `signals.test.ts` UC-14 当前不可复现：5 次单跑、全量 3 次与串行 1 次均 `176 pass / 0 fail`；上游复核的 `ENOENT child.pid` 未再出现。
+- `signals.test.ts` UC-14 本机 5 次单跑、全量 3 次与串行 1 次均 `176 pass / 0 fail`；上游复核的 `ENOENT child.pid` 未在本机复现。
+- 环境差异根因（2026-11-17 复核）：测试把 `.config` 写到临时 runDir，但启动命令没传 `--config`，`resolveRunDir` 落到 client 仓库根，临时配置被忽略；只读 checkout 下默认 `state.root`/`dsh_home` 不可写，CLI 在 prompt 前失败，10s 后读 `child.pid` 报 `ENOENT`。已修：显式 `--config`/`--state-root` + 超时诊断；只读副本复验通过。
 - 加固记录：[`2026-11-17-observability-hardening/result.md`](../../history/works/2026-11-17-observability-hardening/result.md)。
