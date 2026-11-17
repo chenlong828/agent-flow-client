@@ -83,7 +83,7 @@ export async function composeForServe(
     token: config.scheduler.token,
     clientId: config.scheduler.clientId,
     clientAddress: config.scheduler.clientAddress,
-    ...(config.observability.enabled ? { observabilityUrl: config.observability.advertiseUrl } : {}),
+    ...(setup.observer === undefined ? {} : { observabilityUrl: config.observability.advertiseUrl }),
   });
   const gateway = new HttpScheduler({
     transport,

@@ -1,5 +1,5 @@
 import { FileAttemptStore } from "../observer/attempt-store.ts";
-import { FileSessionArchive } from "../observer/archive.ts";
+import { FileSessionArchive } from "../observer/session-archive.ts";
 import { ObserverHealth } from "../observer/health.ts";
 import { ObservationRecorder } from "../observer/recorder.ts";
 import { SessionRichHub } from "../observer/rich-hub.ts";

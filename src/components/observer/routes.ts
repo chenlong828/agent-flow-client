@@ -12,7 +12,7 @@ export async function attempts(deps: ObserverDeps): Promise<AttemptSummary[]> {
   return (await deps.attempts.list({ limit: 200 })).items;
 }
 
-export async function health(deps: ObserverDeps, startedAt: number): Promise<unknown> {
+export async function health(deps: ObserverDeps, startedAt: number, activeStreams: number): Promise<unknown> {
   const stats = await attemptStats(join(deps.stateRoot, "observability", "attempts"));
   return {
     status: deps.health?.degraded === true ? "degraded" : "ok",
@@ -28,6 +28,7 @@ export async function health(deps: ObserverDeps, startedAt: number): Promise<unk
     filesEnabled: deps.config.enabled,
     richStreamEnabled: deps.config.richStreamEnabled,
     authRequired: deps.config.token !== null && deps.config.token !== "",
+    activeStreams,
   };
 }
 
@@ -72,7 +73,9 @@ export async function attemptLogs(deps: ObserverDeps, attemptId: string, url: UR
 export async function sessionDetail(deps: ObserverDeps, sessionId: string): Promise<unknown> {
   const attempt = await deps.attempts.findBySession(sessionId);
   if (attempt === null) throw new ObserverError(404, "session_not_found", `session 不存在：${sessionId}`);
-  if (attempt.goneAt !== undefined) throw new ObserverError(410, "observation_gone", "session 已按保留策略清理");
+  if (attempt.goneAt !== undefined || (await deps.archive.isGone?.(sessionId)) === true) {
+    throw new ObserverError(410, "observation_gone", "session 已按保留策略清理");
+  }
   return sessionSummary(deps, attempt);
 }
 
@@ -102,7 +105,9 @@ export async function sessionSummary(deps: ObserverDeps, attempt: AttemptSummary
 export async function sessionEvents(deps: ObserverDeps, sessionId: string, url: URL): Promise<unknown> {
   const attempt = await deps.attempts.findBySession(sessionId);
   if (attempt === null) throw new ObserverError(404, "session_not_found", `session 不存在：${sessionId}`);
-  if (attempt.goneAt !== undefined) throw new ObserverError(410, "observation_gone", "session 已按保留策略清理");
+  if (attempt.goneAt !== undefined || (await deps.archive.isGone?.(sessionId)) === true) {
+    throw new ObserverError(410, "observation_gone", "session 已按保留策略清理");
+  }
   const result = await deps.attempts.eventsBySession(sessionId, {
     ...(url.searchParams.get("cursor") === null ? {} : { afterCursor: url.searchParams.get("cursor") as string }),
     ...(url.searchParams.get("limit") === null ? {} : { limit: Number(url.searchParams.get("limit")) }),
@@ -114,6 +119,9 @@ export async function raw(deps: ObserverDeps, sessionId: string): Promise<Respon
   if (!deps.config.rawEnabled) throw new ObserverError(403, "raw_disabled", "raw 下载已关闭");
   const attempt = await deps.attempts.findBySession(sessionId);
   if (attempt === null) throw new ObserverError(404, "session_not_found", `session 不存在：${sessionId}`);
+  if (attempt.goneAt !== undefined || (await deps.archive.isGone?.(sessionId)) === true) {
+    throw new ObserverError(410, "observation_gone", "session 已按保留策略清理");
+  }
   const archive = await deps.archive.resolve(sessionId);
   if (archive === null) throw new ObserverError(409, "archive_not_ready", "session 归档尚未完成");
   const file = Bun.file(archive.path);

@@ -79,7 +79,7 @@ type StreamContext = {
 };
 
 async function route(deps: ObserverDeps, request: Request, url: URL, segments: string[], stream: StreamContext): Promise<Response> {
-  if (segments.length === 1 && segments[0] === "health") return json(await health(deps, stream.startedAt));
+  if (segments.length === 1 && segments[0] === "health") return json(await health(deps, stream.startedAt, stream.streams()));
   if (segments[0] === "attempts") return await routeAttempts(deps, request, url, segments, stream);
   if (segments[0] === "sessions") return await routeSessions(deps, request, url, segments, stream);
   if (segments[0] === "runs") return await routeRuns(deps, url, segments);

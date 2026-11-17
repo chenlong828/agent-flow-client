@@ -199,6 +199,7 @@ data: {"status":"completed","finishedAt":"…"}
 按 §15（proposal）执行：`root=task-space|workspace`、相对路径、一层、2000 条、文本 1 MiB、二进制元数据、错误码 `path_escape`/`run_not_found`/`run_gone`/`file_not_found`/`file_permission_denied`/`unsupported_file`。
 
 - 限制归属：**client 强制 2000 条 / 1 MiB**；`2 MiB/5s` 是调度器适配器/BFF 的限制，client 不额外强制。
+- 超过 2000 条时返回的是 `limit+1` 扫描子集，`truncated=true`；该子集不保证全局排序（性能优先）。
 - 鉴权：token 非空要求 Bearer；token 为空仅允许 loopback；v1 不提供独立 auth 开关（与执行面 token 语义一致）。
 
 ## 12. `O-11` session 富事件 SSE（新增）

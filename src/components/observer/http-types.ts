@@ -112,6 +112,7 @@ export interface RunFilePort {
 
 export interface SessionArchivePort {
   resolve(sessionId: string): Promise<{ path: string; sizeBytes: number; sha256: string } | null>;
+  isGone?(sessionId: string): Promise<boolean>;
 }
 
 export type CreateAttemptInput = {

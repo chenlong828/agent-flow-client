@@ -71,3 +71,18 @@ updated: 2026-11-17
 | `CL-04` | 已完成 | 契约补充 Accept-Ranges/Range、2000/1MiB、2MiB/5s 归属、degraded |
 | `CL-02` | 完成 | `bun test` 169 pass；`bun run check` 全绿（质量报告 0 违规） |
 | `CL-01` | 完成 | 本 commit 仅包含观测面相关文件；tag `client-observability-v1` |
+
+## 7. 阻塞复核修复（2026-11-17 第二轮）
+
+| 项 | 状态 | 处理 |
+|---|---|---|
+| 3.1 SSE cancel 泄漏 | 已修 | `attemptStream`/`sessionStream` 的 `cancel()` 统一调 `finish()`/`writer.finish()`；`finish` 幂等，清理 poll/heartbeat/订阅/activeStreams |
+| 3.2 启动失败仍上报 URL | 已修 | transport 只在 `setup.observer !== undefined` 时带 `X-Observability-Url` |
+| P2 raw gone | 已修 | raw 先查 attempt `goneAt`，返回 410 |
+| P2 活跃 run 保护 | 已修 | run 注册表只清理已归档且过期的 run；未归档 run 不按时间清理 |
+| P2 session tombstone | 已修 | prune 写 `sessions/<id>/gone` 并删 raw；O-06/O-07/O-08/O-11 返回 410 |
+| P2 文件截断顺序 | 已明确 | 超过 2000 条时返回 `limit+1` 扫描子集，契约写明不保证全局排序 |
+| signals UC-14 | 本地不重现 | 当前 commit 连续 3 次 `signals.test.ts` 1 pass；全量 169 pass。需失败方提供 commit/环境/日志 |
+
+- `bun test` 169 pass；`bun run check` 质量报告 0 违规。
+- 第二轮修复将单独 commit（仅观测面），tag 建议新打 `client-observability-v1.1`，不移动已发布的 `v1`。

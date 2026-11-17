@@ -102,6 +102,21 @@ describe("observer HTTP", () => {
     await reader?.cancel().catch(() => undefined);
   });
 
+  test("SSE reader.cancel 释放 activeStreams", async () => {
+    const { deps, handler } = await setup();
+    const attempt = await deps.attempts.create({ taskId: "t1", attemptNo: 1, instanceId: "i", nodeId: "n3" });
+    await deps.attempts.append(attempt.attemptId, { kind: "phase", phase: "claimed", event: "attempt.claimed" });
+    const response = await handler(new Request(`http://x/api/v1/observability/attempts/${attempt.attemptId}/logs/stream`));
+    const reader = response.body?.getReader();
+    await reader?.read();
+    const during = await (await handler(new Request("http://x/api/v1/observability/health"))).json();
+    expect(during.activeStreams).toBe(1);
+    await reader?.cancel();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const after = await (await handler(new Request("http://x/api/v1/observability/health"))).json();
+    expect(after.activeStreams).toBe(0);
+  });
+
   test("attempt SSE：已结束返回 snapshot + end", async () => {
     const { deps, handler } = await setup();
     const attempt = await deps.attempts.create({ taskId: "t1", attemptNo: 1, instanceId: "i", nodeId: "n3" });

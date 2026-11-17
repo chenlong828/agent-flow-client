@@ -111,13 +111,10 @@ export class FileRunRegistry {
       let removed = 0;
       for (const [runId, record] of records) {
         if (active.has(runId)) continue;
-        const archivedAt = record.archivedAt === undefined ? null : Date.parse(record.archivedAt);
-        const updatedAt = Date.parse(record.updatedAt);
-        const expired =
-          archivedAt !== null
-            ? Number.isFinite(archivedAt) && now - archivedAt > archivedRetention
-            : Number.isFinite(updatedAt) && now - updatedAt > unarchivedRetention;
-        if (!expired) continue;
+        // 未归档 run 视为仍活跃/待确认，不按时间清理；只清已归档的 run。
+        if (record.archivedAt === undefined) continue;
+        const archivedAt = Date.parse(record.archivedAt);
+        if (!Number.isFinite(archivedAt) || now - archivedAt <= archivedRetention) continue;
         // 保留 tombstone：O-09/O-10 需要区分 404（从未存在）与 410（已清理）。
         const tombstone = { ...record, goneAt: new Date(now).toISOString() };
         await writeRecord(this.#dir, tombstone, this.#tempSeq++).catch(() => undefined);

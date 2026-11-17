@@ -75,10 +75,10 @@ describe("run 注册表", () => {
     clock.now = Date.parse("2026-11-17T10:00:00Z");
 
     const removed = await registry.prune({ activeRunIds: ["archived-active"] });
-    expect(removed).toBe(2);
+    expect(removed).toBe(1);
     expect(await registry.get("archived-active")).not.toBeNull();
     expect(await registry.get("archived-old")).toMatchObject({ goneAt: expect.any(String) });
-    expect(await registry.get("unarchived-old")).toMatchObject({ goneAt: expect.any(String) });
+    expect(await registry.get("unarchived-old")).toMatchObject({ workspacePath: "/c" });
     expect((await readdir(join(stateRoot, "runs"))).sort()).toEqual([
       "archived-active.json",
       "archived-old.json",

@@ -17,41 +17,44 @@ export async function attemptStream(deps: ObserverDeps, request: Request, attemp
   let lastSeq = Math.max(lastEventId, all.at(-1)?.seq ?? lastEventId);
   let poll: ReturnType<typeof setInterval> | undefined;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let writer: ReturnType<typeof createWriter> | undefined;
   const body = new ReadableStream({
     start(controller) {
-      const writer = createWriter(controller, () => {
+      const w = createWriter(controller, () => {
         if (poll !== undefined) clearInterval(poll);
         if (heartbeat !== undefined) clearInterval(heartbeat);
         close();
       });
-      writer.send("snapshot", lastSeq, { events: all, truncatedBefore: initial.truncatedBefore ?? null, reset: lastEventId > 0 && all.length === 0 });
+      writer = w;
+      w.send("snapshot", lastSeq, { events: all, truncatedBefore: initial.truncatedBefore ?? null, reset: lastEventId > 0 && all.length === 0 });
       if (attempt.status !== "running") {
-        writer.send("end", lastSeq, { status: attempt.status, finishedAt: attempt.finishedAt });
-        writer.finish();
+        w.send("end", lastSeq, { status: attempt.status, finishedAt: attempt.finishedAt });
+        w.finish();
         return;
       }
       poll = setInterval(() => {
         void (async () => {
-          if (writer.closed) return;
+          if (w.closed) return;
           const current = await deps.attempts.get(attemptId);
           const next = (await deps.attempts.events(attemptId, { afterCursor: String(lastSeq), limit: 200 })).items;
           for (const item of next) {
             lastSeq = item.seq;
-            writer.send("log", item.seq, item);
+            w.send("log", item.seq, item);
           }
           if (current !== null && current.status !== "running") {
-            writer.send("end", lastSeq, { status: current.status, finishedAt: current.finishedAt });
-            writer.finish();
+            w.send("end", lastSeq, { status: current.status, finishedAt: current.finishedAt });
+            w.finish();
           }
-        })().catch(() => writer.finish());
+        })().catch(() => w.finish());
       }, 500);
       heartbeat = setInterval(() => {
-        if (!writer.closed) writer.send("heartbeat", -1, { ts: stream.now().toISOString() });
+        if (!w.closed) w.send("heartbeat", -1, { ts: stream.now().toISOString() });
       }, 15000);
-      request.signal.addEventListener("abort", () => writer.finish(), { once: true });
+      request.signal.addEventListener("abort", () => w.finish(), { once: true });
     },
     cancel() {
-      close();
+      if (writer === undefined) close();
+      else writer.finish();
     },
   });
   return sse(body);
@@ -60,7 +63,9 @@ export async function sessionStream(deps: ObserverDeps, request: Request, sessio
   if (!deps.config.richStreamEnabled) throw new ObserverError(503, "rich_stream_disabled", "富事件流已关闭");
   const attempt = await deps.attempts.findBySession(sessionId);
   if (attempt === null) throw new ObserverError(404, "session_not_found", `session 不存在：${sessionId}`);
-  if (attempt.goneAt !== undefined) throw new ObserverError(410, "observation_gone", "session 已按保留策略清理");
+  if (attempt.goneAt !== undefined || (await deps.archive.isGone?.(sessionId)) === true) {
+    throw new ObserverError(410, "observation_gone", "session 已按保留策略清理");
+  }
   const close = stream.openStream();
   const lastEventId = Number(request.headers.get("last-event-id") ?? "0");
   const snapshot = deps.rich.snapshot(sessionId, 1000);
@@ -70,6 +75,7 @@ export async function sessionStream(deps: ObserverDeps, request: Request, sessio
   let closed = false;
   let pending = 0;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let finishStream: (() => void) | undefined;
   const encoder = new TextEncoder();
   const body = new ReadableStream({
     start(controller) {
@@ -79,8 +85,7 @@ export async function sessionStream(deps: ObserverDeps, request: Request, sessio
           try {
             controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ code: "slow_consumer" })}\n\n`));
           } catch {
-            // 已关闭。
-          }
+            }
           finish();
           return false;
         }
@@ -118,6 +123,7 @@ export async function sessionStream(deps: ObserverDeps, request: Request, sessio
           // 已关闭。
         }
       };
+      finishStream = finish;
       send("snapshot", lastSeq, { events: initial, reset });
       if (attempt.status !== "running") {
         send("end", lastSeq, { status: attempt.status, finishedAt: attempt.finishedAt });
@@ -127,7 +133,8 @@ export async function sessionStream(deps: ObserverDeps, request: Request, sessio
       request.signal.addEventListener("abort", finish, { once: true });
     },
     cancel() {
-      close();
+      if (finishStream === undefined) close();
+      else finishStream();
     },
   });
   return sse(body);
