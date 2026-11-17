@@ -83,7 +83,7 @@ export async function composeForServe(
     token: config.scheduler.token,
     clientId: config.scheduler.clientId,
     clientAddress: config.scheduler.clientAddress,
-    ...(setup.observer === undefined ? {} : { observabilityUrl: config.observability.advertiseUrl }),
+    ...(setup.advertiseUrl === undefined ? {} : { observabilityUrl: setup.advertiseUrl }),
   });
   const gateway = new HttpScheduler({
     transport,
@@ -115,7 +115,7 @@ export async function composeForServe(
     sessionLogs,
     journal: store,
     dshHome: config.acp.dshHome,
-    ...(setup.observer === undefined ? {} : { observation: setup.recorder }),
+    ...(setup.record ? { observation: setup.recorder } : {}),
     runs,
     maxResultBytes: 262144,
     ...(config.executor.idleTimeoutMs > 0 ? { idleTimeoutMs: config.executor.idleTimeoutMs } : {}),

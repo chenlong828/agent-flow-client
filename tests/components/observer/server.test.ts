@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileAttemptStore } from "../../../src/components/observer/attempt-store.ts";
 import { SessionRichHub } from "../../../src/components/observer/rich-hub.ts";
+import { FileSessionArchive } from "../../../src/components/observer/session-archive.ts";
 import { createObserverHandler, startObserverServer } from "../../../src/components/observer/server.ts";
 import type { ObserverConfig, ObserverDeps } from "../../../src/components/observer/http-types.ts";
 import { WorkspaceFileReader } from "../../../src/components/workspace/files.ts";
@@ -125,6 +126,48 @@ describe("observer HTTP", () => {
     const text = await new Response(response.body).text();
     expect(text).toContain("event: snapshot");
     expect(text).toContain("event: end");
+  });
+
+  test("prune 后 raw 与 session 返回 410", async () => {
+    const { deps, handler } = await setup();
+    const attempt = await deps.attempts.create({ taskId: "t1", attemptNo: 1, instanceId: "i", nodeId: "n3" });
+    await deps.attempts.update(attempt.attemptId, { sessionId: "sess-gone", status: "completed" });
+    const sessionDir = join(deps.stateRoot, "observability", "sessions", "sess-gone");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, "meta.json"), JSON.stringify({
+      sessionId: "sess-gone",
+      status: "completed",
+      startedAt: "2020-01-01T00:00:00Z",
+      finishedAt: "2020-01-01T00:00:00Z",
+      archive: { status: "stored", sizeBytes: 4, sha256: "sha256:x" },
+    }));
+    await writeFile(join(sessionDir, "session.v4.jsonl.zstd"), "data");
+    const archive = new FileSessionArchive({ stateRoot: deps.stateRoot });
+    expect(await archive.prune({ retentionDays: 0 })).toBe(1);
+    deps.archive = archive;
+    const raw = await handler(new Request("http://x/api/v1/observability/sessions/sess-gone/raw"));
+    expect(raw.status).toBe(410);
+    expect(await raw.json()).toMatchObject({ error: { code: "observation_gone" } });
+    const detail = await handler(new Request("http://x/api/v1/observability/sessions/sess-gone"));
+    expect(detail.status).toBe(410);
+  });
+
+  test("SSE 并发超过 maxStreams 返回 429", async () => {
+    const { deps, handler } = await setup();
+    const attempt = await deps.attempts.create({ taskId: "t1", attemptNo: 1, instanceId: "i", nodeId: "n3" });
+    await deps.attempts.update(attempt.attemptId, { sessionId: "sess-live" });
+    const readers: ReadableStreamDefaultReader<Uint8Array>[] = [];
+    for (let index = 0; index < config.maxStreams; index += 1) {
+      const response = await handler(new Request("http://x/api/v1/observability/sessions/sess-live/events/stream"));
+      expect(response.status).toBe(200);
+      const reader = response.body?.getReader();
+      if (reader === undefined) throw new Error("SSE 没有 body");
+      readers.push(reader);
+    }
+    const sixth = await handler(new Request("http://x/api/v1/observability/sessions/sess-live/events/stream"));
+    expect(sixth.status).toBe(429);
+    expect(await sixth.json()).toMatchObject({ error: { code: "rate_limited" } });
+    for (const reader of readers) await reader.cancel();
   });
 
   test("session 详情与富 SSE snapshot", async () => {

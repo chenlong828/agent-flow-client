@@ -13,6 +13,10 @@ export type ObserverSetup = {
   rich: SessionRichHub;
   recorder: ObservationRecorder;
   health: ObserverHealth;
+  /** `enabled=true` 即记录，即使 HTTP 启动失败；`enabled=false` 才关闭。 */
+  record: boolean;
+  /** 只有 HTTP 启动成功才广告 URL。 */
+  advertiseUrl?: string;
   observer?: { handle: ObserverHandle; recorder: ObservationRecorder; attempts: FileAttemptStore; rich: SessionRichHub; cleanup: () => void };
 };
 
@@ -27,7 +31,7 @@ export async function setupObserver(input: {
   const attempts = new FileAttemptStore({ stateRoot: input.stateRoot, health });
   const rich = new SessionRichHub();
   const recorder = new ObservationRecorder({ stateRoot: input.stateRoot, attempts, rich, health });
-  if (!input.config.observability.enabled) return { attempts, rich, recorder, health };
+  if (!input.config.observability.enabled) return { attempts, rich, recorder, health, record: false };
 
   let handle: ObserverHandle | undefined;
   let cleanup: (() => void) | undefined;
@@ -66,6 +70,12 @@ export async function setupObserver(input: {
     rich,
     recorder,
     health,
-    ...(handle === undefined || cleanup === undefined ? {} : { observer: { handle, recorder, attempts, rich, cleanup } }),
+    record: input.config.observability.enabled,
+    ...(handle === undefined || cleanup === undefined
+      ? {}
+      : {
+          advertiseUrl: input.config.observability.advertiseUrl,
+          observer: { handle, recorder, attempts, rich, cleanup },
+        }),
   };
 }
