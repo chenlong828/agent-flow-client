@@ -1,7 +1,7 @@
 ---
 layer: works
 module: global
-status: active
+status: frozen
 updated: 2026-11-14
 ---
 
@@ -33,7 +33,7 @@ updated: 2026-11-14
 - 窗口内 `agent_message_chunk` 为 **0**，叙事全在 36 段 `agent_thought_chunk` 里；
 - 只报"当前工具 + 上下文/事件数"，UI 在 2 分多钟里只会显示同一行"模型处理中 · 最近活动 x 秒前"。
 
-因此载荷修订为"**最近动作序列 + 最新叙述尾部**"，详细模拟见 [`sim-progress-live.md`](sim-progress-live.md)。
+因此载荷修订为"**最近动作序列 + 最新叙述尾部**"，详细模拟见 [`sim-progress-live.md`](sim-progress-live.md)。2026-11-17 的自然多步骤实测（去掉"每步一句话"的提示）也验证：4 段正文覆盖不了 6 个工具，8.5–14.8s 实际在 read/wc 但正文停在"现在用 shell 拼接"，见 [`probe/natural-20261117/report.md`](probe/natural-20261117/report.md)。
 
 ## 1. 目标与非目标
 
@@ -429,7 +429,8 @@ interface SchedulerPort {
   1. 对象 → `JSON.stringify`，数组取前 3 项；
   2. 单行化（`\n` → 空格）；
   3. 按键名脱敏：`authorization|cookie|token|secret|password|passwd|api[-_]?key|credential|private[-_]?key` 的值替换为 `[redacted]`；
-  4. 保留**开头** 200 字节（命令/路径的可读部分在前），附 `…`。
+  4. 优先取稳定短键（`file_path` > `command` > `name`），**不把 `write`/`edit` 的 `content` 放进摘要**（那是文件全文）；
+  5. 保留**开头** 200 字节（命令/路径的可读部分在前），附 `…`。
 - `text.tail`：取尾部 200 字节（最新叙述在后），去掉控制字符；对 `Bearer\s+\S+`、`sk-[A-Za-z0-9]+`、`(token|password|secret)=\S+` 做替换；附 `…` 与 `truncated`。
 - 不保存原始 `rawInput` 与完整思考，只在采集时生成摘要/尾部；避免内存里留下长参数与全文。
 - 不发送 `tool_call_update.content`（工具输出）、prompt、最终消息全文。

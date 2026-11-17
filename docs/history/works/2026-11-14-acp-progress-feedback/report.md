@@ -1,7 +1,7 @@
 ---
 layer: works
 module: global
-status: active
+status: frozen
 updated: 2026-11-14
 ---
 
@@ -253,11 +253,11 @@ type ProgressSnapshot = {
 ```bash
 mkdir -p /tmp/acp-progress/{home,ws}
 # 用 client 的 profile 补丁 + 模型路由（省略生成步骤，见 summary.json 的 commandArgs）
-HUNDSUN_PUBLIC_API_KEY=... node docs/works/2026-11-14-acp-progress-feedback/probe/acp-progress-probe.mjs \
+HUNDSUN_PUBLIC_API_KEY=... node docs/history/works/2026-11-14-acp-progress-feedback/probe/acp-progress-probe.mjs \
   --dsh /Users/chenlong/agent/deepseek-harness/apps/cli/lib/bin.js \
   --home /tmp/acp-progress/home --cwd /tmp/acp-progress/ws \
   --patch /tmp/acp-progress/home/af/profile.skill-patch.yml \
-  --out docs/works/2026-11-14-acp-progress-feedback/probe/summary.json
+  --out docs/history/works/2026-11-14-acp-progress-feedback/probe/summary.json
 ```
 
 - 捕获注意：本机 `workspace-write` sandbox 后端不可用，第一次 `bash` 以 `failed` 返回，模型自动改用 `danger-full-access` 重试；这恰好演示了"失败状态与错误文本也能实时展示"，不影响时序结论。

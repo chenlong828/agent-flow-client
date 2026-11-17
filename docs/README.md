@@ -75,17 +75,10 @@ docs/
 │   ├── 2026-11-12-skill-name-proposal/     ← 技能展示名/系统名分离提案（交调度层）
 │   │   ├── brief.md
 │   │   └── proposal.md
-│   ├── 2026-11-14-superproject-workspace/  ← 工作区根支持 git 超项目（P2，收口）
+│   └── 2026-11-14-superproject-workspace/  ← 工作区根支持 git 超项目（P2，收口）
 │   │   ├── brief.md
 │   │   ├── review.md
 │   │   └── result.md
-│   └── 2026-11-14-acp-progress-feedback/   ← 任务执行过程信息反馈调研（ACP 侧，调研完成）
-│       ├── brief.md
-│       ├── result.md
-│       ├── report.md
-│       ├── design-progress-5s.md
-│       ├── sim-progress-live.md
-│       └── probe/
 └── history/                                ← 记忆：怎么走到这里的
     ├── works/                              ← 已归档工序（frozen）
     │   ├── 2026-11-10-execution-semantics-proposal/ ← 执行容错语义提议（已被 v2 取代）
@@ -117,11 +110,18 @@ docs/
     │   │   ├── proposal.md                   ← 7 契约面、SCH/CLT、ND/OB 处置
     │   │   ├── review.md                     ← 两轮评审收口为「通过」
     │   │   └── result.md
-    │   └── 2026-11-07-m1-contract-freeze/    ← M1 契约冻结（冻结落盘 + 设计评审收口，已归档）
+    │   ├── 2026-11-07-m1-contract-freeze/    ← M1 契约冻结（冻结落盘 + 设计评审收口，已归档）
     │       ├── brief.md
     │       ├── freeze-checklist.md           ← 提案 §13 逐行落点 + AB/AD/AH 清单
     │       ├── review.md                     ← AB/AD/AH/NB/ND2 处置
     │       └── result.md
+    │   └── 2026-11-14-acp-progress-feedback/ ← 任务执行过程信息反馈调研（ACP 侧，已归档）
+    │   │   ├── brief.md
+    │   │   ├── result.md
+    │   │   ├── report.md
+    │   │   ├── design-progress-5s.md
+    │   │   ├── sim-progress-live.md
+    │   │   └── probe/
     └── decisions/
         ├── 2026-11-03-bootstrap.md
         ├── 2026-11-03-system-bun.md

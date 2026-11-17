@@ -1,7 +1,7 @@
 ---
 layer: works
 module: global
-status: active
+status: frozen
 updated: 2026-11-14
 ---
 
@@ -70,3 +70,20 @@ updated: 2026-11-14
 - 窗口内 `agent_message_chunk` 为 0，叙事全在 `thought` 里；
 - 因此载荷改为"最近 8 个动作（`activity`）+ 最新叙述尾部（`text`）"，仍不含 prompt/最终消息/工具输出；原 C4 随之修订。
 - `text` 是否默认开启（thought 是否可看）与 `promptHead` 是否由 run detail 提供，列为待确认 Q7/Q8。
+
+## 8. 追加：多步骤 ACP 事件实测（2026-11-17）
+
+本地跑了一条多步骤文件任务（建目录/写文件、shell 拼接、read、统计、汇报），27.5s、28 条事件、5 个工具调用、3 次权限请求：
+
+- 实测报告：[`probe/complex-20261117/report.md`](probe/complex-20261117/report.md)；
+- 原始捕获：[`summary.json`](probe/complex-20261117/summary.json)、[`summary.protocol.jsonl`](probe/complex-20261117/summary.protocol.jsonl)。
+- 关键结论：事件按"模型步骤"成批到达（thought/message/usage/tool_call 同一毫秒）；`tool_call_update.content` 带工具结果但可能很大；权限请求只有 `toolCallId`；`activity` + `text` 是 5s 快照可用的最小信息集。
+
+### 8.1 自然 prompt 复测（去掉"每步一句话"）
+
+用户指出上一轮 prompt 末尾的"每完成一步，用一句话说明"会人为增加正文。去掉该句后重跑（[`probe/natural-20261117/report.md`](probe/natural-20261117/report.md)）：
+
+- 14.8s、24 条事件：正文 **4 段**（不是每步都有）、思考 3、工具 6；
+- 8.5s 之后到 14.8s 实际执行了 `read`/`wc`，但没有新正文，`text` 会停在"现在用 shell 拼接" 6.3 秒；
+- 因此 `activity` 必须保留最近动作；`text` 只能是"最新叙述 + 年龄"，不能假设逐步骤覆盖；
+- 新发现：`write` 的 `rawInput` 含文件内容，摘要必须优先取 `file_path`，不能整体 stringify。

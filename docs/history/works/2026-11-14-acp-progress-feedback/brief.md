@@ -1,7 +1,7 @@
 ---
 layer: works
 module: global
-status: active
+status: frozen
 updated: 2026-11-14
 ---
 
@@ -47,6 +47,7 @@ updated: 2026-11-14
 | T-04 | 实验 | probe | 真机捕获事件时序与字段 | 完成 |
 | T-05 | 文档 | works | 方案对比、建议路线与未决问题 | 完成 |
 | T-06 | 设计 | 跨 client/调度器 | 用户确认 5s + 模式 C 后的设计分析（P1） | 完成（待确认 C1–C6） |
+| T-07 | 实验 | probe | 多步骤 prompt 的 ACP 事件实测（2026-11-17） | 完成 |
 
 ## 6 验收标准
 
