@@ -56,7 +56,7 @@ describe("observer HTTP", () => {
     await deps.attempts.create({ taskId: "t1", attemptNo: 1, instanceId: "i", nodeId: "n3" });
     const health = await handler(new Request("http://x/api/v1/observability/health"));
     expect(health.status).toBe(200);
-    expect(await health.json()).toMatchObject({ observabilityVersion: "2026-11-17.1", activeAttempts: 1 });
+    expect(await health.json()).toMatchObject({ observabilityVersion: "2026-11-18.1", activeAttempts: 1 });
     const list = await handler(new Request("http://x/api/v1/observability/attempts?status=running"));
     expect(list.status).toBe(200);
     expect((await list.json()).items).toHaveLength(1);
@@ -195,7 +195,7 @@ describe("observer HTTP server", () => {
     try {
       const response = await fetch(`http://127.0.0.1:${handle.port}/api/v1/observability/health`);
       expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ observabilityVersion: "2026-11-17.1" });
+      expect(await response.json()).toMatchObject({ observabilityVersion: "2026-11-18.1" });
     } finally {
       handle.stop();
     }

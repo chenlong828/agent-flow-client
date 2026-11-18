@@ -1,6 +1,6 @@
 import type { TaskResult } from "../executor/types.ts";
 
-export const OBSERVABILITY_VERSION = "2026-11-17.1";
+export const OBSERVABILITY_VERSION = "2026-11-18.1";
 
 export type AttemptStatus = "running" | "interrupted" | "completed" | "failed" | "cancelled" | "timeout";
 export type AttemptPhase = "claimed" | "bound" | "ready" | "running" | "settled" | "reported" | "closed";

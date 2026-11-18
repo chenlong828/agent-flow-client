@@ -4,7 +4,7 @@ module: execution-plane
 status: current
 updated: 2026-11-17
 contract: client-observability-v1
-version: 2026-11-17.1
+version: 2026-11-18.1
 ---
 
 # client-observability-v1：client 只读观测面
@@ -43,7 +43,7 @@ version: 2026-11-17.1
 ```json
 {
   "status": "ok",
-  "observabilityVersion": "2026-11-17.1",
+  "observabilityVersion": "2026-11-18.1",
   "clientVersion": "0.1.0",
   "startedAt": "2026-11-17T09:00:00Z",
   "uptimeMs": 123456,
@@ -124,16 +124,17 @@ version: 2026-11-17.1
     "sessionId": "0ae3227a-…",
     "kind": "acp",
     "event": "session.update",
-    "message": "assistant message: 第 1 步…",
-    "data": { "acpType": "agent_message_chunk", "truncated": true }
+    "message": "第 1 步…",
+    "data": { "acpType": "agent_message_chunk", "bytes": 1234 }
   }],
   "nextCursor": "…",
   "truncatedBefore": null
 }
 ```
 
-- `message` 是**可读预览**，≤4 KiB，已脱敏；`data` 白名单。
-- 不返回 prompt、最终消息全文、推理、工具完整 I/O；全文走 `O-08`。
+- `message` 是**可读正文/预览**：`agent_thought_chunk` / `agent_message_chunk` ≤16 KiB；其他事件 ≤4 KiB，已脱敏；`data` 白名单。
+- thought/message 正文默认返回；`data.bytes` 给原始字节数；超过 16 KiB 截断并给 `data.truncated=true`、`data.originalBytes`；全文走 `O-08`。
+- 不返回 prompt、工具完整 I/O。
 - `seq` per attempt 单调；截断给 `truncatedBefore`。
 
 ## 7. `O-05` attempt 日志 SSE（preview）
@@ -184,7 +185,7 @@ data: {"status":"completed","finishedAt":"…"}
 ## 9. `O-07` session 事件（preview）
 
 - 由 `O-04` 的 attempt 事件按 `sessionId` 过滤得到；`seq` 沿用 attempt seq。
-- 支持 `cursor`/`limit`；不返回富文本/工具 I/O；`410 observation_gone` 已清理。
+- 支持 `cursor`/`limit`；thought/message 正文同样按 16 KiB 上限返回；`410 observation_gone` 已清理。
 - 与 `O-04` 同一 schema，不新增字段。
 
 ## 10. `O-08` raw
@@ -298,7 +299,7 @@ rich_stream_enabled = true
 
 - O-01–O-11 正常/错误/404/410/415/429；
 - attempt 生成/重派/session 关联/runId；
-- O-04/O-05/O-07 preview 不含 prompt/推理/tool I/O；
+- O-04/O-05/O-07 preview 不含 prompt/tool I/O；thought/message 正文按 16 KiB 上限返回；
 - O-11 富事件顺序/上限/snapshot/Last-Event-ID/慢消费者/结束；
 - O-09/O-10 路径/截断/二进制/符号链接；
 - run 注册表 upsert/重建/保留；

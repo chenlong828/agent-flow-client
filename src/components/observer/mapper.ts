@@ -40,7 +40,7 @@ export class AcpObservationMapper {
     const text = readText(update);
     const messageId = readMessageId(update);
     return {
-      preview: preview(type, previewText("assistant", text), { acpType: type }),
+      preview: previewTextEvent(type, text),
       rich: { kind: "message", ...(messageId === undefined ? {} : { messageId }), ...textPart(text) },
     };
   }
@@ -49,7 +49,7 @@ export class AcpObservationMapper {
     const text = readText(update);
     const messageId = readMessageId(update);
     return {
-      preview: preview(type, `thought: ${Buffer.byteLength(text, "utf8")} bytes`, { acpType: type }),
+      preview: previewTextEvent(type, text),
       rich: { kind: "thought", ...(messageId === undefined ? {} : { messageId }), ...textPart(text) },
     };
   }
@@ -149,8 +149,16 @@ function preview(event: string, message: string, data: Record<string, unknown>):
   return { kind: "acp", event, message: truncate(message, PREVIEW_LIMIT), data };
 }
 
-function previewText(label: string, text: string): string {
-  return `${label}: ${truncate(text, 800)}`;
+/** thought/message 的 preview 直接带正文；超过 16 KiB 截断并标记。 */
+function previewTextEvent(event: string, text: string): ObservationEventInput {
+  const bytes = Buffer.byteLength(text, "utf8");
+  const truncated = bytes > RICH_LIMIT;
+  return {
+    kind: "acp",
+    event,
+    message: truncate(text, RICH_LIMIT),
+    data: { acpType: event, bytes, ...(truncated ? { truncated: true, originalBytes: bytes } : {}) },
+  };
 }
 
 function readText(update: Record<string, unknown>): string {
