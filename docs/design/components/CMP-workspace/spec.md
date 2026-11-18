@@ -3,7 +3,7 @@ layer: design
 module: execution-plane
 component: CMP-workspace
 status: active
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # CMP-workspace 组件规格
@@ -20,7 +20,7 @@ updated: 2026-11-17
   - 接收预置容器路径，校验布局（含 git 超项目根与子模块告警）；
   - 维护 `.dsh` 安装点与暂存目录；
   - 路径解析与容器内约束（拒绝越界、拒绝跟随越界符号链接）；
-  - task-space（`<workspace>/.agent-flow/task/<runId>`）校验/创建（只建目录）与 tar.gz 打包（v3）；
+  - task-space（`taskSpacePath` 指定，当前为 `<workspace>/task-spaces/<日期-时间>`）校验/创建（只建目录）与 tar.gz 打包（v3）；
   - 清理与保留策略；
   - 工作区诊断（`doctor`）。
 - **不负责 Y**：
@@ -167,7 +167,7 @@ interface WorkspaceAdmin {
 | 容器根 + 子仓库工作树 + 产物 | 预置阶段 + 模型/工具（经 DSH） | runtime、assets、executor、observability | 本地强一致；按策略保留，默认不删 |
 | `.dsh` 安装点 / `.staging` | `CMP-workspace` | assets、executor | 幂等创建；清理可回收 |
 | `.dsh/skills` | `CMP-assets`（唯一写入口） | runtime/DSH | 原子替换；workspace 只提供路径 |
-| `.agent-flow/task/<runId>`（task-space） | `CMP-workspace` 只建目录；内容由节点内模型/工具写 | executor、CLI 归档 | 绝对路径且位于工作区内；清理策略不覆盖（v3 `C-12`） |
+| `task-spaces/<日期-时间>`（task-space，路径由调度器下发） | `CMP-workspace` 只建目录；内容由节点内模型/工具写 | executor、CLI 归档 | 绝对路径且位于工作区内；清理策略不覆盖（v3 `C-12`） |
 
 ## 6. 冷热与资源
 

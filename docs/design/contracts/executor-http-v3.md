@@ -2,7 +2,7 @@
 layer: design
 module: execution-plane
 status: current
-updated: 2026-11-15
+updated: 2026-11-18
 contract: executor-http-v3
 protocolVersion: 3
 supersedes: executor-http-v2
@@ -170,7 +170,7 @@ v3 在此之上加两件事：**执行前有 task-space**（工作区内按 run 
       "attempt": 1,
       "prompt": "……任务信息 + 输出契约，opaque 文本……",
       "workspacePath": "/abs/instance-a",
-      "taskSpacePath": "/abs/instance-a/.agent-flow/task/01J9Z8A1B2",
+      "taskSpacePath": "/abs/instance-a/task-spaces/20261113-101922",
       "timeoutMs": 1800000,
       "skillSet": { "digest": "sha256:<hex>", "packages": [] }
     }
@@ -182,7 +182,7 @@ v3 在此之上加两件事：**执行前有 task-space**（工作区内按 run 
       "runId": "01J9Z8A1B2",
       "instanceId": "0193f0aa-6c31-7c4e-9a4b-0d1e2f3a4b5c",
       "workspacePath": "/abs/instance-a",
-      "taskSpacePath": "/abs/instance-a/.agent-flow/task/01J9Z8A1B2"
+      "taskSpacePath": "/abs/instance-a/task-spaces/20261113-101922"
     }
   ],
   "nextPollAfterMs": 0
@@ -193,7 +193,7 @@ v3 在此之上加两件事：**执行前有 task-space**（工作区内按 run 
 - 空结果不返回 204：始终 `200` + `tasks: []`，client 按 `nextPollAfterMs` 决定何时再拉（缺省 0 = 立即再拉，服务端已挂起过一个周期）。
 - `stop: true`：完成手上任务后停止领取并退出（优雅停）。
 - `cancelInstances: [instanceId]`：中止这些实例的在跑任务，并丢弃 `tasks` 里属于这些实例的条目。
-- `archiveRequests`：缺省视为 `[]`；条目含 `runId`、`instanceId`、`workspacePath`、`taskSpacePath`。**电平信号**：同一 `runId` 会持续下发，直到 client 在 `archivedRuns` 中确认或该 run 记录被清理。
+- `archiveRequests`：缺省视为 `[]`；条目含 `runId`、`instanceId`、`workspacePath`、`taskSpacePath`。**电平信号**：同一 `runId` 会持续下发，直到 client 在 `archivedRuns` 中确认，或服务端判定该 run 无需归档（从未有成功节点、或 pending 超时降级）。客户端本地没有对应 task-space 时只需忽略该条目，不必回报；服务端会在超时后自行停止下发。
 - **归档不改变挂起行为**：服务端不因存在待归档 run 而缩短 `pollHoldMs`。唯一例外是某个 `runId` 首次进入待归档状态的那一跳可立即返回一次；之后按正常长轮询挂起。client 在**后台**打包上传，不阻塞 poll，否则会因归档耗时触发 `S-02` 静默重派。
 - `stop` / `cancelInstances` / `archiveRequests` 是**电平信号**：调度器会持续下发直到 client 侧生效（`running` 不再包含对应任务 / `archivedRuns` 确认）。
 
@@ -274,7 +274,7 @@ v3 在此之上加两件事：**执行前有 task-space**（工作区内按 run 
    - `session_log_too_large`：会话日志压缩后超过 `maxSessionLogBytes`，client 已上传 0 行空日志后按 `failed` 上报；
    - `archive_too_large`：归档超过 `maxArchiveBytes`（记录在 run 的 `archive_state`，不进结果体）。
    调度器据 `code` 区分「任务太大」与「疑似卡死」。
-5. `message` 只要有输出就填（按 `maxResultBytes` 截断，含截断标记不超过上限），空串只表示确实没有输出。**`review` 节点的 verdict JSON 就在 `message` 的最后一段代码块里**，由服务端解析；client 不解析、不改写。
+5. `message` 只要有输出就填（按 `maxResultBytes` 截断，含截断标记不超过上限），空串只表示确实没有输出。**`review` 节点的 verdict JSON 在 `message` 末尾**（裸 JSON，不加代码围栏，独占最后一行或紧跟最后一句均可），由服务端解析；client 不解析、不改写。
 6. 结果只含控制信息：状态、最终消息、停止原因、用量、session、错误类别；不含产物、会话全文、日志、凭据。
 7. 重复上报不要求 `attempt` 一致；以 `taskId` 判定。
 8. 已结算任务的重复上报仍按第 1 条返回 `accepted=false`；`session_log_missing` 只用于「尚未结算且缺日志」。
@@ -531,7 +531,7 @@ type ArchiveAck = {
 - **并发**：同一 `instanceId` 上允许多个任务同时执行，前提是 `S-06` 的同 digest 与 `C-03` 的安装临界区。
 - **产品侧约束**（不属于本契约的传输语义，但影响任务分布）：同一工作区同时只推进一个运行的节点任务；例外是 `fanout` 内部展开的多个任务，它们同属一个 run、共用同一专家与技能集。
 - **终止上界**：`timeoutMs` 是契约要求；`idle_timeout` 是可选优化（`C-06`），默认关闭，避免误杀长工具调用。
-- **清理**：本契约**没有清理指令**。工作区与 task-space 默认保留（分析产物是重跑的基础；归档依赖该目录）；实例不再需要时由运维按 `instanceId` 回收。`keep` / `clean-skills` / `clean-client` 等本地清理策略**不覆盖** `.agent-flow/task`。
+- **清理**：本契约**没有清理指令**。工作区与 task-space 默认保留（分析产物是重跑的基础；归档依赖该目录）；实例不再需要时由运维按 `instanceId` 回收。`keep` / `clean-skills` / `clean-client` 等本地清理策略**不覆盖** `task-spaces/`。
 
 ## 10 联调与验收
 
@@ -608,7 +608,7 @@ type ArchiveAck = {
 | `D-06` | 新增 `session_log_too_large`、`archive_too_large` 两个结果/归档错误码 |
 | `D-07` | 升级时丢弃 v2 遗留的 `settled` 结果（client 启动迁移逻辑；契约侧无需字段） |
 | `D-08` | §11.2/§11.3 按正文修正（`S-02`、`S-07`、`C-06`、`C-08`） |
-| `D-09` | 清理策略不覆盖 `.agent-flow/task`（§9） |
+| `D-09` | 清理策略不覆盖 `task-spaces/`（§9） |
 | `D-10` | 归档确认后仍保留本地 task-space（`C-12`） |
 | `H-01` | 响应与 `details` 的 `bytes` 明确为压缩后大小 |
 | `H-02` | `P-04` 的 `404 task_not_found` → client 丢弃上传与结果，停止重试 |
