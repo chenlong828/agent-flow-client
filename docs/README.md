@@ -29,6 +29,7 @@ docs/
 │   │   ├── CMP-workspace/spec.md
 │   │   ├── CMP-assets/spec.md
 │   │   ├── CMP-store/spec.md
+│   │   ├── CMP-signal/spec.md
 │   │   ├── CMP-observability/spec.md
 │   │   └── CMP-observer/spec.md
 │   └── scenarios/                          ← 业务场景
@@ -79,9 +80,17 @@ docs/
 │   │   ├── brief.md
 │   │   ├── review.md
 │   │   └── result.md
-│   └── 2026-11-18-session-text/            ← 会话思考与消息全文读取契约（设计，待确认）
+│   ├── 2026-11-18-session-text/            ← 会话思考与消息全文读取契约（设计，待确认）
+│   │   ├── brief.md
+│   │   └── proposal.md
+│   ├── 2026-11-18-mcp-signal-feedback/     ← review verdict 走 MCP 的澄清与反馈（P1，提案已定稿）
+│   │   ├── brief.md
+│   │   ├── review.md
+│   │   └── probe/                          ← DSH MCP 最小实测脚本与证据
+│   └── 2026-11-18-mcp-signal-impl/         ← MCP 结果信号实现（P1，已落地）
 │       ├── brief.md
-│       └── proposal.md
+│       ├── result.md
+│       └── contract-diff.md                ← 给调度面的增量契约与验证清单
 └── history/                                ← 记忆：怎么走到这里的
     ├── works/                              ← 已归档工序（frozen）
     │   ├── 2026-11-10-execution-semantics-proposal/ ← 执行容错语义提议（已被 v2 取代）

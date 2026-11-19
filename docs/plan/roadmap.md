@@ -13,6 +13,7 @@ updated: 2026-11-17
 - 执行过程可见性已收口（2026-11-17）：5s 模式 C 暂不实施，改由 UI 经调度器产品 API 主动拉取 client 观测面（O-01–O-11）；决策见 [`2026-11-17-execution-visibility-pull.md`](../history/decisions/2026-11-17-execution-visibility-pull.md)，收口记录见 [`result.md`](../history/works/2026-11-17-progress-feedback-closeout/result.md)；UI 会话 Tab 待 UI 项目接入。
 - S0 本地执行闭环已落地（2026-11-08）：`run`/`doctor`/`version` 可用。见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
 - 当前目标：S3 安全与交付；真实调度器联调等到调度器侧有实现。
+- 结果信号已落地（2026-11-18）：新增 L0 `CMP-signal` + `SignalPort`，`TaskResult.signals` 随 `P-02` 回传；契约加法 `C-13`/`C-14`；实现工序见 [`2026-11-18-mcp-signal-impl/`](../works/2026-11-18-mcp-signal-impl/brief.md)，待调度面对接验证（`T-RVM-08`）。
 - 已完成 DSH ACP 对接预研并归档：启动方式、协议序列、权限/取消/关闭边界与本机版本基线，见 `docs/history/works/2026-11-03-dsh-acp-preflight/result.md`。
 - 已完成 S0 P0 阻断项验证（12 项 11 通过）：技能根/格式、写入时机、每节点替换、根隔离、脚本权限、并发、项目根均成立；崩溃遗留孤儿进程（S0-11）未通过，见 `docs/works/2026-11-03-s0-acp-verification/result.md`。
 - 已完成 ACP 会话记录与跨 profile 可见性调研：session 记录按 `DSH_HOME` 归属、不按 profile；共用 home 会被 web/desktop 的 `session/list` 读取，首次初始化还会被 workspace bootstrap 采纳；专用 home 才能满足「desktop/web 看不到」，见 `docs/works/2026-11-03-acp-session-records/result.md`。

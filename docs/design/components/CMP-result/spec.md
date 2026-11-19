@@ -22,6 +22,7 @@ updated: 2026-11-12
 - 无 error 且 stopReason 正常 → `succeeded`。
 - `class=cancelled` → `cancelled`；`class=timeout` → `timeout`；其他 error → `failed`。
 - `message` 有输出就填，空串只表示确实没有输出。
+- `signals` 只在 `succeeded` 且采集到合法记录时写入；超过 8 条取最后 8 条，整段超 16 KiB 时丢弃（不截断 `reason`）。
 - `error` 为 `{class, code, message}`；无 `retryable`/`reason`。
 - `taskId`/`attempt` 来自上下文，不从模型输出推断。
 - `usage` 缺失为 `null`。
@@ -29,6 +30,7 @@ updated: 2026-11-12
 ## 3. 截断
 
 - 单位 UTF-8 字节；标记 `\n…[truncated]`（15 字节）。
+- 有 `signals` 时 `message` 预算 = `maxResultBytes - signals 字节 - 1 KiB`；无 `signals` 时与旧行为一致。
 - 总字节数（含标记）≤ `maxBytes`；不切断码点；`maxBytes < 15` 返回空串 + `truncated=true`。
 
 ## 4. 错误映射

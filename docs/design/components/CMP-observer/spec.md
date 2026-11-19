@@ -36,7 +36,7 @@ updated: 2026-11-17
 | `ObservationHttpServer` | Bun HTTP server、路由、错误信封、`no-store` |
 | `ObserverAuth` | Bearer 校验；空 token 仅 loopback |
 | `AttemptQuery` | O-02–O-05/O-07 的分页/过滤/SSE 编排 |
-| `SessionQuery` | O-06/O-08、session→attempt 关联 |
+| `SessionQuery` | O-06/O-08、session→attempt 关联；同一 sessionId 多 attempt（续跑）时取 `startedAt` 最新的 attempt，忽略 `goneAt` |
 | `SessionEventHub` | O-11 内存 ring、snapshot、订阅、关闭 |
 | `RunFileQuery` | O-09/O-10 的 root/path 校验与 DTO 映射 |
 
@@ -84,3 +84,7 @@ updated: 2026-11-17
 ## 6. 预算
 
 目标 ≤60k / 上限 120k（源码 + 规格 + 测试，按字节折算）。超过 60k 或端点 >12 个再拆子模块。
+
+## 附：续跑会话的查找口径（2026-11-18）
+
+`§5.5` 续跑让同一 `sessionId` 出现在多个 attempt 上。`findBySession` 按 `startedAt` 降序、同刻按 `attemptId`（UUIDv7）降序取第一条，`goneAt` 不参与；`O-06`/`O-07`/`O-08`/`O-11` 共用该口径。修复前按目录顺序取第一条，会命中最早的旧超时 attempt，实时 session 视图显示旧状态（`tests/components/observer/attempt-store.test.ts` 覆盖）。

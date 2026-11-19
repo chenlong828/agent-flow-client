@@ -78,6 +78,7 @@ updated: 2026-11-17
 | L0 | `CMP-workspace` | 容器校验、`.dsh/skills` 安装点、路径约束、清理 |
 | L0 | `CMP-assets` | 技能包获取/校验、原子替换、脚本赋权、缓存与失效 |
 | L0 | `CMP-store` | journal、实例锁、孤儿进程记录 |
+| L0 | `CMP-signal` | per-attempt 信号目录与 config、stdio signal server 预检/采集/清理；实现 `SignalPort` |
 | L0 | `CMP-observability` | 结构化日志、`doctor`、脱敏、attempt/session 观测事件存储 |
 | L0 | `CMP-observer` | 只读观测 HTTP、SSE、运行文件查询（O-01–O-11） |
 
@@ -95,6 +96,7 @@ updated: 2026-11-17
 | L0 | `CMP-workspace` | [`components/CMP-workspace/spec.md`](components/CMP-workspace/spec.md) | planned | 容器布局、清理策略、路径约束 |
 | L0 | `CMP-assets` | [`components/CMP-assets/spec.md`](components/CMP-assets/spec.md) | planned | 包格式、来源、校验方式 |
 | L0 | `CMP-store` | [`components/CMP-store/spec.md`](components/CMP-store/spec.md) | planned | 本地持久化格式与保留策略 |
+| L0 | `CMP-signal` | [`components/CMP-signal/spec.md`](components/CMP-signal/spec.md) | active | 信号契约版本、server 分发形态 |
 | L0 | `CMP-observability` | [`components/CMP-observability/spec.md`](components/CMP-observability/spec.md) | active | 观测字段、sink、脱敏规则 |
 | L0 | `CMP-observer` | [`components/CMP-observer/spec.md`](components/CMP-observer/spec.md) | active | 观测 API、SSE、文件查询 |
 
@@ -111,6 +113,7 @@ updated: 2026-11-17
 | `JournalPort` | `CMP-executor` | `CMP-store` | executor/CLI | 任务状态、结果与孤儿记录 |
 | `ObservationPort` | `CMP-executor` | `CMP-observer` 的 recorder | executor | attempt/session 事件与 raw 归档 |
 | `RunRegistryPort` | `CMP-executor` | `CMP-store` | executor | run → workspace/task-space |
+| `SignalPort` | `CMP-executor` | `CMP-signal` | executor | 结果信号目录、预检、采集与清理 |
 
 **端口方法速查**（完整签名见 `CMP-executor` §3.4）：
 
@@ -121,6 +124,7 @@ updated: 2026-11-17
 | `WorkspacePort` | `ensureContainer`、`validate`、`resolve` | executor → 文件系统；容器预置；路径不越界 |
 | `AssetPort` | `install`、`verify`、`currentDigest` | executor → 技能包；同 digest `install` 为空操作；失败回滚 |
 | `JournalPort` | `append`、`mark`、`settled`、`recordOrphan`、`listOrphans`、`clearOrphan` | executor/CLI → 本地存储；追加不覆盖 |
+| `SignalPort` | `prepare`、`collect`、`cleanup` | executor → 文件/子进程；per-attempt 目录；契约不支持时返回 unsupported |
 
 值类型：`TaskRequest`、`TaskResult`、`TaskRecord`、`SkillSet`、`PollRequest`、`PollResponse`、`ResultAck`、`RunningTask`、`FinishedTask`、`ArchiveRequest`、`SessionLogAck`、`ArchiveAck`、`SessionOutcome`、`ContainerPaths`、`InstalledSkills`、`OrphanRecord`。字段见 [`contracts/executor-http-v3.md`](contracts/executor-http-v3.md) §5；组件只依赖语义，不自行扩展字段。
 
@@ -162,6 +166,7 @@ updated: 2026-11-17
 | `CMP-executor` | `WorkspacePort` | `ensureContainer` / `validate` / `resolve` / `cleanup` | 同步 | 冷 | 节点失败 |
 | `CMP-executor` | `AssetPort` | `install` / `verify` / `currentDigest` | 同步（下载/解压） | 冷 | 回滚；不 prompt；节点失败 |
 | `CMP-executor` | `JournalPort` | `append` / `mark` / `recordOrphan` / `clearOrphan` | 同步 | 冷 | 尽力写，失败告警 |
+| `CMP-executor` | `SignalPort` | `prepare` / `collect` / `cleanup` | 同步 | 冷 | 预检失败判任务失败；采集异常只记日志 |
 | 全部 | `CMP-observability` | `Logger` / `Doctor` | 同步 | 冷 | 吞掉日志失败，不影响主流程 |
 
 **禁止边**：
@@ -174,7 +179,7 @@ updated: 2026-11-17
 - `CMP-assets` 可读 ports 的 `AuthProvider`/`SchedulerEndpoint`，但不得 import `CMP-gateway`；网关与 assets 不共享连接池或会话状态。
 - L0 的 `*Admin` 管理面只允许 CLI 调用，不得被 executor 反向依赖。
 
-**扇出/扇入检查**：`CMP-executor` 扇出 6（result + 5 端口，不含 observability），冷路径 ≤8；热路径（租约循环）同步依赖 1（gateway）。`CMP-observability` 扇入最大，契约按平台级稳定性管理；`CMP-gateway` 扇入 2（CLI + executor），不构成平台级。
+**扇出/扇入检查**：`CMP-executor` 扇出 7（result + 6 端口，不含 observability），冷路径 ≤8；热路径（租约循环）同步依赖 1（gateway）。`CMP-observability` 扇入最大，契约按平台级稳定性管理；`CMP-gateway` 扇入 2（CLI + executor），不构成平台级。
 
 ### 4.4 内部功能骨架
 
@@ -183,13 +188,14 @@ updated: 2026-11-17
 | 组件 | 内部功能 | 关键状态/不变量 |
 |---|---|---|
 | `CMP-cli` | `main`、`resolveRunDir`、`loadConfig`、`resolveClientIdentity`、`runServe`、`runOnce`、`runDoctor`、`runVersion`、组合根、信号 | 配置冻结；心跳独立于执行；退出码 |
-| `CMP-executor` | `TaskRunner`、`CancellationScope`、`ports` | 状态 `received→running→settled`；同 taskId 单飞；结果先落盘 |
+| `CMP-executor` | `TaskRunner`、`CancellationScope`、`ports` | 状态 `received→running→settled`；同 taskId 单飞；结果先落盘；信号 prepare/collect 与挂载重试 |
 | `CMP-result` | `assemble`、`classify`、`truncate`、`mapStopReason` | 纯函数；错误分类单点；UTF-8 安全截断 |
 | `CMP-gateway` | `HttpTransport`、`RetryPolicy` | `poll` 长轮询；结果首份为准；`X-Executor-Protocol: 2` |
 | `CMP-runtime` | `InstanceSupervisor`、`ProfilePatcher`、`AcpConnection`、`SessionRegistry`、`ProcessReaper`、`PermissionPolicy` | 一实例一进程；一 session 单 prompt；取消立即强杀 |
 | `CMP-workspace` | `ensureContainer`、`validate`、`resolve`、`cleanup`、`diagnose` | 容器根即技能根；路径不越界；清理幂等 |
 | `CMP-assets` | `install`、`verify`、`currentDigest`、原子替换、格式校验、缓存 | 替换不叠加；失败回滚；digest 幂等 |
 | `CMP-store` | `append`、`mark`、`settled`、孤儿记录 | 追加不覆盖；结果先落盘；可降级读取 |
+| `CMP-signal` | `prepare`、`collect`、`cleanup`、`contract`/`directory`/`mcp`、stdio server | per-attempt 隔离；seq 续号；server 幂等启动 |
 | `CMP-observability` | `log`、`child`、脱敏、`collect`、`render`、`exitCode` | 日志不阻塞；不泄漏凭据/原文 |
 
 ### 4.5 需求/场景到组件的追溯
@@ -207,7 +213,7 @@ S0 不接调度器：`SCN-0001` 的触发用 `CMP-cli` 的 `run` + `LocalSchedul
 | 路径 | 热/冷 | 触发/频率 | 经过组件与契约 | 同步依赖 | 失败/降级 | 资源隔离 | 一致性/观测 |
 |---|---|---|---|---|---|---|---|
 | poll 循环 | **热** | 常驻 30s 长轮询（兼判活） | CLI → `SchedulerPort` → gateway | 1 | 退避重连；鉴权/协议失败退出 3；持续不可达退出 6 | 独立任务，不占执行队列 | `running[]`/`finished[]`；观测延迟/错误率 |
-| 任务执行 | 冷 | 每任务一次；分钟级 | executor → workspace / runtime / assets / result | 4 | 分类失败；结果先落 journal；未 accepted 前留在 finished | 每实例独立进程/容器/home | `settled` 后可重报；观测 taskId/session |
+| 任务执行 | 冷 | 每任务一次；分钟级 | executor → workspace / runtime / assets / result（+ 有 `resultSignal` 时 signal） | 4（+1） | 分类失败；结果先落 journal；未 accepted 前留在 finished | 每实例独立进程/容器/home | `settled` 后可重报；观测 taskId/session |
 | 技能安装 | 冷 | 每节点/技能集变化 | executor → `AssetPort` → assets | 0（assets 自持下载） | 原子回滚；不 prompt；失败 asset 类 | 独立 staging/cache；大小上限 | digest + 原子替换；观测包名/大小/耗时 |
 | 观测拉取 | 冷 | 按需（UI/调度器/排障） | UI → 产品 API → 适配器 → `CMP-observer` | 0 | 超时/404/410、SSE 断线；只影响观测 | 独立只读面；不占执行队列 | 事件/SSE；不判活、不触发重派 |
 | 恢复/`doctor` | 冷 | 启动/手动 | CLI → store / runtime / workspace / assets `*Admin` | 0（S0 不查网络） | 降级跳过坏记录；检查失败不阻塞启动 | 实例串行清理；不与执行共享锁 | `pending`/orphan/检查项；脱敏 |
@@ -270,6 +276,7 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 | `<stateRoot>/journal.jsonl` / `orphans/` | `CMP-store` | 追加写；崩溃可重建 |
 | `<stateRoot>/cache/` | `CMP-assets` | 技能包缓存；可失效 |
 | `<stateRoot>/logs/` | `CMP-observability` | 日志轮转 |
+| `<stateRoot>/signals/<taskId>/<attempt>/` | `CMP-signal`（config/目录）/ signal server（`signals.jsonl` 追加） | 默认 7 天清理；不进归档；只读当前 attempt |
 | 任务在跑/已结算状态 | `CMP-executor` | 运行期；可从 journal 重建 |
 | 结果确认（`accepted`） | 调度器（权威）；client 只记本地 `reported` | 未确认结果保留到 accepted |
 | 配置 | `CMP-cli` | 启动校验；运行期不变 |
@@ -326,6 +333,7 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 - 调度器契约已升级到 v3（2026-11-12）：五端点、task-space、会话日志、运行归档、`X-Executor-Protocol: 3`；字段级权威见 [`contracts/executor-http-v3.md`](contracts/executor-http-v3.md)。v1/v2 已归档。
 - 场景与可靠性：`SCN-0002`（配置 client 并完成自检）、`SCN-0001`（执行节点并回传结果）与 `REQ-0002`（执行稳定性与可靠性）已建；S0 先按两个场景的 S0 用例落地。
 - S0 本地闭环工序：以冻结稿的用例与不变量为输入；优先验证取消/崩溃清理、容器根技能可见性、结果回传与 `doctor` 守门。
+- 信号能力已落地（2026-11-18）：新增 L0 `CMP-signal`（per-attempt 信号目录 + stdio server `src/mcp/signal-server.ts`），`RuntimePort.newSession` 可选 `mcpServers`，`TaskResult.signals` 随 `P-02` 回传；契约加法 `C-13`/`C-14`，见 [`contracts/executor-http-v3.md`](contracts/executor-http-v3.md)。实现工序见 `docs/works/2026-11-18-mcp-signal-impl/`。
 - 只读观测面 v1 已落地（2026-11-17）：`CMP-observer` 提供 O-01–O-11（health/attempts/logs/SSE/session/raw/files/富 session SSE），契约见 [`contracts/client-observability-v1.md`](contracts/client-observability-v1.md)；`CMP-observability` 存 attempt/session 事件，`CMP-runtime` 管 raw，`CMP-store` 管 run 注册表。调度器侧 runId 富化、URL 登记与适配器已落地（2026-11-17），UI 的文件/会话视图待 UI 项目接入。执行期可见性按「消费方主动拉取」执行，不设 5s 进度推送（决策见 [`2026-11-17-execution-visibility-pull.md`](../history/decisions/2026-11-17-execution-visibility-pull.md)）。
 
 ## 13. 分级与确认
@@ -348,4 +356,5 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 - **退出码已冻结（2026-11-08，OQ-015 关闭）**：`run` 非成功 `NodeResult` 用 `1`，SIGINT `130`、SIGTERM `143`；其余按 §3.2。
 - **S0 已落地（2026-11-08）**：8 个组件转 `active`；`run`/`doctor` 可用，`SCN-0002` 3+1 与 `SCN-0001` S0 用例通过；见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
 - **S1 已落地（2026-11-08）**：`CMP-gateway` 转 `active`；`serve` 接桩调度器跑通注册/心跳/领取/绑定/`C-05`/上报/清理；S1 门禁 8 条有测试；见 `docs/history/works/2026-11-08-s1-contract-skeleton/result.md`。
+- **信号能力已落地（2026-11-18，P1）**：新增第 10 个组件 `CMP-signal`（L0），组件切分由「9 组件不变」更新为 10；`SignalPort` 由 `CMP-executor` 定义；`<stateRoot>/signals/` 归 `CMP-signal` 写。用户 2026-11-18 确认按「新增 L0 组件」落地。
 - **S2 已落地（2026-11-09，A 方案内）**：顺序两节点、技能切换、同 attempt 幂等、同容器技能集冲突守卫、清理幂等；Q1 保持 A，不升协议版本；fan-out 真并发留 B 决策。见 `docs/history/works/2026-11-09-s2-linear-and-recovery/result.md`。

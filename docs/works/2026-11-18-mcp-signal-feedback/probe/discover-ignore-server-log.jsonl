@@ -1,0 +1,6 @@
+{"ts":"2026-11-18T02:44:10.484Z","pid":77099,"event":"start"}
+{"ts":"2026-11-18T02:44:10.489Z","pid":77099,"event":"recv","method":"server/discover","id":"server-discover-probe-1"}
+{"ts":"2026-11-18T02:45:10.490Z","pid":77644,"event":"start"}
+{"ts":"2026-11-18T02:45:10.496Z","pid":77644,"event":"recv","method":"initialize","id":0}
+{"ts":"2026-11-18T02:45:10.499Z","pid":77644,"event":"recv","method":"notifications/initialized","id":null}
+{"ts":"2026-11-18T02:45:10.499Z","pid":77644,"event":"recv","method":"tools/list","id":1}

@@ -99,7 +99,7 @@ type AppConfig = Readonly<{
 - `allow_unauthenticated = true` 时放开「非 loopback + 无 token」校验，改由 `X-Client-Id` 自报身份；默认 `false`（生产回补时保持关闭，不改代码）。
 - 客户端不持久化服务端回写的身份；`clientId`/token 的权威仍在服务端。
 
-优先级（高 → 低）：**CLI flag > 环境变量（仅 `DSH_HOME`）> `<runDir>/.config` > 默认值**。`capacity.max_concurrent` 只能来自配置，不提供 flag（`AH-01`）。
+优先级（高 → 低）：**CLI flag > 环境变量（`DSH_HOME`、`AF_SCHEDULER_URL`、`AF_SCHEDULER_TOKEN`、`AF_CLIENT_ID`）> `<runDir>/.config` > 默认值**；env 覆盖同样走 token/loopback 校验，不能绕过安全规则。`capacity.max_concurrent` 只能来自配置，不提供 flag（`AH-01`）。
 
 `stateRoot` 默认选 `<runDir>/.agent-flow-client`：与 `REQ-0001` 的 `AF_DSH_HOME` 同一基准，不引入平台状态目录。运行目录不可写时**不静默回退**：退出 4（`state_root_unwritable`），提示用 `--state-root` 覆盖；`doctor` 报生效值。这是 `AH-02` 的收口。
 
@@ -245,6 +245,7 @@ config → observability → store → workspace → assets → runtime → gate
 | 配置矩阵 | `TC-CONFIG-001`…`004`：默认、绝对/相对、env 覆盖、非法 TOML/空值/不可写/`~/.dsh` | 生效值、来源、退出码、DSH 子进程入参 |
 | 命令 | `--help`、`version`、未知命令、缺参数 | 输出/退出码 |
 | `serve` | 桩端口：领取→执行→回报；取消；暂停/恢复；容量；二次信号 | 循环不重复执行、心跳不被阻塞 |
+| `signals` | 查看某任务的信号：`--task <taskId> [--attempt n] [--json]`；只读，输出 kind/条数/会话与结果状态 |
 | `run` | 单节点成功/失败/取消；stdout 只有 JSON；退出码 0/1 | 与 `serve` 共用内核 |
 | `doctor` | 全绿、缺 DSH、版本不兼容、容器非法、残留 session/lock/孤儿 | 检查项、脱敏、退出码 |
 | 架构 | import 边界；L0 只在组合根 | 静态检查 |
@@ -274,3 +275,10 @@ config → observability → store → workspace → assets → runtime → gate
 - `serve-compose` 启动 `CMP-observer`（`required=false` 失败降级为 `observability_disabled`），并把 `ObservationRecorder` 注入 executor；`run` 不启动。
 - poll 请求在 enabled 时带 `X-Observability-Url`；`TaskRequest.runId` 写 `FileRunRegistry`。
 - 退出时停止 observer；`ServeDeps` 增加 `runs`/`observer`。
+
+## 附：联调可观测性（2026-11-18）
+
+- `serve.started` 的 `msg` 是 JSON：`maxConcurrent`、`settled`、`schedulerUrl`、`clientId`、`stateRoot`、`dshHome`、`signalKinds`（不含 token）。
+- `task.reported` 的 `msg` 是 JSON：`status`、`attempt`、`sessionId`、`signals{count,kinds}`、`resumeSessionId`/`continuation`。
+- `signals --task` 只读查看某任务的信号与结果状态；`doctor` 提供 `signal.dir`/`signal.server`/`signal.check`/`signal.kinds`。
+- 联调前置建议：`doctor --workspace <容器根>` 先过（`layout_invalid` 的修复口径：容器根不能位于任何 git 仓库内，改用系统临时目录）。

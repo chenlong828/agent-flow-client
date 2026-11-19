@@ -33,6 +33,7 @@ version: 2026-11-18.1
 
 - `attemptId`：client 在任务接收时为每次 attempt 生成 **UUIDv7**；持久化在 attempt meta；与 `taskId + attemptNo` 一一对应。
 - `sessionId`：DSH `session/new` 返回；一个 attempt 最多一个 session；建 session 前失败时 `session=null`。
+- **同一 `sessionId` 可出现在多个 attempt 上**（§5.5 续跑：任务 A 建 session，续跑任务 B 用 `resumeSessionId` 续同一 session）。`O-06`/`O-07`/`O-08`/`O-11` 一律以 **`startedAt` 最新**的 attempt 为准（同一时刻按 `attemptId` 降序，UUIDv7 天然有序）；已清理（`goneAt`）的 attempt 不参与查找。实时 session 视图因此不会命中旧超时 attempt。
 - `runId`：`TaskRequest.runId?`；manual task 可缺；用于 `O-09`/`O-10`。
 - `nodeId`：字符串（如 `n3`），不是 UUID。
 - `attempt` 状态：`running` / `completed` / `failed` / `cancelled` / `timeout` / `interrupted`。
@@ -181,6 +182,14 @@ data: {"status":"completed","finishedAt":"…"}
   }
 }
 ```
+
+## 8.1 多 attempt 的会话（续跑）
+
+续跑任务复用同一个 `sessionId`，因此 `sessions/{sessionId}` 命中的是**最新**尝试的 attempt：
+
+- 元数据（`O-06`）的 `attemptId`/`status`/`startedAt`/`eventCount` 都来自最新 attempt；
+- 事件（`O-07`）只回该 attempt 落盘的事件，不跨 attempt 合并；早期 attempt 的事件仍可用 `O-04` 按 `attemptId` 查；
+- UI 的 run/node 状态以调度器的 run 视图与 `P-02`/`P-04` 的 attempt 为准，client 的 session 视图只做观测。
 
 ## 9. `O-07` session 事件（preview）
 

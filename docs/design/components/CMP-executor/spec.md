@@ -24,11 +24,13 @@ updated: 2026-11-12
 1. `journal.append(received)`。
 2. `workspace.ensureContainer` → `workspace.ensureTaskSpace(task, container)`（校验绝对路径且在 `workspacePath` 之下；不存在则建目录；**只建目录、不写内容**）。
 3. `runtime.ensureInstance` → `recordOrphan`。
-4. `runtime.newSession(cwd=容器根)` → `journal.mark(running, {sessionId})`。
-5. `assets.install(task.skillSet, container)`：同 digest 短路；同容器安装由 assets 串行。
-6. `runtime.prompt(task.prompt, {signal, timeoutMs, idleTimeoutMs?, onEvent})`：`onEvent` 把原始 ACP 事件写入本次 attempt 的会话日志。
-7. `scheduler.uploadSessionLog(taskId, attempt, gz)`：**先传日志、拿到 `200` 再报结果**；无事件时传 0 行 gzip ndjson；`413` 时改为上传空日志并把结果置 `failed(session_log_too_large)`；`404` 时丢弃上传与结果。
-8. `result.assemble` → `journal.mark(settled, {result})` → `runtime.closeSession`。
+4. 若任务带 `resultSignal`：`signal.prepare`（建目录/config/`--check`）→ 得到 `mcpServers`；不支持时记 `signal.disabled` 继续。
+5. `runtime.newSession(cwd=容器根, {mcpServers})` → `journal.mark(running, {sessionId})`；挂载失败且 `error.data.details` 命中 `mcp-client(agentflow)` 时用**相同** `mcpServers` 重建一次，仍失败报 `failed(protocol, signal_mount_failed)`。
+6. `assets.install(task.skillSet, container)`：同 digest 短路；同容器安装由 assets 串行。
+7. `runtime.prompt(task.prompt, {signal, timeoutMs, idleTimeoutMs?, onEvent})`：`onEvent` 把原始 ACP 事件写入本次 attempt 的会话日志。
+8. prompt 结束**先 `signal.collect`（若启用）后关 session**；采集异常只记日志。
+9. `scheduler.uploadSessionLog(taskId, attempt, gz)`：**先传日志、拿到 `200` 再报结果**；无事件时传 0 行 gzip ndjson；`413` 时改为上传空日志并把结果置 `failed(session_log_too_large)`；`404` 时丢弃上传与结果。
+10. `result.assemble`（signals 与 message 共享预算）→ `journal.mark(settled, {result})` → `runtime.closeSession`。
 9. 返回 `TaskResult`；上报与 `accepted` 由 CLI 负责。
 
 - 任何 prompt 之前的失败都进 `settled`，不 prompt；这些失败同样按第 7 步先传 0 行空日志再报结果。
@@ -45,6 +47,7 @@ updated: 2026-11-12
 | `AssetPort` | `install` / `verify` / `currentDigest` | 替换不叠加、digest 幂等 |
 | `JournalPort` | `append` / `mark` / `settled` / `recordOrphan` / `listOrphans` / `clearOrphan` | 结果先落盘；孤儿记录 |
 | `SchedulerPort` | `poll` / `reportResult` / `downloadPackage` | 由 gateway 实现；executor 不直接依赖 |
+| `SignalPort` | `prepare` / `collect` / `cleanup` | 信号目录/preflight/采集；契约不支持时返回 unsupported，不判失败 |
 
 值类型：`TaskRequest`、`TaskResult`、`TaskRecord`、`PollRequest`、`PollResponse`、`ResultAck`、`SessionOutcome`、`ContainerPaths`、`InstalledSkills`、`OrphanRecord`。字段以契约 v2 §5 为准，组件不扩展。
 
@@ -53,6 +56,7 @@ updated: 2026-11-12
 1. 一个任务一个 session，不复用。
 2. 未成功安装技能不得 prompt。
 3. 结果先落 journal（`settled`）再交给 CLI 上报。
+3a. 信号只在 `status=succeeded` 且采集到合法记录时进入 `TaskResult.signals`；采集异常不改变任务状态。
 4. 同 `taskId` 至多一个在跑实例；重复调用返回同一结果 Promise。
 5. 取消/超时不等待 prompt 自然结算；结果 `cancelled`/`timeout`。
 6. 不自动重跑；重派是新 `attempt`。

@@ -86,7 +86,8 @@ opening ──▶ open ──▶ prompting ──▶ open
                                    └──▶ failed
 ```
 
-- `newSession(instance, cwd)` → `session/new`，`cwd` 必须是容器根；返回 `SessionRef`。
+- `newSession(instance, cwd, opts?)` → `session/new`，`cwd` 必须是容器根；`opts.mcpServers` 原样传给 ACP（stdio server 声明），`opts.timeoutMs` 覆盖默认 10s；返回 `SessionRef`。
+- `resumeSession(instance, sessionId, cwd, opts?)` → `session/resume`（§5.5 / `T-RVM-09` 预留）：cwd 必须与持久化时一致；`mcpServers` 需重新传，否则续跑 session 里没有工具。实测：close 之后与 DSH 进程重启之后都可续跑（同一 `DSH_HOME`）。
 - 一 session 同时最多一个进行中的 prompt；并发 prompt 是编程错误，显式拒绝。
 - `prompt(session, text, opts)` → `session/prompt`；消费 `session/update` 通知直到响应返回。
 - `closeSession` 幂等；关闭后不复用；关闭失败记录但不静默复用。
@@ -98,7 +99,7 @@ opening ──▶ open ──▶ prompting ──▶ open
 - `tool_call` / `tool_call_update` → 记录工具名/状态摘要，不保存完整参数与输出。
 - `usage_update` → 归一为 `usage`；缺失则省略。
 - `session/prompt` 响应 → `stopReason`。
-- JSON-RPC error / 进程退出 → `RuntimeFailure`（`protocol_error` / `prompt_failed` / `process_exited`）。
+- JSON-RPC error / 进程退出 → `RuntimeFailure`（`protocol_error` / `prompt_failed` / `process_exited`）；错误对象的 `data` 一并保留（MCP 挂载失败的真实原因在 `data.details`）。
 - `session/request_permission` → 由 `PermissionPolicy` 裁决；允许时返回 `allow_once`/`allow_always` 的 `optionId`，拒绝时返回 `cancelled`。
 - `SessionOutcome` 只含控制信息；原始 ACP 事件（`method`/`params`）经 `PromptOptions.onRawEvent` 导出，供 executor 落盘并由 `P-04` 上传（v3，未脱敏）。
 

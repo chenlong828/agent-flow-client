@@ -50,6 +50,8 @@ v3 在此之上加两件事：**执行前有 task-space**（工作区内按 run 
 4. **有界执行**：每个任务都必须有一个客户端可执行的终止上界（`timeoutMs`），不依赖模型或工具自行返回。
 5. **日志先于结果**：`P-02` 到达时该 `taskId` 的当前 `attempt` 必须已有通过校验的会话日志，否则 `409 session_log_missing`，任务不结算、不重派。**允许 0 行的空日志**：在 session 建立前就失败（prompt 超限、workspace 校验失败、技能安装失败、`spawn_failed`、取消）的尝试，由 client 上传一份 0 行 gzip ndjson 再报结果。
 6. **task-space 隔离**：任务的所有读写限制在 `taskSpacePath` 与工作区内；task-space 路径由服务端拼接并下发，client **不拼接、不推断**，只做「绝对路径且在 `workspacePath` 之下」的校验。
+7. **信号只伴成功结果**：`TaskResult.signals` 只在 `status=succeeded` 且 client 采集到合法信号时出现；失败/超时/取消不带信号。信号是结果体的一部分，`message + signals` 共享 `maxResultBytes` 预算（`C-14`）。
+8. **确认点不是阻塞**：`confirmation_request` 随 `succeeded` 结果回传；续跑是普通任务（`resumeSessionId` + 同一 `sessionId`），不新增端点、不新增任务状态、不改 scheduler。
 
 ### 1.1 明确放弃的保证
 
@@ -254,6 +256,26 @@ v3 在此之上加两件事：**执行前有 task-space**（工作区内按 run 
 }
 ```
 
+带信号的成功结果（`signals` 可选，`C-14`）：
+
+```json
+{
+  "taskId": "01J9Z7Q0M4",
+  "attempt": 1,
+  "status": "succeeded",
+  "sessionId": "<session-id>",
+  "message": "review 摘要（可能被截断）",
+  "truncated": false,
+  "stopReason": "end_turn",
+  "usage": null,
+  "error": null,
+  "signals": [
+    { "seq": 1, "at": "2026-11-18T02:10:00.000Z", "kind": "review_verdict",
+      "data": { "verdict": "pass", "reason": "…", "evidence": ["src/a.ts"] } }
+  ]
+}
+```
+
 响应 `200`：
 
 ```json
@@ -273,7 +295,9 @@ v3 在此之上加两件事：**执行前有 task-space**（工作区内按 run 
    - `prompt_timeout`（总超时）、`idle_timeout`（无进度看门狗）；
    - `session_log_too_large`：会话日志压缩后超过 `maxSessionLogBytes`，client 已上传 0 行空日志后按 `failed` 上报；
    - `archive_too_large`：归档超过 `maxArchiveBytes`（记录在 run 的 `archive_state`，不进结果体）。
-   调度器据 `code` 区分「任务太大」与「疑似卡死」。
+   - `signal_prepare_failed`：信号目录/config/`--check` 预检失败（`class=protocol`）。任务失败，client 继续服务其他任务。
+   - `signal_mount_failed`：MCP 信号 server 挂载失败，且在同一 attempt 内用**相同** `mcpServers` 重建一次仍失败（`class=protocol`）。不降级、不回退消息；先传 0 行日志再报结果。
+   调度器据 `code` 区分「任务太大」「疑似卡死」与「信号基础设施失败」。
 5. `message` 只要有输出就填（按 `maxResultBytes` 截断，含截断标记不超过上限），空串只表示确实没有输出。**`review` 节点的 verdict JSON 在 `message` 末尾**（裸 JSON，不加代码围栏，独占最后一行或紧跟最后一句均可），由服务端解析；client 不解析、不改写。
 6. 结果只含控制信息：状态、最终消息、停止原因、用量、session、错误类别；不含产物、会话全文、日志、凭据。
 7. 重复上报不要求 `attempt` 一致；以 `taskId` 判定。
@@ -413,7 +437,30 @@ type TaskRequest = {
   taskSpacePath: string;               // 绝对路径，位于 workspacePath 之下；client 只建目录
   timeoutMs: number;                   // >0
   skillSet: SkillSet;
+  resultSignal?: ResultSignalContract; // 加法（C-13）；调度器视为 opaque JSON，纳入 S-05 稳定内容
+  resumeSessionId?: string;            // 第二场景（§5.5 / T-RVM-09）预留；存在即续跑该 session
 };
+
+// C-13：由编排侧按节点生成；client 只认 version=1，kind ∈ {"review_verdict","confirmation_request"}
+type ResultSignalContract = {
+  version: number;
+  kind: "review_verdict" | "confirmation_request";
+  required: boolean;                   // v1 恒 true；client 不据此判失败，只记 signal_missing
+  schema: RestrictedSchema;            // 只描述 data 字段；kind 由工具固定
+};
+
+type RestrictedSchema = {
+  type: "object";
+  additionalProperties: false;
+  required: string[];
+  properties: Record<string, RestrictedField>;
+};
+
+type RestrictedField =
+  | { type: "string"; enum?: string[]; minLength?: number; maxLength?: number; description?: string }
+  | { type: "boolean"; description?: string }
+  | { type: "number"; minimum?: number; maximum?: number; description?: string }
+  | { type: "string[]"; maxItems?: number; maxLength?: number; description?: string };
 
 type SkillSet = {
   digest: string;                      // sha256:<hex>，规范化由调度器定义
@@ -440,9 +487,21 @@ type TaskResult = {
   stopReason: string | null;
   usage: { inputTokens?: number; outputTokens?: number } | null;
   error: TaskError | null;
+  signals?: TaskSignal[];              // 加法（C-14）；只在 succeeded 且采集到合法信号时出现
   startedAt?: string;
   finishedAt?: string;
 };
+
+// C-14：`<stateRoot>/signals/<taskId>/<attempt>/signals.jsonl` 的一行
+type TaskSignal = {
+  seq: number;                         // 本 attempt 内从 1 单调递增；server 从文件续号
+  at: string;                          // ISO-8601 UTC
+  kind: "review_verdict" | "confirmation_request";
+  data: Record<string, unknown>;       // 按 ResultSignalContract.schema 校验过
+};
+
+// confirmation_request 的典型 data（字段集合由下发 schema 决定）
+// { "question": "选择哪个方案？", "context": "…", "options": ["A", "B"] }
 
 type TaskError = {
   class: "workspace" | "asset" | "runtime" | "protocol"
@@ -477,7 +536,7 @@ type ArchiveAck = {
 | `S-02` | **重派**：`dispatched` 且未回报，满足「超过 `timeoutMs + resultGraceMs`」或「该 client 静默超过 `clientSilentMs`」→ 回到 `queued`，`attempt + 1`。**已收到失败/超时结果的任务不再自动重派**（v2 措辞为「由调度器按重试策略决定」，v3 固定为不重派） |
 | `S-03` | **未确认重发**：`taskId` 已派给 client C，但既不在 C 的 `running[]`、也不在 `finished[]`、也未回报 → 下一跳把同一 `taskId` 再放进 `tasks`。这是「响应丢失」的唯一兜底，不需要幂等键；`finished[]` 的存在保证「结果已算出但上报响应丢失」不会被误重发 |
 | `S-04` | **容量**：`tasks.length ≤ min(free, maxTasksPerPoll)`，不超卖 |
-| `S-05` | **任务内容稳定**：同一 `taskId` 重派时 `prompt` / `skillSet` / `workspacePath` / `taskSpacePath` 不变，只递增 `attempt` |
+| `S-05` | **任务内容稳定**：同一 `taskId` 重派时 `prompt` / `skillSet` / `workspacePath` / `taskSpacePath` / `resultSignal` 不变，只递增 `attempt` |
 | `S-06` | **同容器技能集一致**：同一 `instanceId` 上同时 `dispatched` 的任务，`skillSet.digest` 必须相同 |
 | `S-07` | **电平控制**：`stop` / `cancelInstances` / `archiveRequests` 持续下发，直到 client 侧生效；`archiveRequests` 不缩短 `pollHoldMs`（首次下发的同一跳可立即返回一次） |
 | `S-08` | **结果接受**：同一 `taskId` 第一份结果为准；后续回 `accepted=false`；未知 `taskId` 回 404 |
@@ -500,6 +559,9 @@ type ArchiveAck = {
 | `C-10` | 收到任务后校验 `taskSpacePath` 为绝对路径且位于 `workspacePath` 之下；不存在则创建目录；**只建目录、不写目录内容**（`intent.md` 等由节点内模型写）；所有读写限制在 task-space 与工作区内 |
 | `C-11` | 节点结束**先上传 `P-04`、拿到 `200` 后再报结果**；每个 `attempt` 必须有一份日志，无事件时传 0 行 gzip ndjson；日志上传失败按传输重试，不重跑任务；同键重传可直接重新压缩（服务端后到覆盖） |
 | `C-12` | 收到 `archiveRequests` 后**在后台**打包上传 `P-05`，不阻塞 poll；成功后在下一次 poll 的 `archivedRuns` 回报；失败可重试，本地 task 目录保留不删除 |
+| `C-13` | 收到 `resultSignal` 且支持其 `version`/`kind` 时：为本次 attempt 建 `<stateRoot>/signals/<taskId>/<attempt>/`，以 `session/new.mcpServers` 挂载 `agentflow` stdio server（`mcp__agentflow__signal`）；不支持/形状非法时忽略该字段，按旧行为执行（不挂 MCP、不发 `signals`）。预检或挂载失败按 `signal_prepare_failed`/`signal_mount_failed` 上报失败，不降级、不回退消息 |
+| `C-14` | `signals` 只在 `status=succeeded` 且采集到合法信号时出现，缺省不传空数组；`message + signals + JSON 开销 ≤ maxResultBytes`，`signals ≤ 16 KiB / 8 条`（单条 `reason` ≤ 8 KiB、`evidence` ≤ 16 项 × 512 B，均按 UTF-8 字节）；整段超限时丢弃 `signals` 而不是截断 `reason` |
+| `C-15` | `resultSignal.kind` 决定挂哪个工具：`review_verdict` → `mcp__agentflow__signal`，`confirmation_request` → `mcp__agentflow__confirm`。采集到 `confirmation_request` 时随 `succeeded` 结果回传（含 `sessionId`）；`TaskRequest.resumeSessionId` 存在时用 `session/resume` 续跑该 session（cwd 必须与持久化一致、`mcpServers` 需重新传，不新建 session）；resume 失败按 `protocol_error` 上报，不退化为新建 |
 
 ## 8 失败与恢复矩阵
 
@@ -574,7 +636,14 @@ type ArchiveAck = {
 | 错误码 | `session_log_missing`、`run_not_found`、`invalid_state`、`invalid_archive` |
 | 结果 `error.code` 约定值 | `session_log_too_large`；归档超限记 `archive_too_large`（`archive_state`，不进结果体） |
 | 常量 | `maxSessionLogBytes`、`maxArchiveBytes`、`maxArchiveEntries`、`maxArchiveUncompressedBytes` |
-| 承诺 | `C-10`（task-space）、`C-11`（日志先于结果 + 空日志）、`C-12`（后台归档） |
+| 承诺 | `C-10`（task-space）、`C-11`（日志先于结果 + 空日志）、`C-12`（后台归档）、`C-13`（结果信号与 MCP 挂载）、`C-14`（signals 出现条件与预算） |
+| `TaskRequest.resultSignal` | 可选；review 节点由 `CMP-run` 下发；调度器视为 opaque JSON 持久化并透传，纳入 `S-05` 稳定内容；上限 8 KiB（`validateDraft`） |
+| `TaskResult.signals` | 可选；`succeeded` 且采集到合法信号时出现；与 `message` 共享 `maxResultBytes` 预算 |
+| `TaskRequest.resumeSessionId` | 可选；第二场景（§5.5 / `T-RVM-09`）：存在时 client 用 `session/resume` 续跑同一 session，不再新建；由 `CMP-run` 在人工 `decide` 后生成续跑任务时下发 |
+| `TaskSignal.kind` | v1 两个取值：`review_verdict`（审查判决）、`confirmation_request`（执行中临时确认点）；kind 决定挂载的 MCP 工具 |
+| 承诺 | `C-15`（确认点：kind→工具映射、确认记录随结果回传、`resumeSessionId` 续跑） |
+| 结果 `error.code` 约定值 | `signal_prepare_failed`、`signal_mount_failed`（`class=protocol`） |
+| 常量 | `maxSignalsPerResult` = 8、`maxSignalBytes` = 16 KiB、单条 `reason` 8 KiB、`evidence` 16 × 512 B |
 
 ### 11.2 修改
 
@@ -628,7 +697,8 @@ type ArchiveAck = {
 5. 归档是否分包（当前单包，超限即失败）。
 6. **已接受风险：日志超限丢真实日志**。`maxSessionLogBytes` 是按 64 MiB 估的；一旦单节点日志超过它，该尝试的真实日志不会保留，任务以 `failed(session_log_too_large)` 结算。等真实数据出现再调阈值或改截断策略。
 7. **已接受风险：日志含敏感信息**。日志完整透传、不脱敏；工作区里的凭据、工具输出都可能进日志。归档目录按运维规范限制访问。
-8. **已接受风险：同键重传后到覆盖**。理论上较晚的重传会替换较早内容（同一 client、同一 attempt/run），可能让日志/归档与当时的结果不完全对应。
+8. **信号目录保留期**：client 本地 `[signal].retention_days`（默认 7 天），启动与 `doctor` 清理；不进归档，不参与任务结算。
+9. **已接受风险：同键重传后到覆盖**。理论上较晚的重传会替换较早内容（同一 client、同一 attempt/run），可能让日志/归档与当时的结果不完全对应。
 
 ## 13 版本演进
 

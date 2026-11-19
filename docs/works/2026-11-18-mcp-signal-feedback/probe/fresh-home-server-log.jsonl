@@ -1,0 +1,16 @@
+{"ts":"2026-11-18T01:34:24.876Z","pid":55884,"event":"start","argv":["/Users/chenlong/.bun/bin/bun","/Users/chenlong/harness/agent-flow-client/.tmp/mcp-spike/mcp/signal.mjs"],"execPath":"/Users/chenlong/.bun/bin/bun","cwd":"/Users/chenlong/harness/agent-flow-client/.tmp/mcp-spike/workspace","ppid":55881,"envNames":["AF_SPIKE_LOG","HOME","PATH","__CF_USER_TEXT_ENCODING"]}
+{"ts":"2026-11-18T01:34:24.877Z","pid":55885,"event":"start","argv":["/Users/chenlong/.bun/bin/bun","/Users/chenlong/harness/agent-flow-client/.tmp/mcp-spike/mcp/signal.mjs"],"execPath":"/Users/chenlong/.bun/bin/bun","cwd":"/Users/chenlong/harness/agent-flow-client/.tmp/mcp-spike/workspace","ppid":55881,"envNames":["AF_SPIKE_LOG","HOME","PATH","__CF_USER_TEXT_ENCODING"]}
+{"ts":"2026-11-18T01:34:24.882Z","pid":55884,"event":"recv","method":"server/discover","id":"server-discover-probe-1"}
+{"ts":"2026-11-18T01:34:24.883Z","pid":55885,"event":"recv","method":"server/discover","id":"server-discover-probe-1"}
+{"ts":"2026-11-18T01:34:24.887Z","pid":55884,"event":"sigterm"}
+{"ts":"2026-11-18T01:34:24.887Z","pid":55885,"event":"sigterm"}
+{"ts":"2026-11-18T01:34:24.901Z","pid":55887,"event":"start","argv":["/Users/chenlong/.bun/bin/bun","/Users/chenlong/harness/agent-flow-client/.tmp/mcp-spike/mcp/signal.mjs"],"execPath":"/Users/chenlong/.bun/bin/bun","cwd":"/Users/chenlong/harness/agent-flow-client/.tmp/mcp-spike/workspace","ppid":55881,"envNames":["AF_SPIKE_LOG","HOME","PATH","__CF_USER_TEXT_ENCODING"]}
+{"ts":"2026-11-18T01:34:24.904Z","pid":55888,"event":"start","argv":["/Users/chenlong/.bun/bin/bun","/Users/chenlong/harness/agent-flow-client/.tmp/mcp-spike/mcp/signal.mjs"],"execPath":"/Users/chenlong/.bun/bin/bun","cwd":"/Users/chenlong/harness/agent-flow-client/.tmp/mcp-spike/workspace","ppid":55881,"envNames":["AF_SPIKE_LOG","HOME","PATH","__CF_USER_TEXT_ENCODING"]}
+{"ts":"2026-11-18T01:34:24.912Z","pid":55887,"event":"recv","method":"initialize","id":0}
+{"ts":"2026-11-18T01:34:24.912Z","pid":55888,"event":"recv","method":"initialize","id":0}
+{"ts":"2026-11-18T01:34:24.916Z","pid":55887,"event":"recv","method":"notifications/initialized","id":null}
+{"ts":"2026-11-18T01:34:24.917Z","pid":55887,"event":"recv","method":"tools/list","id":1}
+{"ts":"2026-11-18T01:34:24.917Z","pid":55888,"event":"recv","method":"notifications/initialized","id":null}
+{"ts":"2026-11-18T01:34:24.921Z","pid":55888,"event":"recv","method":"tools/list","id":1}
+{"ts":"2026-11-18T01:34:24.941Z","pid":55887,"event":"stdin-end"}
+{"ts":"2026-11-18T01:34:24.941Z","pid":55888,"event":"stdin-end"}
