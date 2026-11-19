@@ -334,7 +334,7 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 - 场景与可靠性：`SCN-0002`（配置 client 并完成自检）、`SCN-0001`（执行节点并回传结果）与 `REQ-0002`（执行稳定性与可靠性）已建；S0 先按两个场景的 S0 用例落地。
 - S0 本地闭环工序：以冻结稿的用例与不变量为输入；优先验证取消/崩溃清理、容器根技能可见性、结果回传与 `doctor` 守门。
 - 信号能力已落地（2026-11-18）：新增 L0 `CMP-signal`（per-attempt 信号目录 + stdio server `src/mcp/signal-server.ts`），`RuntimePort.newSession` 可选 `mcpServers`，`TaskResult.signals` 随 `P-02` 回传；契约加法 `C-13`/`C-14`，见 [`contracts/executor-http-v3.md`](contracts/executor-http-v3.md)。实现工序见 `docs/works/2026-11-18-mcp-signal-impl/`。
-- review 应急确认（`TaskRequest.confirmation`）已落地（2026-11-19）：review 任务同一 attempt 同时挂 `mcp__agentflow__signal` 与 `mcp__agentflow__confirm`；一次 attempt 一个 `agentflow` server、按契约集合产出 `tools[]`，采集按 `kind` 分派校验。工序见 `docs/works/2026-11-19-confirm-channel-client/`。
+- review 应急确认（`TaskRequest.confirmation`）已落地（2026-11-19）：review 任务同一 attempt 同时挂 `mcp__agentflow__signal` 与 `mcp__agentflow__confirm`；一次 attempt 一个 `agentflow` server、按契约集合产出 `tools[]`，采集按 `kind` 分派校验。工序见 `docs/history/works/2026-11-19-confirm-channel-client/`。
 - 只读观测面 v1 已落地（2026-11-17）：`CMP-observer` 提供 O-01–O-11（health/attempts/logs/SSE/session/raw/files/富 session SSE），契约见 [`contracts/client-observability-v1.md`](contracts/client-observability-v1.md)；`CMP-observability` 存 attempt/session 事件，`CMP-runtime` 管 raw，`CMP-store` 管 run 注册表。调度器侧 runId 富化、URL 登记与适配器已落地（2026-11-17），UI 的文件/会话视图待 UI 项目接入。执行期可见性按「消费方主动拉取」执行，不设 5s 进度推送（决策见 [`2026-11-17-execution-visibility-pull.md`](../history/decisions/2026-11-17-execution-visibility-pull.md)）。
 
 ## 13. 分级与确认

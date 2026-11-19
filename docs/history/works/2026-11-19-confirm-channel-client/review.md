@@ -1,7 +1,7 @@
 ---
 layer: works
 module: global
-status: closed
+status: frozen
 updated: 2026-11-19
 procedure: 2026-11-19-confirm-channel-client
 ---

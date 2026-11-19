@@ -1,7 +1,7 @@
 ---
 layer: works
 module: global
-status: closed
+status: frozen
 updated: 2026-11-19
 procedure: 2026-11-19-confirm-channel-client
 level: P2
@@ -9,7 +9,7 @@ level: P2
 
 # 工序：review 应急确认（`T-CCE-04`）
 
-> 上游：调度侧提案 [`client-implementation-proposal.md`](../../../../agent-flow-orchaster/docs/works/2026-11-19-confirm-channel-escalation/client-implementation-proposal.md)（orchestrator 侧契约与调度已落地，等 client 完成后联调 `T-CCE-06`）。
+> 上游：调度侧提案 [`client-implementation-proposal.md`](../../../../../agent-flow-orchaster/docs/works/2026-11-19-confirm-channel-escalation/client-implementation-proposal.md)（orchestrator 侧契约与调度已落地，等 client 完成后联调 `T-CCE-06`）。
 > 用户 2026-11-19 确认：按提案在 client 侧实现多契约 prepare/mount/collect，完成后供调度侧联调。
 > 2026-11-19 调度侧反馈联调通过（`T-CCE-06`），工序收口。
 

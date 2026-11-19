@@ -3,10 +3,10 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { StubScheduler } from "../../../../tests/support/stub-scheduler.ts";
-import { reviewConfirmationContract, reviewVerdictContract } from "../../../../tests/support/signal-contract.ts";
+import { StubScheduler } from "../../../../../tests/support/stub-scheduler.ts";
+import { reviewConfirmationContract, reviewVerdictContract } from "../../../../../tests/support/signal-contract.ts";
 
-const repo = join(import.meta.dir, "../../../..");
+const repo = join(import.meta.dir, "../../../../..");
 const base = await mkdtemp(join(tmpdir(), "afc-confirm-e2e-"));
 const ws = join(base, "ws");
 await mkdir(ws, { recursive: true });

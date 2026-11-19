@@ -1,7 +1,7 @@
 ---
 layer: works
 module: global
-status: closed
+status: frozen
 updated: 2026-11-19
 procedure: 2026-11-19-confirm-channel-client
 ---
@@ -63,7 +63,7 @@ client 侧多契约 prepare / mount / collect 已落地：review 任务一次 at
 - `bun test`：255 pass / 0 fail（41 文件，863 expect）。
 - `bun run docs:check`：场景索引最新（2 个场景）。
 - `bun run quality:gate`：违规 0；16 项规则全 PASS。
-- 真实 DSH 探针：`bun run docs/works/2026-11-19-confirm-channel-client/probe/dual-tool-e2e.ts` → `succeeded`、两种 kind、`serve-exit=0`。
+- 真实 DSH 探针：`bun run docs/history/works/2026-11-19-confirm-channel-client/probe/dual-tool-e2e.ts` → `succeeded`、两种 kind、`serve-exit=0`。
 
 ## 6 未做与下一步
 
