@@ -195,7 +195,7 @@ updated: 2026-11-17
 | `CMP-workspace` | `ensureContainer`、`validate`、`resolve`、`cleanup`、`diagnose` | 容器根即技能根；路径不越界；清理幂等 |
 | `CMP-assets` | `install`、`verify`、`currentDigest`、原子替换、格式校验、缓存 | 替换不叠加；失败回滚；digest 幂等 |
 | `CMP-store` | `append`、`mark`、`settled`、孤儿记录 | 追加不覆盖；结果先落盘；可降级读取 |
-| `CMP-signal` | `prepare`、`collect`、`cleanup`、`contract`/`directory`/`mcp`、stdio server | per-attempt 隔离；seq 续号；server 幂等启动 |
+| `CMP-signal` | `prepare`（契约集合）、`collect`、`cleanup`、`contract`/`directory`/`mcp`、stdio server | per-attempt 隔离；seq 续号；server 幂等启动；一次 attempt 一个 server、每个契约一个工具 |
 | `CMP-observability` | `log`、`child`、脱敏、`collect`、`render`、`exitCode` | 日志不阻塞；不泄漏凭据/原文 |
 
 ### 4.5 需求/场景到组件的追溯
@@ -213,7 +213,7 @@ S0 不接调度器：`SCN-0001` 的触发用 `CMP-cli` 的 `run` + `LocalSchedul
 | 路径 | 热/冷 | 触发/频率 | 经过组件与契约 | 同步依赖 | 失败/降级 | 资源隔离 | 一致性/观测 |
 |---|---|---|---|---|---|---|---|
 | poll 循环 | **热** | 常驻 30s 长轮询（兼判活） | CLI → `SchedulerPort` → gateway | 1 | 退避重连；鉴权/协议失败退出 3；持续不可达退出 6 | 独立任务，不占执行队列 | `running[]`/`finished[]`；观测延迟/错误率 |
-| 任务执行 | 冷 | 每任务一次；分钟级 | executor → workspace / runtime / assets / result（+ 有 `resultSignal` 时 signal） | 4（+1） | 分类失败；结果先落 journal；未 accepted 前留在 finished | 每实例独立进程/容器/home | `settled` 后可重报；观测 taskId/session |
+| 任务执行 | 冷 | 每任务一次；分钟级 | executor → workspace / runtime / assets / result（+ 有 `resultSignal`/`confirmation` 时 signal） | 4（+1） | 分类失败；结果先落 journal；未 accepted 前留在 finished | 每实例独立进程/容器/home | `settled` 后可重报；观测 taskId/session |
 | 技能安装 | 冷 | 每节点/技能集变化 | executor → `AssetPort` → assets | 0（assets 自持下载） | 原子回滚；不 prompt；失败 asset 类 | 独立 staging/cache；大小上限 | digest + 原子替换；观测包名/大小/耗时 |
 | 观测拉取 | 冷 | 按需（UI/调度器/排障） | UI → 产品 API → 适配器 → `CMP-observer` | 0 | 超时/404/410、SSE 断线；只影响观测 | 独立只读面；不占执行队列 | 事件/SSE；不判活、不触发重派 |
 | 恢复/`doctor` | 冷 | 启动/手动 | CLI → store / runtime / workspace / assets `*Admin` | 0（S0 不查网络） | 降级跳过坏记录；检查失败不阻塞启动 | 实例串行清理；不与执行共享锁 | `pending`/orphan/检查项；脱敏 |
@@ -334,6 +334,7 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 - 场景与可靠性：`SCN-0002`（配置 client 并完成自检）、`SCN-0001`（执行节点并回传结果）与 `REQ-0002`（执行稳定性与可靠性）已建；S0 先按两个场景的 S0 用例落地。
 - S0 本地闭环工序：以冻结稿的用例与不变量为输入；优先验证取消/崩溃清理、容器根技能可见性、结果回传与 `doctor` 守门。
 - 信号能力已落地（2026-11-18）：新增 L0 `CMP-signal`（per-attempt 信号目录 + stdio server `src/mcp/signal-server.ts`），`RuntimePort.newSession` 可选 `mcpServers`，`TaskResult.signals` 随 `P-02` 回传；契约加法 `C-13`/`C-14`，见 [`contracts/executor-http-v3.md`](contracts/executor-http-v3.md)。实现工序见 `docs/works/2026-11-18-mcp-signal-impl/`。
+- review 应急确认（`TaskRequest.confirmation`）已落地（2026-11-19）：review 任务同一 attempt 同时挂 `mcp__agentflow__signal` 与 `mcp__agentflow__confirm`；一次 attempt 一个 `agentflow` server、按契约集合产出 `tools[]`，采集按 `kind` 分派校验。工序见 `docs/works/2026-11-19-confirm-channel-client/`。
 - 只读观测面 v1 已落地（2026-11-17）：`CMP-observer` 提供 O-01–O-11（health/attempts/logs/SSE/session/raw/files/富 session SSE），契约见 [`contracts/client-observability-v1.md`](contracts/client-observability-v1.md)；`CMP-observability` 存 attempt/session 事件，`CMP-runtime` 管 raw，`CMP-store` 管 run 注册表。调度器侧 runId 富化、URL 登记与适配器已落地（2026-11-17），UI 的文件/会话视图待 UI 项目接入。执行期可见性按「消费方主动拉取」执行，不设 5s 进度推送（决策见 [`2026-11-17-execution-visibility-pull.md`](../history/decisions/2026-11-17-execution-visibility-pull.md)）。
 
 ## 13. 分级与确认
@@ -357,4 +358,5 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 - **S0 已落地（2026-11-08）**：8 个组件转 `active`；`run`/`doctor` 可用，`SCN-0002` 3+1 与 `SCN-0001` S0 用例通过；见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
 - **S1 已落地（2026-11-08）**：`CMP-gateway` 转 `active`；`serve` 接桩调度器跑通注册/心跳/领取/绑定/`C-05`/上报/清理；S1 门禁 8 条有测试；见 `docs/history/works/2026-11-08-s1-contract-skeleton/result.md`。
 - **信号能力已落地（2026-11-18，P1）**：新增第 10 个组件 `CMP-signal`（L0），组件切分由「9 组件不变」更新为 10；`SignalPort` 由 `CMP-executor` 定义；`<stateRoot>/signals/` 归 `CMP-signal` 写。用户 2026-11-18 确认按「新增 L0 组件」落地。
+- **review 应急确认已落地（2026-11-19，P2）**：`TaskRequest` 增可选 `confirmation`；`SignalPort.prepare/collect` 改为契约集合；一个 server 暴露多个工具。无组件切分/数据所有权变化，不升协议版本。
 - **S2 已落地（2026-11-09，A 方案内）**：顺序两节点、技能切换、同 attempt 幂等、同容器技能集冲突守卫、清理幂等；Q1 保持 A，不升协议版本；fan-out 真并发留 B 决策。见 `docs/history/works/2026-11-09-s2-linear-and-recovery/result.md`。

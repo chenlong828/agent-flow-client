@@ -105,6 +105,26 @@ function handleResponse(message) {
   sessions.set(sessionId, {});
 }
 
+/** 模拟模型调用本次 attempt 挂载的每个工具：按 config.tools 逐个追加合法记录。 */
+function emitSignals(mcpServers) {
+  if (!process.env.FAKE_ACP_EMIT_SIGNAL || mcpServers.length === 0) return;
+  const configPath = (mcpServers[0]?.env ?? []).find((item) => item.name === "AF_SIGNAL_CONFIG")?.value;
+  if (typeof configPath !== "string" || !existsSync(configPath)) return;
+  const config = JSON.parse(readFileSync(configPath, "utf8"));
+  const tools = Array.isArray(config.tools) ? config.tools : [];
+  let seq = 0;
+  for (const tool of tools) {
+    const data = tool.kind === "confirmation_request"
+      ? { question: "继续吗？", context: "stub-confirm" }
+      : { verdict: "pass", reason: "from-fake-acp" };
+    seq += 1;
+    appendFileSync(
+      config.output,
+      `${JSON.stringify({ seq, at: new Date().toISOString(), kind: tool.kind, data })}\n`,
+    );
+  }
+}
+
 function onLine(line) {
   let message;
   try {
@@ -154,20 +174,8 @@ function onLine(line) {
           return;
         }
       }
-      // 模拟模型调用 `mcp__agentflow__signal`：直接往信号文件追加一行合法记录。
-      if (process.env.FAKE_ACP_EMIT_SIGNAL && mcpServers.length > 0) {
-        const configPath = (mcpServers[0]?.env ?? []).find((item) => item.name === "AF_SIGNAL_CONFIG")?.value;
-        if (typeof configPath === "string" && existsSync(configPath)) {
-          const config = JSON.parse(readFileSync(configPath, "utf8"));
-          const data = config.kind === "confirmation_request"
-            ? { question: "继续吗？", context: "stub-confirm" }
-            : { verdict: "pass", reason: "from-fake-acp" };
-          appendFileSync(
-            config.output,
-            `${JSON.stringify({ seq: 1, at: new Date().toISOString(), kind: config.kind, data })}\n`,
-          );
-        }
-      }
+      // 模拟模型调用挂载的工具：每个契约（config.tools）往信号文件追加一行合法记录。
+      emitSignals(mcpServers);
       const sessionId = `s-${++counter}`;
       sessions.set(sessionId, {});
       result(message.id, {
@@ -217,6 +225,7 @@ function onLine(line) {
       }
       closed.delete(sessionId);
       sessions.set(sessionId, {});
+      emitSignals(message.params?.mcpServers ?? []);
       result(message.id, { configOptions: [] });
       return;
     }

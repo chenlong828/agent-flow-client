@@ -4,26 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { StubScheduler } from "../support/stub-scheduler.ts";
 import type { TaskRequest, TaskResult } from "../../src/components/executor/types.ts";
-import type { ResultSignalContract } from "../../src/components/signal/contract.ts";
+import { confirmationRequestContract, reviewConfirmationContract, reviewVerdictContract } from "../support/signal-contract.ts";
 
 const fakeAcp = join(import.meta.dir, "../fixtures/fake-acp.mjs");
 const repoRoot = join(import.meta.dir, "../..");
-
-const confirmationContract: ResultSignalContract = {
-  version: 1,
-  kind: "confirmation_request",
-  required: true,
-  schema: {
-    type: "object",
-    additionalProperties: false,
-    required: ["question"],
-    properties: {
-      question: { type: "string", minLength: 1, maxLength: 2048 },
-      context: { type: "string", maxLength: 8192 },
-      options: { type: "string[]", maxItems: 8, maxLength: 256 },
-    },
-  },
-};
 
 async function fixture() {
   const runDir = await mkdtemp(join(tmpdir(), "afc-confirm-"));
@@ -70,11 +54,17 @@ function task(id: string, container: string, overrides: Partial<TaskRequest> = {
   };
 }
 
+async function stop(child: { exited: Promise<number> }, stub: StubScheduler): Promise<void> {
+  stub.setStop(true);
+  expect(await child.exited).toBe(0);
+  stub.server.stop(true);
+}
+
 describe("§5.5 临时确认点（桩调度器 + 桩 DSH）", () => {
   test("第一次任务回传 confirmation_request + sessionId；续跑任务 resume 同一 session", async () => {
     const { runDir, container, resumeLog, stub, child } = await fixture();
 
-    stub.enqueueTask(task("confirm-1", container, { prompt: "CONFIRM-NEEDED", resultSignal: confirmationContract }));
+    stub.enqueueTask(task("confirm-1", container, { prompt: "CONFIRM-NEEDED", resultSignal: confirmationRequestContract }));
     await waitFor(() => stub.results().length >= 1);
     const first = stub.results()[0] as TaskResult;
     expect(first.status).toBe("succeeded");
@@ -117,8 +107,59 @@ describe("§5.5 临时确认点（桩调度器 + 桩 DSH）", () => {
     expect(reported[0]?.signals).toEqual({ count: 1, kinds: ["confirmation_request"] });
     expect(reported[1]).toMatchObject({ continuation: true, resumeSessionId: sessionId });
 
-    stub.setStop(true);
-    expect(await child.exited).toBe(0);
-    stub.server.stop(true);
+    await stop(child, stub);
+  }, 40_000);
+
+  test("review 双契约：一个 server 挂 signal + confirm，混采回传；续跑仍挂两工具", async () => {
+    const { runDir, container, resumeLog, stub, child } = await fixture();
+
+    stub.enqueueTask(
+      task("review-1", container, {
+        prompt: "REVIEW",
+        resultSignal: reviewVerdictContract,
+        confirmation: reviewConfirmationContract,
+      }),
+    );
+    await waitFor(() => stub.results().length >= 1);
+    const first = stub.results()[0] as TaskResult;
+    expect(first.status).toBe("succeeded");
+    expect(first.signals?.map((signal) => signal.kind)).toEqual(["review_verdict", "confirmation_request"]);
+
+    const configPath = join(runDir, "state", "signals", "review-1", "1", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as { tools: Array<{ kind: string }> };
+    expect(config.tools.map((tool) => tool.kind)).toEqual(["review_verdict", "confirmation_request"]);
+
+    const sessionId = first.sessionId as string;
+    stub.enqueueTask(
+      task("review-2", container, {
+        prompt: "ANSWER: pass",
+        resumeSessionId: sessionId,
+        resultSignal: reviewVerdictContract,
+        confirmation: reviewConfirmationContract,
+      }),
+    );
+    await waitFor(() => stub.results().length >= 2);
+    const second = stub.results()[1] as TaskResult;
+    expect(second.status).toBe("succeeded");
+    expect(second.sessionId).toBe(sessionId);
+    expect(second.signals?.map((signal) => signal.kind)).toEqual(["review_verdict", "confirmation_request"]);
+    expect((await readFile(resumeLog, "utf8")).trim().split("\n")).toEqual([sessionId]);
+
+    const resumedConfig = JSON.parse(
+      await readFile(join(runDir, "state", "signals", "review-2", "1", "config.json"), "utf8"),
+    ) as { tools: Array<{ kind: string }> };
+    expect(resumedConfig.tools.map((tool) => tool.kind)).toEqual(["review_verdict", "confirmation_request"]);
+
+    await Bun.sleep(150);
+    const log = await readFile(join(runDir, "state", "logs", "client.jsonl"), "utf8");
+    const reported = log
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => JSON.parse(line) as { event: string; msg?: string })
+      .filter((record) => record.event === "task.reported")
+      .map((record) => JSON.parse(record.msg ?? "{}") as Record<string, unknown>);
+    expect(reported[0]?.signals).toEqual({ count: 2, kinds: ["review_verdict", "confirmation_request"] });
+
+    await stop(child, stub);
   }, 40_000);
 });

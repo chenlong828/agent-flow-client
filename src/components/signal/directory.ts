@@ -47,8 +47,11 @@ export async function readServerConfig(path: string): Promise<SignalServerConfig
   if (typeof parsed !== "object" || parsed === null) throw new Error("config 必须是对象");
   if (typeof parsed.output !== "string" || parsed.output === "") throw new Error("config.output 缺失");
   if (typeof parsed.version !== "number") throw new Error("config.version 缺失");
-  if (typeof parsed.kind !== "string" || parsed.kind === "") throw new Error("config.kind 缺失");
-  if (typeof parsed.schema !== "object" || parsed.schema === null) throw new Error("config.schema 缺失");
+  if (!Array.isArray(parsed.tools) || parsed.tools.length === 0) throw new Error("config.tools 缺失");
+  for (const tool of parsed.tools) {
+    if (typeof tool?.kind !== "string" || tool.kind === "") throw new Error("config.tools[].kind 缺失");
+    if (typeof tool.schema !== "object" || tool.schema === null) throw new Error(`config.tools[].schema 缺失（${tool.kind}）`);
+  }
   if (typeof parsed.limits?.maxSignals !== "number" || typeof parsed.limits?.maxBytes !== "number") {
     throw new Error("config.limits 缺失");
   }

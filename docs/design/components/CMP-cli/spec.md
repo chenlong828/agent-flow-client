@@ -245,7 +245,7 @@ config → observability → store → workspace → assets → runtime → gate
 | 配置矩阵 | `TC-CONFIG-001`…`004`：默认、绝对/相对、env 覆盖、非法 TOML/空值/不可写/`~/.dsh` | 生效值、来源、退出码、DSH 子进程入参 |
 | 命令 | `--help`、`version`、未知命令、缺参数 | 输出/退出码 |
 | `serve` | 桩端口：领取→执行→回报；取消；暂停/恢复；容量；二次信号 | 循环不重复执行、心跳不被阻塞 |
-| `signals` | 查看某任务的信号：`--task <taskId> [--attempt n] [--json]`；只读，输出 kind/条数/会话与结果状态 |
+| `signals` | 查看某任务的信号：`--task <taskId> [--attempt n] [--json]`；只读，输出本次 attempt 挂载的 kinds/条数/会话与结果状态 |
 | `run` | 单节点成功/失败/取消；stdout 只有 JSON；退出码 0/1 | 与 `serve` 共用内核 |
 | `doctor` | 全绿、缺 DSH、版本不兼容、容器非法、残留 session/lock/孤儿 | 检查项、脱敏、退出码 |
 | 架构 | import 边界；L0 只在组合根 | 静态检查 |

@@ -3,12 +3,13 @@ import { resolve } from "node:path";
 import {
   SIGNAL_CONTRACT_VERSION,
   SIGNAL_LIMITS,
-  isSupportedContract,
-  type ResultSignalContract,
+  SIGNAL_SUPPORTED_KINDS,
+  type SignalContractSpec,
   type TaskSignal,
 } from "./contract.ts";
 import type { SignalPlan, SignalServerConfig } from "./plan.ts";
 import { collectSignals } from "./collect.ts";
+import { validateSchema } from "./validate.ts";
 import { attemptDir, cleanupSignals, ensureAttemptDir, outputPathOf, writeServerConfig } from "./directory.ts";
 import { signalMcpServers } from "./mcp.ts";
 
@@ -64,24 +65,26 @@ export class FileSignal {
   }
 
   /**
-   * 建目录、写 config、`--check` 预检；不支持契约时明确返回 unsupported（不挂 MCP，不判失败）。
-   * 文件或预检失败抛 `signal_prepare_failed`（由 executor 归为任务失败）。
+   * 建目录、写 config（`tools[]`，一个 server 暴露多个工具）、`--check` 预检。
+   * kind 不在支持列表时返回 unsupported（不挂 MCP，不判失败）；重复 kind 或 schema 非法抛
+   * `signal_prepare_failed`（由 executor 归为任务失败）。
    */
-  async prepare(input: { taskId: string; attempt: number; contract: ResultSignalContract }): Promise<SignalPrepareResult> {
-    const { contract } = input;
-    if (!isSupportedContract(contract)) {
-      return { status: "unsupported", reason: `不支持 version=${contract.version} kind=${contract.kind}` };
+  async prepare(input: { taskId: string; attempt: number; contracts: SignalContractSpec[] }): Promise<SignalPrepareResult> {
+    const { contracts } = input;
+    const unsupported = contracts.find((contract) => !SIGNAL_SUPPORTED_KINDS.includes(contract.kind));
+    if (unsupported !== undefined) {
+      return { status: "unsupported", reason: `不支持 kind=${unsupported.kind}` };
     }
     const dir = attemptDir(this.#options.stateRoot, input.taskId, input.attempt);
     try {
+      assertContracts(contracts);
       await ensureAttemptDir(dir);
       const config: SignalServerConfig = {
         version: SIGNAL_CONTRACT_VERSION,
-        kind: contract.kind,
         taskId: input.taskId,
         attempt: input.attempt,
         output: outputPathOf(dir),
-        schema: contract.schema,
+        tools: contracts.map((contract) => ({ kind: contract.kind, schema: contract.schema })),
         limits: { maxSignals: SIGNAL_LIMITS.maxCount, maxBytes: SIGNAL_LIMITS.maxBytes },
       };
       const configPath = await writeServerConfig(dir, config);
@@ -91,7 +94,7 @@ export class FileSignal {
         plan: {
           taskId: input.taskId,
           attempt: input.attempt,
-          kind: contract.kind,
+          contracts: config.tools,
           dir,
           configPath,
           outputPath: outputPathOf(dir),
@@ -99,19 +102,15 @@ export class FileSignal {
         },
       };
     } catch (error) {
+      if (error instanceof SignalError) throw error;
       throw new SignalError("signal_prepare_failed", `信号准备失败：${(error as Error).message}`);
     }
   }
 
-  /** 采集当前 attempt 的信号；损坏行忽略，整体异常抛 `signal_invalid`（由 executor 吞掉）。 */
-  async collect(input: {
-    taskId: string;
-    attempt: number;
-    contract: ResultSignalContract;
-    plan: SignalPlan;
-  }): Promise<TaskSignal[] | undefined> {
+  /** 采集当前 attempt 的信号（按已挂契约的 kind 分派校验）；损坏行忽略，整体异常抛 `signal_invalid`。 */
+  async collect(input: { taskId: string; attempt: number; plan: SignalPlan }): Promise<TaskSignal[] | undefined> {
     try {
-      const collected = await collectSignals(input.contract, input.plan.outputPath);
+      const collected = await collectSignals(input.plan.contracts, input.plan.outputPath);
       return collected.signals.length === 0 ? undefined : collected.signals;
     } catch (error) {
       throw new SignalError("signal_invalid", `信号采集失败：${(error as Error).message}`);
@@ -147,5 +146,24 @@ export class FileSignal {
         else fail(new Error(`预检退出码 ${String(code)}${stderr.trim() === "" ? "" : `：${stderr.trim()}`}`));
       });
     });
+  }
+}
+
+/**
+ * 契约集合自检：至多一个工具/kind、schema 合法。
+ * 两个契约的 kind 本期固定不同；将来重复 kind 按配置错误在预检前失败，不静默覆盖工具。
+ */
+function assertContracts(contracts: readonly SignalContractSpec[]): void {
+  if (contracts.length === 0) throw new SignalError("signal_prepare_failed", "没有可挂载的信号契约");
+  const seen = new Set<string>();
+  for (const contract of contracts) {
+    if (seen.has(contract.kind)) {
+      throw new SignalError("signal_prepare_failed", `信号契约 kind 重复：${contract.kind}`);
+    }
+    seen.add(contract.kind);
+    const errors = validateSchema(contract.schema);
+    if (errors.length > 0) {
+      throw new SignalError("signal_prepare_failed", `信号契约 schema 非法（${contract.kind}）：${errors.join("; ")}`);
+    }
   }
 }

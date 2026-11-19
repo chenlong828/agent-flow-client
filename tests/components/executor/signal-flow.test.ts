@@ -11,10 +11,10 @@ import type {
 } from "../../../src/components/executor/ports.ts";
 import { RuntimeError } from "../../../src/components/runtime/errors.ts";
 import { SignalError } from "../../../src/components/signal/signal.ts";
-import type { ResultSignalContract, TaskSignal } from "../../../src/components/signal/contract.ts";
+import type { SignalContractSpec, TaskSignal } from "../../../src/components/signal/contract.ts";
 import type { SignalPlan } from "../../../src/components/signal/plan.ts";
 import type { TaskRequest } from "../../../src/components/executor/types.ts";
-import { reviewVerdictContract } from "../../support/signal-contract.ts";
+import { confirmationRequestContract, reviewConfirmationContract, reviewVerdictContract } from "../../support/signal-contract.ts";
 import { FakeAssets, FakeSessionLogs, FakeWorkspace, MemoryJournal } from "./fakes.ts";
 
 const mountError = (): RuntimeError =>
@@ -25,6 +25,7 @@ const mountError = (): RuntimeError =>
 class MountRuntime implements RuntimePort {
   calls: Array<{ cwd: string; mcpServers?: unknown }> = [];
   resumed: string[] = [];
+  resumeCalls: Array<{ sessionId: string; mcpServers?: unknown }> = [];
   prompts: string[] = [];
   closed: string[] = [];
   readonly #failures: Array<Error | undefined>;
@@ -46,8 +47,9 @@ class MountRuntime implements RuntimePort {
     return { sessionId: `s-${this.#session}`, instanceId: instance.instanceId };
   }
 
-  async resumeSession(instance: InstanceHandle, sessionId: string): Promise<SessionRef> {
+  async resumeSession(instance: InstanceHandle, sessionId: string, _cwd: string, opts?: { mcpServers?: unknown[] }): Promise<SessionRef> {
     this.resumed.push(sessionId);
+    this.resumeCalls.push({ sessionId, ...(opts?.mcpServers === undefined ? {} : { mcpServers: opts.mcpServers }) });
     return { sessionId, instanceId: instance.instanceId };
   }
 
@@ -69,7 +71,10 @@ class MountRuntime implements RuntimePort {
 const plan: SignalPlan = {
   taskId: "task-1",
   attempt: 1,
-  kind: "review_verdict",
+  contracts: [
+    { kind: "review_verdict", schema: reviewVerdictContract.schema },
+    { kind: "confirmation_request", schema: reviewConfirmationContract.schema },
+  ],
   dir: "/tmp/signals/task-1/1",
   configPath: "/tmp/signals/task-1/1/config.json",
   outputPath: "/tmp/signals/task-1/1/signals.jsonl",
@@ -78,8 +83,8 @@ const plan: SignalPlan = {
 
 class FakeSignal implements SignalPort {
   order: string[] = [];
-  prepared = 0;
-  collected = 0;
+  prepared: SignalContractSpec[][] = [];
+  collected: number = 0;
   result: TaskSignal[] | undefined = [
     { seq: 1, at: "2026-11-18T00:00:00.000Z", kind: "review_verdict", data: { verdict: "pass", reason: "ok" } },
   ];
@@ -87,8 +92,8 @@ class FakeSignal implements SignalPort {
   prepareError?: Error;
   collectError?: Error;
 
-  async prepare(): Promise<SignalPrepareResult> {
-    this.prepared += 1;
+  async prepare(input: { contracts: SignalContractSpec[] }): Promise<SignalPrepareResult> {
+    this.prepared.push(input.contracts);
     this.order.push("prepare");
     if (this.prepareError !== undefined) throw this.prepareError;
     return this.prepareResult;
@@ -122,7 +127,7 @@ function task(overrides: Partial<TaskRequest> = {}): TaskRequest {
   };
 }
 
-function setup(options: { failures?: Array<Error | undefined>; signals?: SignalPort; contract?: ResultSignalContract } = {}) {
+function setup(options: { failures?: Array<Error | undefined>; signals?: SignalPort } = {}) {
   const runtime = new MountRuntime(options.failures);
   const signal = new FakeSignal();
   const events: string[] = [];
@@ -134,7 +139,7 @@ function setup(options: { failures?: Array<Error | undefined>; signals?: SignalP
     journal: new MemoryJournal(),
     dshHome: "/tmp/afc-home",
     maxResultBytes: 4096,
-    ...(options.signals === undefined ? (options.contract === undefined ? { signals: signal } : { signals: signal }) : { signals: options.signals }),
+    signals: options.signals ?? signal,
     log: (event) => events.push(event),
     now: () => new Date("2026-11-18T00:00:00.000Z"),
   });
@@ -186,7 +191,7 @@ describe("executor × CMP-signal", () => {
 
   test("不支持的契约：不挂 MCP、不采集、任务照常执行", async () => {
     const { executor, runtime, signal: signals } = setup();
-    signals.prepareResult = { status: "unsupported", reason: "不支持 version=2" };
+    signals.prepareResult = { status: "unsupported", reason: "不支持 kind=other" };
     const result = await executor.executeTask(task(), { signal: signal() });
     expect(result.status).toBe("succeeded");
     expect(runtime.calls[0]?.mcpServers).toBeUndefined();
@@ -220,25 +225,64 @@ describe("executor × CMP-signal", () => {
     expect(events).toContain("signal.missing");
   });
 
-  test("任务没有 resultSignal：不准备、不挂 MCP", async () => {
+  test("任务没有 resultSignal 与 confirmation：不准备、不挂 MCP", async () => {
     const { executor, runtime, signal: signals } = setup();
     await executor.executeTask(task({ resultSignal: undefined }), { signal: signal() });
-    expect(signals.prepared).toBe(0);
+    expect(signals.prepared).toHaveLength(0);
     expect(runtime.calls[0]?.mcpServers).toBeUndefined();
   });
 });
 
-const confirmationContract: ResultSignalContract = {
-  version: 1,
-  kind: "confirmation_request",
-  required: true,
-  schema: {
-    type: "object",
-    additionalProperties: false,
-    required: ["question"],
-    properties: { question: { type: "string", maxLength: 2048 }, context: { type: "string", maxLength: 8192 } },
-  },
-};
+describe("review 双契约（resultSignal + confirmation）", () => {
+  test("一次 attempt 一个 server、两个工具：prepare 收到两个契约，混采结果随结果回传", async () => {
+    const { executor, runtime, signal: signals } = setup();
+    signals.result = [
+      { seq: 1, at: "2026-11-18T00:00:00.000Z", kind: "confirmation_request", data: { question: "可以放行吗？" } },
+      { seq: 2, at: "2026-11-18T00:00:01.000Z", kind: "review_verdict", data: { verdict: "pass", reason: "人工确认" } },
+    ];
+    const result = await executor.executeTask(task({ confirmation: reviewConfirmationContract }), { signal: signal() });
+    expect(signals.prepared).toHaveLength(1);
+    expect(signals.prepared[0]?.map((contract) => contract.kind)).toEqual(["review_verdict", "confirmation_request"]);
+    expect(runtime.calls).toHaveLength(1);
+    expect(runtime.calls[0]?.mcpServers).toHaveLength(1);
+    expect(result.signals?.map((item) => item.kind)).toEqual(["confirmation_request", "review_verdict"]);
+  });
+
+  test("confirmation 不支持：跳过它并记 signal.partial，resultSignal 照常挂载", async () => {
+    const { executor, runtime, signal: signals, events } = setup();
+    const result = await executor.executeTask(
+      task({ confirmation: { ...reviewConfirmationContract, version: 2 } }),
+      { signal: signal() },
+    );
+    expect(result.status).toBe("succeeded");
+    expect(signals.prepared[0]?.map((contract) => contract.kind)).toEqual(["review_verdict"]);
+    expect(runtime.calls[0]?.mcpServers).toHaveLength(1);
+    expect(events).toContain("signal.partial");
+  });
+
+  test("confirmation.kind 不是 confirmation_request：failed(signal_prepare_failed)，不静默改 kind", async () => {
+    const { executor, runtime, events } = setup();
+    const result = await executor.executeTask(
+      task({ confirmation: { ...reviewVerdictContract, required: false } }),
+      { signal: signal() },
+    );
+    expect(result.status).toBe("failed");
+    expect(result.error).toMatchObject({ code: "signal_prepare_failed", class: "protocol" });
+    expect(runtime.calls).toHaveLength(0);
+    expect(events).not.toContain("signal.prepared");
+  });
+
+  test("只有 confirmation（无 resultSignal）时也挂载它，续跑按确认点处理", async () => {
+    const { executor, signal: signals, events } = setup();
+    signals.result = undefined;
+    await executor.executeTask(
+      task({ resultSignal: undefined, confirmation: confirmationRequestContract, resumeSessionId: "s-old" }),
+      { signal: signal() },
+    );
+    expect(signals.prepared[0]?.map((contract) => contract.kind)).toEqual(["confirmation_request"]);
+    expect(events).toContain("signal.not_expected");
+  });
+});
 
 describe("§5.5 续跑（client 能力预留）", () => {
   test("带 resumeSessionId 时走 session/resume，并重新挂载 mcpServers", async () => {
@@ -246,6 +290,7 @@ describe("§5.5 续跑（client 能力预留）", () => {
     await executor.executeTask(task({ resumeSessionId: "s-old" }), { signal: signal() });
     expect(runtime.resumed).toEqual(["s-old"]);
     expect(runtime.calls).toHaveLength(0);
+    expect(runtime.resumeCalls[0]?.mcpServers).toEqual(plan.mcpServers);
   });
 });
 
@@ -253,7 +298,7 @@ describe("续跑与信号语义", () => {
   test("确认点续跑不报 signal.missing，改报 signal.not_expected", async () => {
     const { executor, events, signal: signals } = setup();
     signals.result = undefined;
-    await executor.executeTask(task({ resumeSessionId: "s-old", resultSignal: confirmationContract }), {
+    await executor.executeTask(task({ resumeSessionId: "s-old", resultSignal: confirmationRequestContract }), {
       signal: signal(),
     });
     expect(events).toContain("signal.not_expected");
@@ -263,7 +308,11 @@ describe("续跑与信号语义", () => {
   test("review 续跑没交判决仍报 signal.missing（带 reason=continuation）", async () => {
     const { executor, events, signal: signals } = setup();
     signals.result = undefined;
-    await executor.executeTask(task({ resumeSessionId: "s-old" }), { signal: signal() });
+    await executor.executeTask(
+      task({ resumeSessionId: "s-old", confirmation: reviewConfirmationContract }),
+      { signal: signal() },
+    );
     expect(events).toContain("signal.missing");
+    expect(events).not.toContain("signal.not_expected");
   });
 });

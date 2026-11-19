@@ -1,27 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileSignal } from "../../../src/components/signal/signal.ts";
-import { reviewVerdictContract as contract } from "../../support/signal-contract.ts";
+import { confirmationRequestContract, reviewVerdictContract } from "../../support/signal-contract.ts";
 import type { ResultSignalContract } from "../../../src/components/signal/contract.ts";
-
-const confirmationContract: ResultSignalContract = {
-  version: 1,
-  kind: "confirmation_request",
-  required: true,
-  schema: {
-    type: "object",
-    additionalProperties: false,
-    required: ["question"],
-    properties: {
-      question: { type: "string", minLength: 1, maxLength: 2048 },
-      context: { type: "string", maxLength: 8192 },
-      options: { type: "string[]", maxItems: 8, maxLength: 256 },
-    },
-  },
-};
 
 const entry = join(import.meta.dir, "../../../src/mcp/signal-server.ts");
 
@@ -84,10 +68,10 @@ afterEach(() => {
   for (const server of servers.splice(0)) server.kill();
 });
 
-async function prepare(configContract = contract) {
+async function prepare(contracts: ResultSignalContract[] = [reviewVerdictContract]) {
   const stateRoot = await mkdtemp(join(tmpdir(), "afc-signal-server-"));
   const signal = new FileSignal({ stateRoot });
-  const prepared = await signal.prepare({ taskId: "t", attempt: 1, contract: configContract });
+  const prepared = await signal.prepare({ taskId: "t", attempt: 1, contracts });
   if (prepared.status !== "ok") throw new Error("prepare 失败");
   return prepared.plan;
 }
@@ -96,6 +80,10 @@ async function start(plan: Awaited<ReturnType<typeof prepare>>): Promise<Server>
   const server = new Server(plan.configPath);
   servers.push(server);
   return server;
+}
+
+async function init(server: Server): Promise<void> {
+  await server.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 }
 
 describe("stdio signal server", () => {
@@ -108,14 +96,14 @@ describe("stdio signal server", () => {
     expect(Date.now() - started).toBeLessThan(2000);
   });
 
-  test("initialize + tools/list：单工具、schema 投影后无执行关键字", async () => {
+  test("initialize + tools/list：单契约一个工具、schema 投影后无执行关键字", async () => {
     const plan = await prepare();
     const server = await start(plan);
-    const init = (await server.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } })) as {
+    const started = await server.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } }) as {
       protocolVersion?: string;
       capabilities?: unknown;
     };
-    expect(init.protocolVersion).toBe("2025-06-18");
+    expect(started.protocolVersion).toBe("2025-06-18");
     const list = (await server.request("tools/list", {})) as { tools?: Array<{ name: string; inputSchema: unknown }> };
     expect(list.tools).toHaveLength(1);
     expect(list.tools?.[0]?.name).toBe("signal");
@@ -123,6 +111,16 @@ describe("stdio signal server", () => {
     expect(schema).toContain('"kind":{"const":"review_verdict"');
     expect(schema).not.toContain("maxLength");
     expect(schema).not.toContain("maxItems");
+  });
+
+  test("两个契约：tools/list 同时有 signal 与 confirm（review 应急确认）", async () => {
+    const plan = await prepare([reviewVerdictContract, { ...confirmationRequestContract, required: false }]);
+    const server = await start(plan);
+    await init(server);
+    const list = (await server.request("tools/list", {})) as { tools?: Array<{ name: string; inputSchema: unknown }> };
+    expect(list.tools?.map((tool) => tool.name)).toEqual(["signal", "confirm"]);
+    expect(JSON.stringify(list.tools?.[0]?.inputSchema)).toContain('"const":"review_verdict"');
+    expect(JSON.stringify(list.tools?.[1]?.inputSchema)).toContain('"const":"confirmation_request"');
   });
 
   test("合法调用写入并 ack；非法 enum 不写；重启后 seq 续号", async () => {
@@ -178,31 +176,67 @@ describe("stdio signal server", () => {
     const badCode = await new Promise<number | null>((resolve) => bad.on("exit", (code) => resolve(code)));
     expect(badCode).not.toBe(0);
   });
+
+  test("--check：重复工具名（重复 kind）退出非 0", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "afc-signal-dup-"));
+    const configPath = join(dir, "config.json");
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        taskId: "t",
+        attempt: 1,
+        output: join(dir, "signals.jsonl"),
+        tools: [
+          { kind: "review_verdict", schema: reviewVerdictContract.schema },
+          { kind: "review_verdict", schema: reviewVerdictContract.schema },
+        ],
+        limits: { maxSignals: 8, maxBytes: 16384 },
+      }),
+    );
+    const child = spawn(process.execPath, [entry, "--check"], { env: { ...process.env, AF_SIGNAL_CONFIG: configPath } });
+    const code = await new Promise<number | null>((resolve) => child.on("exit", resolve));
+    expect(code).not.toBe(0);
+  });
 });
 
 describe("confirm 工具（§5.5）", () => {
-  test("confirmation_request 契约暴露 `confirm` 工具；调用写入同 kind 记录", async () => {
-    const plan = await prepare(confirmationContract);
+  test("review 两契约：tools/call 按工具名分派，写同一 signals.jsonl", async () => {
+    const plan = await prepare([reviewVerdictContract, { ...confirmationRequestContract, required: false }]);
     const server = await start(plan);
-    await server.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
-    const list = (await server.request("tools/list", {})) as { tools?: Array<{ name: string; inputSchema: unknown }> };
-    expect(list.tools?.[0]?.name).toBe("confirm");
-    expect(JSON.stringify(list.tools?.[0]?.inputSchema)).toContain('"const":"confirmation_request"');
+    await init(server);
 
-    const ok = (await server.request("tools/call", {
+    const confirm = (await server.request("tools/call", {
       name: "confirm",
       arguments: { kind: "confirmation_request", question: "选择哪个方案？", options: ["A", "B"] },
     })) as { content?: Array<{ text?: string }>; isError?: boolean };
-    expect(ok.isError).toBe(false);
-    expect(ok.content?.[0]?.text).toBe(JSON.stringify({ ok: true, seq: 1 }));
-    const line = JSON.parse((await readFile(plan.outputPath, "utf8")).trim()) as { kind: string; data: unknown };
-    expect(line.kind).toBe("confirmation_request");
-    expect(line.data).toMatchObject({ question: "选择哪个方案？", options: ["A", "B"] });
+    expect(confirm.isError).toBe(false);
+    expect(confirm.content?.[0]?.text).toBe(JSON.stringify({ ok: true, seq: 1 }));
+
+    const verdict = (await server.request("tools/call", {
+      name: "signal",
+      arguments: { kind: "review_verdict", verdict: "fail", reason: "等人答复后仍不通过" },
+    })) as { content?: Array<{ text?: string }> };
+    expect(verdict.content?.[0]?.text).toBe(JSON.stringify({ ok: true, seq: 2 }));
+
+    const lines = (await readFile(plan.outputPath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { seq: number; kind: string; data: Record<string, unknown> });
+    expect(lines.map((line) => line.kind)).toEqual(["confirmation_request", "review_verdict"]);
+    expect(lines[0]?.data).toMatchObject({ question: "选择哪个方案？", options: ["A", "B"] });
 
     const wrongTool = (await server.request("tools/call", {
-      name: "signal",
+      name: "unknown",
       arguments: { kind: "confirmation_request", question: "x" },
     })) as { error?: { code?: number } };
     expect(wrongTool.error?.code).toBe(-32602);
+
+    const wrongKind = (await server.request("tools/call", {
+      name: "confirm",
+      arguments: { kind: "review_verdict", question: "x" },
+    })) as { isError?: boolean; content?: Array<{ text?: string }> };
+    expect(wrongKind.isError).toBe(true);
+    expect(wrongKind.content?.[0]?.text).toBe("kind 必须是 confirmation_request");
   });
 });

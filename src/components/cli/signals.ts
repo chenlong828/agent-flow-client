@@ -12,7 +12,7 @@ import {
   signalRoot,
   taskDirName,
 } from "../signal/directory.ts";
-import type { ResultSignalContract, TaskSignal } from "../signal/contract.ts";
+import type { TaskSignal } from "../signal/contract.ts";
 
 export type SignalsOptions = {
   taskId: string;
@@ -57,7 +57,7 @@ function pickAttempt(attempts: number[], requested: number | undefined, io: CliI
 type SignalsPayload = {
   taskId: string;
   attempt: number;
-  kind: string;
+  kinds: string[];
   dir: string;
   sessionId: string | null;
   resultStatus: string | null;
@@ -67,7 +67,7 @@ type SignalsPayload = {
 };
 
 function renderText(payload: SignalsPayload, io: CliIo): void {
-  io.out(`task ${payload.taskId}  attempt ${payload.attempt}  kind ${payload.kind}`);
+  io.out(`task ${payload.taskId}  attempt ${payload.attempt}  kinds ${payload.kinds.join(", ")}`);
   io.out(`dir ${payload.dir}`);
   io.out(`session ${payload.sessionId ?? "-"}  result ${payload.resultStatus ?? "-"}  state ${payload.state ?? "-"}`);
   io.out(`signals ${payload.signals.length} 条合法，${payload.invalid} 行被忽略`);
@@ -90,13 +90,7 @@ export async function signalsCommand(config: AppConfig, io: CliIo, options: Sign
     return null;
   });
   if (serverConfig === null) return ExitCode.nodeFailed;
-  const contract: ResultSignalContract = {
-    version: serverConfig.version,
-    kind: serverConfig.kind,
-    required: true,
-    schema: serverConfig.schema,
-  };
-  const collected = await collectSignals(contract, outputPathOf(attemptDir)).catch((error: Error) => {
+  const collected = await collectSignals(serverConfig.tools, outputPathOf(attemptDir)).catch((error: Error) => {
     io.err(`读取信号失败：${error.message}`);
     return null;
   });
@@ -107,7 +101,7 @@ export async function signalsCommand(config: AppConfig, io: CliIo, options: Sign
   const payload: SignalsPayload = {
     taskId: options.taskId,
     attempt,
-    kind: serverConfig.kind,
+    kinds: serverConfig.tools.map((tool) => tool.kind),
     dir: attemptDir,
     sessionId: record?.sessionId ?? record?.result?.sessionId ?? null,
     resultStatus: record?.result?.status ?? null,

@@ -1,5 +1,5 @@
 import type { InstanceId, OrphanRecord, SkillSet, TaskId, TaskRecord, TaskResult, TaskState } from "./types.ts";
-import type { McpServerSpec, ResultSignalContract, TaskSignal } from "../signal/contract.ts";
+import type { McpServerSpec, SignalContractSpec, TaskSignal } from "../signal/contract.ts";
 import type { SignalPlan } from "../signal/plan.ts";
 
 export type { InstanceId, OrphanRecord, SkillSet, TaskId, TaskRecord, TaskState } from "./types.ts";
@@ -124,12 +124,8 @@ export type SignalPrepareResult = { status: "ok"; plan: SignalPlan } | { status:
 
 /** per-attempt 信号目录与采集（`CMP-signal` 实现；proposal §4.1）。 */
 export interface SignalPort {
-  prepare(input: { taskId: TaskId; attempt: number; contract: ResultSignalContract }): Promise<SignalPrepareResult>;
-  collect(input: {
-    taskId: TaskId;
-    attempt: number;
-    contract: ResultSignalContract;
-    plan: SignalPlan;
-  }): Promise<TaskSignal[] | undefined>;
+  /** 一次 attempt 的契约集合：一个 server、每个契约一个工具。 */
+  prepare(input: { taskId: TaskId; attempt: number; contracts: SignalContractSpec[] }): Promise<SignalPrepareResult>;
+  collect(input: { taskId: TaskId; attempt: number; plan: SignalPlan }): Promise<TaskSignal[] | undefined>;
   cleanup(retentionDays: number): Promise<number>;
 }

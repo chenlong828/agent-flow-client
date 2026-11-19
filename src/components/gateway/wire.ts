@@ -9,7 +9,7 @@ import type {
   StoredStatus,
   TaskRequest,
 } from "../executor/types.ts";
-import { parseResultSignal } from "../signal/contract.ts";
+import { parseConfirmation, parseResultSignal } from "../signal/contract.ts";
 import { GatewayError } from "./errors.ts";
 
 export type WireRecord = Record<string, unknown>;
@@ -71,6 +71,7 @@ export function parsePollResponse(body: unknown): PollResponse {
 function parseTask(raw: unknown): TaskRequest {
   const task = asRecord(raw, "tasks[]");
   const resultSignal = parseResultSignal(task.resultSignal);
+  const confirmation = parseConfirmation(task.confirmation);
   return {
     taskId: asString(task.taskId, "taskId"),
     instanceId: asString(task.instanceId, "instanceId"),
@@ -83,6 +84,7 @@ function parseTask(raw: unknown): TaskRequest {
     timeoutMs: asNumber(task.timeoutMs, "timeoutMs"),
     skillSet: parseSkillSet(task.skillSet),
     ...(resultSignal === undefined ? {} : { resultSignal }),
+    ...(confirmation === undefined ? {} : { confirmation }),
     ...(typeof task.resumeSessionId === "string" && task.resumeSessionId !== ""
       ? { resumeSessionId: task.resumeSessionId }
       : {}),

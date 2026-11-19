@@ -87,10 +87,15 @@ docs/
 │   │   ├── brief.md
 │   │   ├── review.md
 │   │   └── probe/                          ← DSH MCP 最小实测脚本与证据
-│   └── 2026-11-18-mcp-signal-impl/         ← MCP 结果信号实现（P1，已落地）
+│   ├── 2026-11-18-mcp-signal-impl/         ← MCP 结果信号实现（P1，已落地）
+│   │   ├── brief.md
+│   │   ├── result.md
+│   │   └── contract-diff.md                ← 给调度面的增量契约与验证清单
+│   └── 2026-11-19-confirm-channel-client/  ← review 应急确认 client 侧（P2，联调通过，收口）
 │       ├── brief.md
+│       ├── review.md
 │       ├── result.md
-│       └── contract-diff.md                ← 给调度面的增量契约与验证清单
+│       └── probe/                          ← 真实 DSH 双工具端到端脚本
 └── history/                                ← 记忆：怎么走到这里的
     ├── works/                              ← 已归档工序（frozen）
     │   ├── 2026-11-10-execution-semantics-proposal/ ← 执行容错语义提议（已被 v2 取代）

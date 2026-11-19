@@ -18,10 +18,10 @@ export const SIGNAL_TOOL_NAME_BY_KIND: Record<string, string> = {
   [SIGNAL_KIND_REVIEW_VERDICT]: "signal",
   [SIGNAL_KIND_CONFIRMATION_REQUEST]: "confirm",
 };
-export const SIGNAL_TOOL_RAW_NAME = SIGNAL_TOOL_NAME_BY_KIND[SIGNAL_KIND_REVIEW_VERDICT] as string;
-export const SIGNAL_TOOL_PUBLIC_NAME = `mcp__${SIGNAL_SERVER_NAME}__${SIGNAL_TOOL_RAW_NAME}`;
+/** 缺省 raw tool 名（`review_verdict` 的 `signal`）：未知 kind 回落到它。 */
+const SIGNAL_TOOL_RAW_NAME = SIGNAL_TOOL_NAME_BY_KIND[SIGNAL_KIND_REVIEW_VERDICT] as string;
 
-/** 某 kind 的 raw tool 名与模型可见名；未知 kind 回落到 `signal`。 */
+/** 某 kind 的 raw tool 名；未知 kind 回落到 `signal`。 */
 export function toolNameForKind(kind: string): string {
   return SIGNAL_TOOL_NAME_BY_KIND[kind] ?? SIGNAL_TOOL_RAW_NAME;
 }
@@ -67,11 +67,20 @@ export type RestrictedSchema = {
   properties: Record<string, RestrictedField>;
 };
 
-/** `TaskRequest.resultSignal`：由 `CMP-run` 按节点生成，client 视为 opaque JSON + 受限 schema。 */
+/**
+ * `TaskRequest.resultSignal` / `TaskRequest.confirmation`：由 `CMP-run` 按节点生成，
+ * client 视为 opaque JSON + 受限 schema。一次 attempt 至多两个契约，各对应一个 MCP 工具。
+ */
 export type ResultSignalContract = {
   version: number;
   kind: string;
   required: boolean;
+  schema: RestrictedSchema;
+};
+
+/** 挂到一次 attempt 上的单个工具契约（kind + data schema）；client 内部值类型。 */
+export type SignalContractSpec = {
+  kind: string;
   schema: RestrictedSchema;
 };
 
@@ -149,4 +158,13 @@ export function parseResultSignal(value: unknown): ResultSignalContract | undefi
     required: value.required === true,
     schema: value.schema as unknown as RestrictedSchema,
   };
+}
+
+/**
+ * 从任意 JSON 里取出 `TaskRequest.confirmation` 的候选值；形状与 `parseResultSignal` 相同。
+ * 只做形状提取：`kind` 必须是 `confirmation_request` 的槽位语义由 `SignalRunner.prepare` 校验，
+ * 这里不静默改写、也不静默丢弃（否则错误的 kind 会被当成「没有确认契约」）。
+ */
+export function parseConfirmation(value: unknown): ResultSignalContract | undefined {
+  return parseResultSignal(value);
 }

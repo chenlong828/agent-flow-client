@@ -1,12 +1,22 @@
 /** 执行流程里的信号编排（prepare → 挂载重试 → collect），把文件/进程细节挡在 executor 之外。 */
 import type { InstanceHandle, RuntimePort, SessionOutcome, SessionRef, SignalPort } from "./ports.ts";
-import { SIGNAL_KIND_CONFIRMATION_REQUEST, type ResultSignalContract, type TaskSignal } from "../signal/contract.ts";
+import {
+  SIGNAL_KIND_CONFIRMATION_REQUEST,
+  isSupportedContract,
+  type ResultSignalContract,
+  type TaskSignal,
+} from "../signal/contract.ts";
 import type { SignalPlan } from "../signal/plan.ts";
 import { isSignalMountError } from "../signal/mcp.ts";
+import { SignalError } from "../signal/signal.ts";
 import type { TaskRequest } from "./types.ts";
 import { ExecutorError } from "./executor-helpers.ts";
 
-export type SignalContext = { contract: ResultSignalContract; plan: SignalPlan };
+/**
+ * 一次 attempt 的信号上下文：`resultSignalKind` 是必需结果契约的 kind（只有 `confirmation` 时为
+ * undefined，用于续跑时区分「本来就不预期」与「该交没交」）。
+ */
+export type SignalContext = { resultSignalKind?: string; plan: SignalPlan };
 
 export type SignalRunnerOptions = {
   runtime: RuntimePort;
@@ -22,21 +32,65 @@ export class SignalRunner {
     this.#options = options;
   }
 
-  /** 只有任务带 `resultSignal` 且 client 支持该契约时才准备；其余返回 undefined（按旧行为执行）。 */
+  /**
+   * 收集 `[resultSignal, confirmation]` 里的契约，一次 attempt 挂一个 server、每契约一个工具。
+   * - 两个都缺省：不建目录、不挂 server，按旧行为执行；
+   * - `resultSignal` 不支持：沿用旧降级（`signal.disabled`，整个 attempt 无信号）；
+   * - `confirmation` 不支持：只跳过它并记 `signal.partial`（可选契约，不判失败）；
+   * - `confirmation.kind` 不是 `confirmation_request`：`signal_prepare_failed`，不静默改 kind。
+   */
   async prepare(task: TaskRequest): Promise<SignalContext | undefined> {
-    const contract = task.resultSignal;
-    if (contract === undefined) return undefined;
+    const { resultSignal, confirmation } = task;
+    if (resultSignal === undefined && confirmation === undefined) return undefined;
     if (this.#options.signals === undefined) {
       this.log("signal.disabled", { taskId: task.taskId, reason: "signal_component_missing" });
       return undefined;
     }
-    const prepared = await this.#options.signals.prepare({ taskId: task.taskId, attempt: task.attempt, contract });
+    if (confirmation !== undefined && confirmation.kind !== SIGNAL_KIND_CONFIRMATION_REQUEST) {
+      throw new SignalError(
+        "signal_prepare_failed",
+        `confirmation.kind 必须是 ${SIGNAL_KIND_CONFIRMATION_REQUEST}，收到 ${confirmation.kind}`,
+      );
+    }
+    if (resultSignal !== undefined && !isSupportedContract(resultSignal)) {
+      this.log("signal.disabled", {
+        taskId: task.taskId,
+        reason: `不支持 version=${resultSignal.version} kind=${resultSignal.kind}`,
+      });
+      return undefined;
+    }
+    const contracts: ResultSignalContract[] = resultSignal === undefined ? [] : [resultSignal];
+    if (confirmation !== undefined) {
+      if (isSupportedContract(confirmation)) {
+        contracts.push(confirmation);
+      } else {
+        this.log("signal.partial", {
+          taskId: task.taskId,
+          attempt: task.attempt,
+          kind: confirmation.kind,
+          reason: `不支持 version=${confirmation.version}`,
+        });
+      }
+    }
+    if (contracts.length === 0) return undefined;
+    const prepared = await this.#options.signals.prepare({
+      taskId: task.taskId,
+      attempt: task.attempt,
+      contracts: contracts.map((contract) => ({ kind: contract.kind, schema: contract.schema })),
+    });
     if (prepared.status === "unsupported") {
       this.log("signal.disabled", { taskId: task.taskId, reason: prepared.reason });
       return undefined;
     }
-    this.log("signal.prepared", { taskId: task.taskId, attempt: task.attempt, kind: contract.kind });
-    return { contract, plan: prepared.plan };
+    this.log("signal.prepared", {
+      taskId: task.taskId,
+      attempt: task.attempt,
+      kinds: prepared.plan.contracts.map((contract) => contract.kind),
+    });
+    return {
+      ...(resultSignal === undefined ? {} : { resultSignalKind: resultSignal.kind }),
+      plan: prepared.plan,
+    };
   }
 
   /**
@@ -94,7 +148,6 @@ export class SignalRunner {
       signals = await this.#options.signals.collect({
         taskId: task.taskId,
         attempt: task.attempt,
-        contract: context.contract,
         plan: context.plan,
       });
     } catch (error) {
@@ -104,8 +157,11 @@ export class SignalRunner {
     if (signals === undefined) {
       if (outcome.error !== undefined) return undefined;
       const continuation = task.resumeSessionId !== undefined;
-      if (continuation && context.contract.kind === SIGNAL_KIND_CONFIRMATION_REQUEST) {
-        // 确认点的续跑任务本来就不预期再调一次 confirm（续跑不阻塞、不重复确认）。
+      // 续跑任务的默认前提是「本来就不该再交一次信号」；只有必需结果契约（review 的 verdict）
+      // 仍必须在续跑后交付，缺了要记 signal.missing，让 orchestrator 按 verdict_invalid 暴露。
+      const requiredAfterResume =
+        context.resultSignalKind !== undefined && context.resultSignalKind !== SIGNAL_KIND_CONFIRMATION_REQUEST;
+      if (continuation && !requiredAfterResume) {
         this.log("signal.not_expected", {
           taskId: task.taskId,
           attempt: task.attempt,
@@ -121,7 +177,11 @@ export class SignalRunner {
       });
       return undefined;
     }
-    this.log("signal.collected", { taskId: task.taskId, count: signals.length, kind: context.contract.kind });
+    this.log("signal.collected", {
+      taskId: task.taskId,
+      count: signals.length,
+      kinds: [...new Set(signals.map((signal) => signal.kind))],
+    });
     return signals;
   }
 

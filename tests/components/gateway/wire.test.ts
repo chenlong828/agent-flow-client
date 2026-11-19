@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parsePollResponse } from "../../../src/components/gateway/wire.ts";
-import { reviewVerdictContract } from "../../support/signal-contract.ts";
+import { reviewConfirmationContract, reviewVerdictContract } from "../../support/signal-contract.ts";
 
 function pollBody(task: Record<string, unknown>) {
   return {
@@ -42,5 +42,24 @@ describe("P-01 结果信号解析（C-13）", () => {
   test("形状不合法的 resultSignal 被忽略而不是让整批任务失败", () => {
     const response = parsePollResponse(pollBody({ ...baseTask, resultSignal: { version: "1", kind: 2 } }));
     expect(response.tasks[0]?.resultSignal).toBeUndefined();
+  });
+
+  test("review 任务同时带 resultSignal 与 confirmation：两个契约都解析进 TaskRequest", () => {
+    const response = parsePollResponse(
+      pollBody({ ...baseTask, resultSignal: reviewVerdictContract, confirmation: reviewConfirmationContract }),
+    );
+    expect(response.tasks[0]?.resultSignal?.kind).toBe("review_verdict");
+    expect(response.tasks[0]?.confirmation).toMatchObject({ version: 1, kind: "confirmation_request", required: false });
+    expect(response.tasks[0]?.confirmation?.schema.required).toEqual(["question"]);
+  });
+
+  test("没有 confirmation 时字段缺省（旧 orchestrator 兼容）", () => {
+    const response = parsePollResponse(pollBody({ ...baseTask, resultSignal: reviewVerdictContract }));
+    expect(response.tasks[0]?.confirmation).toBeUndefined();
+  });
+
+  test("空的 confirmation 对象视为不存在，不报协议错", () => {
+    const response = parsePollResponse(pollBody({ ...baseTask, confirmation: {} }));
+    expect(response.tasks[0]?.confirmation).toBeUndefined();
   });
 });

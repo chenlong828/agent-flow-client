@@ -233,16 +233,20 @@ async function signalCheckCheck(entry: string): Promise<CheckResult> {
       configPath,
       JSON.stringify({
         version: 1,
-        kind: "review_verdict",
         taskId: "doctor",
         attempt: 1,
         output: join(dir, "signals.jsonl"),
-        schema: {
-          type: "object",
-          additionalProperties: false,
-          required: ["verdict", "reason"],
-          properties: { verdict: { type: "string", enum: ["pass", "fail", "needs_human"] }, reason: { type: "string" } },
-        },
+        tools: [
+          {
+            kind: "review_verdict",
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              required: ["verdict", "reason"],
+              properties: { verdict: { type: "string", enum: ["pass", "fail", "needs_human"] }, reason: { type: "string" } },
+            },
+          },
+        ],
         limits: { maxSignals: 8, maxBytes: 16384 },
       }),
     );

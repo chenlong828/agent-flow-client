@@ -1,8 +1,10 @@
 #!/usr/bin/env bun
 /**
- * agentflow 信号 server（stdio MCP，v1 单工具 `signal`）。
+ * agentflow 信号 server（stdio MCP，v1：一个 server 暴露本次 attempt 的全部工具）。
  *
  * 由 client 通过 `session/new.mcpServers` 以绝对路径启动，配置来自 `AF_SIGNAL_CONFIG`。
+ * 工具名与契约 kind 的映射见 `SIGNAL_TOOL_NAME_BY_KIND`（`review_verdict` → `signal`，
+ * `confirmation_request` → `confirm`）；`tools/list` 为每个契约列一项，`tools/call` 按工具名分派。
  * 行为约束（proposal §4.2）：
  * - 启动幂等：不清空 `signals.jsonl`、不持独占锁；`seq` 从文件最大行续号（server 可能被启动两次）。
  * - 对未知方法（含 MCP SDK 的 `server/discover` 探针）立即回 `-32601`；静默忽略会让 DSH 等满 60s。
@@ -17,6 +19,7 @@ import {
   byteLength,
   toMcpInputSchema,
   toolNameForKind,
+  type SignalContractSpec,
 } from "../components/signal/contract.ts";
 import type { SignalServerConfig } from "../components/signal/plan.ts";
 import { validateSchema, validateSignalData } from "../components/signal/validate.ts";
@@ -38,8 +41,14 @@ async function loadConfig(): Promise<SignalServerConfig> {
   } catch (error) {
     fail(`读取 config 失败：${(error as Error).message}`);
   }
-  const schemaErrors = validateSchema(config.schema);
-  if (schemaErrors.length > 0) fail(`config.schema 非法：${schemaErrors.join("; ")}`);
+  const names = new Set<string>();
+  for (const tool of config.tools) {
+    const schemaErrors = validateSchema(tool.schema);
+    if (schemaErrors.length > 0) fail(`config.tools[${tool.kind}].schema 非法：${schemaErrors.join("; ")}`);
+    const name = toolNameForKind(tool.kind);
+    if (names.has(name)) fail(`config.tools 工具名重复：${name}（kind=${tool.kind}）`);
+    names.add(name);
+  }
   return config;
 }
 
@@ -99,22 +108,22 @@ function toolResult(text: string, isError = false): unknown {
   return { content: [{ type: "text", text }], isError };
 }
 
-function callSignal(config: SignalServerConfig, args: unknown): unknown {
+function callSignal(config: SignalServerConfig, tool: SignalContractSpec, args: unknown): unknown {
   if (typeof args !== "object" || args === null || Array.isArray(args)) {
     return toolResult("参数必须是对象", true);
   }
   const record = args as Record<string, unknown>;
-  if (record.kind !== config.kind) return toolResult(`kind 必须是 ${config.kind}`, true);
+  if (record.kind !== tool.kind) return toolResult(`kind 必须是 ${tool.kind}`, true);
   const data: Record<string, unknown> = { ...record };
   delete data.kind;
-  const errors = validateSignalData(config.schema, data);
+  const errors = validateSignalData(tool.schema, data);
   if (errors.length > 0) return toolResult(`参数非法：${errors.join("; ")}`, true);
 
   const state = nextSeq(config.output);
   if (state.count >= config.limits.maxSignals) {
     return toolResult(`信号数量超过上限 ${config.limits.maxSignals}`, true);
   }
-  const signal = { seq: state.seq, at: new Date().toISOString(), kind: config.kind, data };
+  const signal = { seq: state.seq, at: new Date().toISOString(), kind: tool.kind, data };
   const line = `${JSON.stringify(signal)}\n`;
   if (state.bytes + byteLength(line) > Math.min(config.limits.maxBytes, SIGNAL_LIMITS.maxBytes)) {
     return toolResult(`信号文件超过上限 ${config.limits.maxBytes} 字节`, true);
@@ -130,6 +139,10 @@ function callSignal(config: SignalServerConfig, args: unknown): unknown {
     if (fd !== undefined) closeSync(fd);
   }
   return toolResult(JSON.stringify({ ok: true, seq: signal.seq }));
+}
+
+function toolNamed(config: SignalServerConfig, name: unknown): SignalContractSpec | undefined {
+  return config.tools.find((tool) => toolNameForKind(tool.kind) === name);
 }
 
 function handleMessage(config: SignalServerConfig, message: Record<string, unknown>): void {
@@ -154,22 +167,21 @@ function handleMessage(config: SignalServerConfig, message: Record<string, unkno
       return;
     case "tools/list":
       result(id, {
-        tools: [
-          {
-            name: toolNameForKind(config.kind),
-            description: describeTool(config.kind),
-            inputSchema: toMcpInputSchema({ version: config.version, kind: config.kind, required: true, schema: config.schema }),
-          },
-        ],
+        tools: config.tools.map((tool) => ({
+          name: toolNameForKind(tool.kind),
+          description: describeTool(tool.kind),
+          inputSchema: toMcpInputSchema({ version: config.version, kind: tool.kind, required: true, schema: tool.schema }),
+        })),
       });
       return;
     case "tools/call": {
       const params = (message.params ?? {}) as { name?: unknown; arguments?: unknown };
-      if (params.name !== toolNameForKind(config.kind)) {
+      const tool = toolNamed(config, params.name);
+      if (tool === undefined) {
         error(id, -32602, `未知工具：${String(params.name)}`);
         return;
       }
-      result(id, callSignal(config, params.arguments));
+      result(id, callSignal(config, tool, params.arguments));
       return;
     }
     default:

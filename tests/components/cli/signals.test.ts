@@ -12,27 +12,48 @@ async function fixture(): Promise<{ runDir: string; stateRoot: string; taskId: s
   for (const attempt of [1, 2]) {
     const dir = join(stateRoot, "signals", taskId, String(attempt));
     await mkdir(dir, { recursive: true });
-    await writeFile(
-      join(dir, "config.json"),
-      JSON.stringify({
-        version: 1,
+    const tools = [
+      {
         kind: "review_verdict",
-        taskId,
-        attempt,
-        output: join(dir, "signals.jsonl"),
         schema: {
           type: "object",
           additionalProperties: false,
           required: ["verdict", "reason"],
           properties: { verdict: { type: "string", enum: ["pass", "fail"] }, reason: { type: "string" } },
         },
+      },
+      ...(attempt === 2
+        ? [
+            {
+              kind: "confirmation_request",
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["question"],
+                properties: { question: { type: "string" } },
+              },
+            },
+          ]
+        : []),
+    ];
+    await writeFile(
+      join(dir, "config.json"),
+      JSON.stringify({
+        version: 1,
+        taskId,
+        attempt,
+        output: join(dir, "signals.jsonl"),
+        tools,
         limits: { maxSignals: 8, maxBytes: 16384 },
       }),
     );
-    await writeFile(
-      join(dir, "signals.jsonl"),
-      `${JSON.stringify({ seq: 1, at: "2026-11-18T00:00:00.000Z", kind: "review_verdict", data: { verdict: "pass", reason: `attempt-${attempt}` } })}\n`,
-    );
+    const records = [
+      { seq: 1, at: "2026-11-18T00:00:00.000Z", kind: "review_verdict", data: { verdict: "pass", reason: `attempt-${attempt}` } },
+      ...(attempt === 2
+        ? [{ seq: 2, at: "2026-11-18T00:00:01.000Z", kind: "confirmation_request", data: { question: "继续吗？" } }]
+        : []),
+    ];
+    await writeFile(join(dir, "signals.jsonl"), `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
   }
   return { runDir, stateRoot, taskId };
 }
@@ -42,15 +63,15 @@ async function configFor(runDir: string, stateRoot: string) {
 }
 
 describe("signals 命令", () => {
-  test("默认取最新 attempt；文本输出带 kind 与计数", async () => {
+  test("默认取最新 attempt；文本输出带 kinds 与计数", async () => {
     const { runDir, stateRoot, taskId } = await fixture();
     const lines: string[] = [];
     const code = await signalsCommand(await configFor(runDir, stateRoot), { out: (line) => lines.push(line), err: () => undefined }, { taskId, json: false });
     expect(code).toBe(0);
     const text = lines.join("\n");
     expect(text).toContain("attempt 2");
-    expect(text).toContain("kind review_verdict");
-    expect(text).toContain("signals 1 条合法，0 行被忽略");
+    expect(text).toContain("kinds review_verdict, confirmation_request");
+    expect(text).toContain("signals 2 条合法，0 行被忽略");
     expect(text).toContain("attempt-2");
   });
 

@@ -8,7 +8,7 @@ import {
   byteLength,
   type RestrictedField,
   type RestrictedSchema,
-  type ResultSignalContract,
+  type SignalContractSpec,
   type TaskSignal,
 } from "./contract.ts";
 
@@ -127,8 +127,8 @@ function validateStringArray(name: string, field: Extract<RestrictedField, { typ
   return errors;
 }
 
-/** 校验一条已落盘/待上报的信号记录。 */
-export function validateTaskSignal(contract: ResultSignalContract, value: unknown): string[] {
+/** 校验一条已落盘/待上报的信号记录；`contract` 是该 kind 对应的工具契约。 */
+export function validateTaskSignal(contract: SignalContractSpec, value: unknown): string[] {
   if (!isRecord(value)) return ["signal 必须是对象"];
   const errors: string[] = [];
   if (typeof value.seq !== "number" || !Number.isInteger(value.seq) || value.seq < 1) errors.push("seq 必须是正整数");
@@ -139,6 +139,6 @@ export function validateTaskSignal(contract: ResultSignalContract, value: unknow
 }
 
 /** 采集侧的类型窄化：只接受通过校验的记录。 */
-export function isTaskSignal(contract: ResultSignalContract, value: unknown): value is TaskSignal {
+export function isTaskSignal(contract: SignalContractSpec, value: unknown): value is TaskSignal {
   return validateTaskSignal(contract, value).length === 0;
 }

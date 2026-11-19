@@ -81,6 +81,8 @@ export type TaskRequest = {
   skillSet: SkillSet;
   /** v3 加法（`C-13`）：编排侧下发的信号契约；存在即表示本节点必须走 MCP 信号。 */
   resultSignal?: ResultSignalContract;
+  /** v3 加法（`C-13`）：review 额外挂载的确认工具契约（`confirmation_request`，`required=false`）。 */
+  confirmation?: ResultSignalContract;
   /** 第二场景预留（§5.5，`T-RVM-09`）：续跑已有 session；缺省表示新建。 */
   resumeSessionId?: SessionId;
 };

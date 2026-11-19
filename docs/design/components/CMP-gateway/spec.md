@@ -37,7 +37,7 @@ updated: 2026-11-12
 ## 3. 不变量
 
 1. `poll` 是唯一常驻请求；`running[]`/`finished[]`/`archivedRuns` 原样上报，不做业务判断。
-1a. `parseTask` 读入 `resultSignal`（加法，`C-13`）：只做形状提取（`version`/`kind`/`schema`/`required`），不做语义校验；不合法或缺省时忽略。`TaskResult.signals` 随 `reportResult` 原样透传，不序列化、不白名单。
+1a. `parseTask` 读入 `resultSignal` 与 `confirmation`（加法，`C-13`/`C-15`）：只做形状提取（`version`/`kind`/`schema`/`required`），不做语义校验；不合法或缺省时忽略（空对象 `{}` 视为不存在）。`TaskResult.signals` 随 `reportResult` 原样透传，不序列化、不白名单。
 2. `reportResult` 不做客户端去重；首份为准由调度器决定；`accepted=false` 由 CLI 丢弃。
 3. 4xx 不重试（`task_not_found` 转 ack false）；仅 5xx/网络类退避。
 4. `downloadPackage` 只在同源 URL 带 token；跨 host 不带。

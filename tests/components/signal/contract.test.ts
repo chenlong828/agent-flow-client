@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import {
-  SIGNAL_TOOL_PUBLIC_NAME,
   isSupportedContract,
+  parseConfirmation,
   parseResultSignal,
+  publicToolName,
   toMcpInputSchema,
+  toolNameForKind,
   type ResultSignalContract,
 } from "../../../src/components/signal/contract.ts";
 import { validateSchema, validateSignalData, validateTaskSignal } from "../../../src/components/signal/validate.ts";
+import { confirmationRequestContract } from "../../support/signal-contract.ts";
 
 const contract: ResultSignalContract = {
   version: 1,
@@ -30,7 +33,14 @@ describe("受限 schema", () => {
   test("合法契约通过结构校验；工具公开名固定", () => {
     expect(validateSchema(contract.schema)).toEqual([]);
     expect(isSupportedContract(contract)).toBe(true);
-    expect(SIGNAL_TOOL_PUBLIC_NAME).toBe("mcp__agentflow__signal");
+    expect(publicToolName("review_verdict")).toBe("mcp__agentflow__signal");
+  });
+
+  test("两个 kind 的 raw/公开工具名", () => {
+    expect(toolNameForKind("review_verdict")).toBe("signal");
+    expect(toolNameForKind("confirmation_request")).toBe("confirm");
+    expect(publicToolName("review_verdict")).toBe("mcp__agentflow__signal");
+    expect(publicToolName("confirmation_request")).toBe("mcp__agentflow__confirm");
   });
 
   test("拒绝 kind 字段、未声明的 required、非法字段类型", () => {
@@ -55,6 +65,7 @@ describe("受限 schema", () => {
     expect(isSupportedContract({ ...contract, kind: "other" })).toBe(false);
     expect(isSupportedContract({ ...contract, required: "yes" })).toBe(false);
     expect(isSupportedContract(undefined)).toBe(false);
+    expect(isSupportedContract(confirmationRequestContract)).toBe(true);
   });
 });
 
@@ -75,6 +86,16 @@ describe("MCP inputSchema 投影（A-01）", () => {
     for (const keyword of ["maxLength", "minLength", "maxItems", "minimum"]) {
       expect(text.includes(`"${keyword}"`)).toBe(false);
     }
+  });
+
+  test("确认契约投影成 const=confirmation_request 的 schema", () => {
+    const projected = toMcpInputSchema(confirmationRequestContract) as {
+      properties: Record<string, Record<string, unknown>>;
+      required: string[];
+    };
+    expect(projected.properties.kind).toMatchObject({ const: "confirmation_request" });
+    expect(projected.properties.options).toEqual({ type: "array", items: { type: "string" } });
+    expect(projected.required).toEqual(["kind", "question"]);
   });
 });
 
@@ -117,5 +138,17 @@ describe("信号记录与入参解析", () => {
     expect(parseResultSignal({ version: 1, kind: "review_verdict", schema: {}, required: "true" })).toMatchObject({
       required: false,
     });
+  });
+
+  test("parseConfirmation 合法/缺省；kind 原样保留（不静默改 kind）", () => {
+    expect(parseConfirmation(confirmationRequestContract)).toMatchObject({
+      version: 1,
+      kind: "confirmation_request",
+      required: true,
+    });
+    expect(parseConfirmation(undefined)).toBeUndefined();
+    expect(parseConfirmation({})).toBeUndefined();
+    expect(parseConfirmation({ version: 1, kind: "confirmation_request", schema: {} })).toMatchObject({ required: false });
+    expect(parseConfirmation({ ...contract })).toMatchObject({ kind: "review_verdict" });
   });
 });
