@@ -30,8 +30,12 @@ export class HttpTransport {
     this.#options = options;
   }
 
-  async post(path: string, body: unknown, timeoutMs: number): Promise<HttpResult> {
-    return await this.#request("POST", path, { body, timeoutMs });
+  async post(path: string, body: unknown, timeoutMs: number, headers: Record<string, string> = {}): Promise<HttpResult> {
+    return await this.#request("POST", path, { body, timeoutMs, headers });
+  }
+
+  async get(path: string, timeoutMs: number, headers: Record<string, string> = {}): Promise<HttpResult> {
+    return await this.#request("GET", path, { timeoutMs, headers });
   }
 
   async getBytes(path: string, timeoutMs: number, headers: Record<string, string> = {}): Promise<HttpResult> {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { StubScheduler } from "../support/stub-scheduler.ts";
@@ -24,7 +24,14 @@ function task(id: string, prompt: string, container: string): TaskRequest {
 }
 
 async function fixture(
-  options: { workspace?: boolean; protocol?: string; sessionLogLimit?: number; token?: string | null; clientId?: string } = {},
+  options: {
+    workspace?: boolean;
+    protocol?: string;
+    sessionLogLimit?: number;
+    token?: string | null;
+    clientId?: string;
+    runInputs?: { inputId: string; name: string; bytes: Uint8Array }[];
+  } = {},
 ) {
   const runDir = await mkdtemp(join(tmpdir(), "afc-v3-serve-"));
   const container = join(runDir, "workspace");
@@ -38,6 +45,10 @@ async function fixture(
     `[acp]\ndsh_home = "${join(runDir, "dsh-home")}"\npermission = "allow"\n[state]\nroot = "${join(runDir, "state")}"\n[logging]\nlevel = "error"\n[capacity]\nmax_concurrent = 2\n[scheduler]\nurl = "${stub.url}"\n${token === null ? "" : `token = "${token}"\n`}${options.clientId === undefined ? "" : `client_id = "${options.clientId}"\n`}`,
   );
   const item = task("01930000-0000-7000-8000-000000000811", "NODE-V3", container);
+  if (options.runInputs !== undefined) {
+    stub.setRunInputs("run-v3", options.runInputs);
+    item.runId = "run-v3";
+  }
   stub.enqueueTask(item);
   const env = { ...process.env, DSH_BIN: fakeAcp, AF_NODE_BIN: process.execPath, HUNDSUN_PUBLIC_API_KEY: "k" } as Record<string, string>;
   delete (env as Record<string, string | undefined>).DSH_HOME;
@@ -133,4 +144,19 @@ describe("v3 serve：task-space / 日志 / 归档", () => {
     expect(await child.exited).toBe(3);
     stub.server.stop(true);
   }, 30_000);
+
+  test("带 runId 的初始资料：写入 task-space/inputs、只读，poll 声明 run-inputs 能力", async () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+    const { stub, task, child } = await fixture({ runInputs: [{ inputId: "in-1", name: "01-界面截图.png", bytes }] });
+    await waitFor(() => stub.results().length >= 1);
+    expect(stub.results()[0]?.status).toBe("succeeded");
+    const file = join(task.taskSpacePath, "inputs", "01-界面截图.png");
+    expect(new Uint8Array(await Bun.file(file).arrayBuffer())).toEqual(bytes);
+    expect((await stat(file)).mode & 0o777).toBe(0o400);
+    const poll = stub.requests.find((request) => request.path.endsWith("/poll"));
+    expect(poll?.headers["x-executor-capabilities"]).toBe("run-inputs");
+    stub.setStop(true);
+    expect(await child.exited).toBe(0);
+    stub.server.stop(true);
+  }, 40_000);
 });

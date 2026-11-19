@@ -75,6 +75,7 @@ stdio: stdin/stdout = ACP 行协议；stderr = 日志
 - 三个空目录由 runtime 以 `0700` 创建；不设置 `includeDefaultRoots`，回落 schema 默认 `true`，保留项目 `.dsh` / `.agents`。
 - 不使用 `DSH_HOME` 环境变量关技能；它同时影响 settings/credentials。
 - 补丁文件路径固定在实例 home 下；不修改 DSH 自动生成的 `profiles/acp` 模板。
+- `llm-pi-ai` 的模型条目声明 `input: ["text","image"]`（`S0_MODEL.input`，`AF_MODEL` 只覆盖 id，不覆盖模态）；使 ACP `initialize.promptCapabilities.image=true`、`read_image` 可用。纯文本路由需同步改 `input`，否则图片在 provider 处失败（RC-03）。
 
 ### 2.4 Session 生命周期
 

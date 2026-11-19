@@ -45,6 +45,8 @@ updated: 2026-11-17
 | `P-03` 技能包 | `GET /skill-packages/{packageId}` | 取 zip；304 命中缓存 |
 | `P-04` 会话日志 | `POST /tasks/{taskId}/session-log?attempt=n` | 上传该次尝试的 ACP 事件流（gzip JSONL，允许 0 行） |
 | `P-05` 运行归档 | `POST /runs/{runId}/archive` | 上传 task-space 的 tar.gz；后台执行，不阻塞 poll |
+| `EXE-06` 列初始资料 | `GET /runs/{runId}/inputs` | 列出本 run 的图片；poll 声明 `X-Executor-Capabilities: run-inputs` |
+| `EXE-07` 下载初始资料 | `GET /runs/{runId}/inputs/{inputId}` | 下载单张图片；client 校验 SHA-256 后写入 `<task-space>/inputs/` |
 
 字段、错误码、容量与超时全部以 [`contracts/executor-http-v3.md`](contracts/executor-http-v3.md) 为准；client 只实现消费端，不自定义字段。控制面只出站；只读观测面是唯一允许调度器主动入站的面（UI 经产品 API 发起），见 §3.3。
 
@@ -114,14 +116,16 @@ updated: 2026-11-17
 | `ObservationPort` | `CMP-executor` | `CMP-observer` 的 recorder | executor | attempt/session 事件与 raw 归档 |
 | `RunRegistryPort` | `CMP-executor` | `CMP-store` | executor | run → workspace/task-space |
 | `SignalPort` | `CMP-executor` | `CMP-signal` | executor | 结果信号目录、预检、采集与清理 |
+| `RunInputPort` | `CMP-executor` | `CMP-gateway` | executor | run 初始资料列表/下载（`EXE-06/07`） |
 
 **端口方法速查**（完整签名见 `CMP-executor` §3.4）：
 
 | 端口 | 方法 | 方向/幂等 |
 |---|---|---|
-| `SchedulerPort` | `poll`、`reportResult`、`downloadPackage` | client → 调度器；结果按 `taskId` 首份为准；poll 长轮询 |
+| `SchedulerPort` | `poll`、`reportResult`、`downloadPackage`、`uploadSessionLog`、`uploadArchive` | client → 调度器；结果按 `taskId` 首份为准；poll 长轮询 |
+| `RunInputPort` | `listRunInputs`、`downloadRunInput` | client → 调度器；只读；旧服务端 404 视为无资料 |
 | `RuntimePort` | `ensureInstance`、`newSession`、`prompt`、`cancel`、`closeSession`、`shutdownInstance`、`activeSessions` | executor → DSH；`ensureInstance`/`closeSession` 幂等；prompt 受取消/超时 |
-| `WorkspacePort` | `ensureContainer`、`validate`、`resolve` | executor → 文件系统；容器预置；路径不越界 |
+| `WorkspacePort` | `ensureContainer`、`validate`、`resolve`、`ensureTaskSpace`、`packTaskSpace`、`inputs`（`WorkspaceInputsPort`） | executor → 文件系统；容器预置；路径不越界；初始资料原子写入 |
 | `AssetPort` | `install`、`verify`、`currentDigest` | executor → 技能包；同 digest `install` 为空操作；失败回滚 |
 | `JournalPort` | `append`、`mark`、`settled`、`recordOrphan`、`listOrphans`、`clearOrphan` | executor/CLI → 本地存储；追加不覆盖 |
 | `SignalPort` | `prepare`、`collect`、`cleanup` | executor → 文件/子进程；per-attempt 目录；契约不支持时返回 unsupported |
@@ -358,5 +362,6 @@ CI 至少守住：`bun test`、`bun run typecheck`、`bun run docs:check`、`bun
 - **S0 已落地（2026-11-08）**：8 个组件转 `active`；`run`/`doctor` 可用，`SCN-0002` 3+1 与 `SCN-0001` S0 用例通过；见 `docs/history/works/2026-11-08-s0-local-loop/result.md`。
 - **S1 已落地（2026-11-08）**：`CMP-gateway` 转 `active`；`serve` 接桩调度器跑通注册/心跳/领取/绑定/`C-05`/上报/清理；S1 门禁 8 条有测试；见 `docs/history/works/2026-11-08-s1-contract-skeleton/result.md`。
 - **信号能力已落地（2026-11-18，P1）**：新增第 10 个组件 `CMP-signal`（L0），组件切分由「9 组件不变」更新为 10；`SignalPort` 由 `CMP-executor` 定义；`<stateRoot>/signals/` 归 `CMP-signal` 写。用户 2026-11-18 确认按「新增 L0 组件」落地。
+- **run 初始资料已落地（2026-11-19，P2）**：poll 声明 `X-Executor-Capabilities: run-inputs`；新增只读端点 `EXE-06/07` 与 `RunInputPort`；`WorkspacePort` 增 `inputs` 子能力（`<task-space>/inputs/`，原子写只读）；模型条目声明 `input: ["text","image"]` 使 `read_image` 可用。无组件切分变化，不升协议版本。
 - **review 应急确认已落地（2026-11-19，P2）**：`TaskRequest` 增可选 `confirmation`；`SignalPort.prepare/collect` 改为契约集合；一个 server 暴露多个工具。无组件切分/数据所有权变化，不升协议版本。
 - **S2 已落地（2026-11-09，A 方案内）**：顺序两节点、技能切换、同 attempt 幂等、同容器技能集冲突守卫、清理幂等；Q1 保持 A，不升协议版本；fan-out 真并发留 B 决策。见 `docs/history/works/2026-11-09-s2-linear-and-recovery/result.md`。

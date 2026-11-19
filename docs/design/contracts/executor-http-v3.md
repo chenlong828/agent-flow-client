@@ -75,6 +75,8 @@ v3 在此之上加两件事：**执行前有 task-space**（工作区内按 run 
 | `P-03` | `GET /api/v1/executor/skill-packages/{packageId}` | 取技能包 | 否 | `packageId`（不可变内容） |
 | `P-04` | `POST /api/v1/executor/tasks/{taskId}/session-log?attempt=n` | 上传单次尝试的会话日志 | 否 | `taskId + attempt`（后到覆盖） |
 | `P-05` | `POST /api/v1/executor/runs/{runId}/archive` | 上传运行归档包（task-space 的 tar.gz） | 否 | `runId`（后到覆盖） |
+| `EXE-06` | `GET /api/v1/executor/runs/{runId}/inputs` | 列出本 run 的初始资料（只含图片） | 否 | 无（只读） |
+| `EXE-07` | `GET /api/v1/executor/runs/{runId}/inputs/{inputId}` | 下载单张初始资料字节 | 否 | 无（只读，内容不可变） |
 
 没有 `register`、`heartbeat`、`claim`、`renew`、`bindSession`、`cleanup` 类端点。
 
@@ -85,6 +87,7 @@ v3 在此之上加两件事：**执行前有 task-space**（工作区内按 run 
 - 鉴权：`Authorization: Bearer <token>`；token 绑定 `clientId`，不进 URL、日志、结果。
 - **开发期身份旁路**（服务端 `EXECUTOR_AUTH=off`，2026-11-12 追加）：client 可改带 `X-Client-Id: <1–64 个非空白字符>` 声明身份，可选 `X-Client-Address: <1–200 字符>` 声明接入地址；服务端以此放行并自动登记节点。能命中的 Bearer 优先，两者都没有仍返回 `401 unauthorized`。该头只在开发期生效，`EXECUTOR_AUTH=on` 时被忽略；生产部署必须关掉旁路并改用 Bearer（[`2026-11-12-executor-auth-dev-bypass.md`](../../../../agent-flow-orchaster/docs/history/decisions/2026-11-12-executor-auth-dev-bypass.md)）。
 - **观测面地址自报**（2026-11-17 追加）：client 可在 poll 请求带 `X-Observability-Url: <http(s) URL，≤2048 字符>`；服务端只登记到内存目录，不改变派发。该头可选，旧服务端忽略。
+- **能力声明**（2026-11-19 追加）：client 在 poll 请求带 `X-Executor-Capabilities: <逗号分隔 token>`（token 规则 `[a-z0-9-]+`，≤200 字符）；当前唯一 token 为 `run-inputs`，表示可接收带初始资料的 run。服务端只读 poll；未知 token 忽略；旧 client 不发、旧服务端忽略。
 - 版本：请求头 `X-Executor-Protocol: 3`；不匹配返回 `400 unsupported_protocol`，client 停止并退出。
 - 时间：ISO-8601 UTC。**不使用 `serverTime` 做租约计算**（没有租约），时间字段只用于审计。
 - 可选请求头 `X-Request-Id`，服务端回显并在错误信封里返回。
@@ -125,6 +128,7 @@ v3 在此之上加两件事：**执行前有 task-space**（工作区内按 run 
 | 404 | `task_not_found` | `P-02`/`P-04` 的 `taskId` 不存在或不属于该 client 的实例 |
 | 404 | `run_not_found` | `P-05` 的 `runId` 不存在或不属于该 `clientId` |
 | 404 | `package_not_found` | `P-03` 的 `packageId` 不存在或已下架 |
+| 404 | `input_not_found` | `EXE-07` 的 `inputId` 不存在、不属于该 run 或尚未绑定 |
 | 409 | `session_log_missing` | `P-02` 到达时该 `taskId+attempt` 没有已上传的会话日志 |
 | 409 | `invalid_state` | `P-05` 的 run 尚未进入终态 |
 | 413 | `payload_too_large` | 结果/日志/归档超过对应上限；`details.limit` 标明对象 |
@@ -396,6 +400,35 @@ Content-Length: <bytes>
 
 **错误**：`400`、`401`、`404`、`409`、`413`、`500`、`503`。
 
+### 4.6 `EXE-06` 列出初始资料
+
+**用途**：client 拿到带 `runId` 的任务后，在创建 session 前列出该 run 已绑定的图片。
+
+**请求**：无 query、无 body；`Authorization` 与 `X-Executor-Protocol` 同其它端点。
+
+**响应 `200`**：
+
+```json
+{ "items": [ { "inputId": "0193f0aa-…", "name": "01-界面截图.png", "mediaType": "image/png", "sizeBytes": 2541, "sha256": "b08f…", "downloadPath": "/runs/{runId}/inputs/0193f0aa-…" } ] }
+```
+
+- 无图片返回 `{ "items": [] }`；只返回属于该 `clientId` 的 run。
+- `name` 已由服务端按 Windows/POSIX 规则清洗并在 run 内去重（重名追加 `-2`/`-3`）；client 仍做路径二次校验。
+- `downloadPath` 是相对 executor base（`/api/v1/executor`）的路径，client 不得自行拼前缀。
+
+**错误**：`401`、`404 run_not_found`、`503`。
+
+### 4.7 `EXE-07` 下载单张初始资料
+
+**请求**：`GET /api/v1/executor/runs/{runId}/inputs/{inputId}`，无 body。
+
+**响应 `200`**：二进制原图；`Content-Type` 为校验后的图片类型；`X-Checksum-Sha256` 为 64 位小写十六进制；`Cache-Control: no-store`；`X-Content-Type-Options: nosniff`。
+
+- client 逐张下载，按 `sizeBytes` 与 `sha256` 校验后原子写入 `<task-space>/inputs/<name>`（只读）。
+- 失败一律不建 session：网络/5xx/超时重试 3 次后 `input_fetch_failed`；摘要/长度不符 `input_checksum_mismatch`；文件名/路径非法 `input_path_invalid`（三者归 `asset`）。
+
+**错误**：`401`、`404 run_not_found`/`input_not_found`、`503`。
+
 ## 5 类型
 
 ```ts
@@ -425,6 +458,15 @@ type PollResponse = {
   cancelInstances: string[];
   archiveRequests: ArchiveRequest[];   // 缺省视为 []
   nextPollAfterMs: number;             // 0 = 立即再拉
+};
+
+type ExecutorRunInputRef = {
+  inputId: string;
+  name: string;                        // 服务端清洗/去重后的文件名；client 二次校验
+  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+  sizeBytes: number;                   // >0
+  sha256: string;                      // 64 位小写十六进制
+  downloadPath: string;                // 相对 executor base：/runs/{runId}/inputs/{inputId}
 };
 
 type ArchiveRequest = {
@@ -574,6 +616,8 @@ type ArchiveAck = {
 | `C-15` | 每个契约的 `kind` 决定挂哪个工具：`review_verdict` → `mcp__agentflow__signal`，`confirmation_request` → `mcp__agentflow__confirm`。`resultSignal` 与可选的 `confirmation` 同时存在时，两个工具都要挂；`tools/list` 按契约暴露，`tools/call` 按工具名分派。采集到 `confirmation_request` 时随 `succeeded` 结果回传（含 `sessionId`）；`TaskRequest.resumeSessionId` 存在时用 `session/resume` 续跑该 session（cwd 必须与持久化一致、`mcpServers` 需重新传，不新建 session）；resume 失败按 `protocol_error` 上报，不退化为新建。 |
 | `C-16` | 观测面启用时在 poll 带 `X-Observability-Url`；观测面不可用/未启用不影响任务执行与结果上报 |
 | `C-17` | 收到 `runId` 时持久化 run→workspace/task-space 映射，并在 session meta 关联 run/node/task/attempt；映射失败不阻塞任务 |
+| `C-18` | poll 带 `X-Executor-Capabilities: run-inputs`；只有该头被服务端记录后，run 才可能带初始资料下发 |
+| `C-19` | 带 `runId` 的任务在 `ensureTaskSpace` 之后、建 session 之前拉取 `EXE-06/07`：逐张下载、校验 `sizeBytes`+`sha256`、原子写入 `<task-space>/inputs/<name>`（只读 0400）；已存在且大小相同的文件跳过。列表 404（旧服务端）或无 `runId` 视为无初始资料；下载/校验/路径失败让任务 `failed`（`asset`），不建 session |
 
 ## 8 失败与恢复矩阵
 
@@ -716,6 +760,16 @@ type ArchiveAck = {
 | `R-02` | `C-13`/`C-15` 从「单契约单工具」改为「按 `resultSignal`/`confirmation` 各挂一个工具」；缺省仍只挂 `resultSignal` |
 | `R-03` | `S-05` 稳定内容补 `confirmation`；两契约在 `task.result_signal` 列内一起冻结、重派原样下发 |
 | `R-04` | 加法字段，不升协议版本；同版本 client 与 orchestrator 一起发布 |
+
+### 11.8 2026-11-19 修订（run 初始资料）
+
+| 编号 | 修订 |
+|---|---|
+| `I-01` | 新增加法端点 `EXE-06`（列初始资料）与 `EXE-07`（下载单张）；均为只读、非长轮询，协议版本仍为 `3` |
+| `I-02` | poll 增可选头 `X-Executor-Capabilities: run-inputs`（当前唯一能力 token）；`TaskRequest` 不变，沿用 `runId` |
+| `I-03` | client 承诺补 `C-18`/`C-19`：`<task-space>/inputs/<name>` 落盘、摘要校验、失败归 `asset`；旧服务端 404 按无资料继续 |
+| `I-04` | 错误码新增 `input_not_found`（`EXE-07`）；client 侧新增 `input_fetch_failed`/`input_checksum_mismatch`/`input_path_invalid`（结果 `error.code`，均映射 `asset`） |
+| `I-05` | `llm-pi-ai` 模型条目声明 `input: ["text","image"]`，使 `read_image` 可用；属本地 profile 补丁，不改 wire |
 
 ## 12 待定与已接受风险
 

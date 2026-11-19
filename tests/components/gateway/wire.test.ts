@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parsePollResponse } from "../../../src/components/gateway/wire.ts";
+import { assertInputDownloadPath, parseRunInputs } from "../../../src/components/gateway/run-input-wire.ts";
 import { reviewConfirmationContract, reviewVerdictContract } from "../../support/signal-contract.ts";
 
 function pollBody(task: Record<string, unknown>) {
@@ -61,5 +62,64 @@ describe("P-01 结果信号解析（C-13）", () => {
   test("空的 confirmation 对象视为不存在，不报协议错", () => {
     const response = parsePollResponse(pollBody({ ...baseTask, confirmation: {} }));
     expect(response.tasks[0]?.confirmation).toBeUndefined();
+  });
+});
+
+describe("EXE-06 初始资料解析", () => {
+  const runId = "run-1";
+  const sha = "a".repeat(64);
+  const item = (overrides: Record<string, unknown> = {}) => ({
+    inputId: "in-1",
+    name: "01-界面截图.png",
+    mediaType: "image/png",
+    sizeBytes: 3,
+    sha256: sha,
+    downloadPath: `/runs/${runId}/inputs/in-1`,
+    ...overrides,
+  });
+
+  test("合法列表逐字段透传", () => {
+    const refs = parseRunInputs({ items: [item()] }, runId);
+    expect(refs).toEqual([
+      {
+        inputId: "in-1",
+        name: "01-界面截图.png",
+        mediaType: "image/png",
+        sizeBytes: 3,
+        sha256: sha,
+        downloadPath: `/runs/${runId}/inputs/in-1`,
+      },
+    ]);
+  });
+
+  test("空列表合法", () => {
+    expect(parseRunInputs({ items: [] }, runId)).toEqual([]);
+  });
+
+  test("downloadPath 指向别的 run 或别的 input：protocol_error", () => {
+    expect(() => parseRunInputs({ items: [item({ downloadPath: "/runs/other/inputs/in-1" })] }, runId)).toThrow(
+      /不匹配/,
+    );
+    expect(() => parseRunInputs({ items: [item({ downloadPath: `/runs/${runId}/inputs/in-9` })] }, runId)).toThrow(
+      /不匹配/,
+    );
+  });
+
+  test("非法类型、摘要、大小：protocol_error", () => {
+    expect(() => parseRunInputs({ items: [item({ mediaType: "application/pdf" })] }, runId)).toThrow(
+      /类型不受支持/,
+    );
+    expect(() => parseRunInputs({ items: [item({ sha256: "ABC" })] }, runId)).toThrow(/摘要非法/);
+    expect(() => parseRunInputs({ items: [item({ sizeBytes: 0 })] }, runId)).toThrow(/大小非法/);
+    expect(() => parseRunInputs({ items: [item({ sizeBytes: 1.5 })] }, runId)).toThrow(/大小非法/);
+  });
+
+  test("下载路径拒绝穿越、绝对 URL 与多余路径段", () => {
+    expect(() => assertInputDownloadPath("/runs/r/inputs/../../etc/passwd")).toThrow(/下载路径非法/);
+    expect(() => assertInputDownloadPath("http://evil.example/runs/r/inputs/i")).toThrow(/下载路径非法/);
+    expect(() => assertInputDownloadPath("/runs/r/inputs/i/extra")).toThrow(/下载路径非法/);
+    expect(() => assertInputDownloadPath("/skill-packages/p")).toThrow(/下载路径非法/);
+    expect(() => assertInputDownloadPath("/runs/r/inputs/i", { runId: "r", inputId: "i" })).not.toThrow();
+    expect(() => assertInputDownloadPath("/runs/r/inputs/i", { inputId: "x" })).toThrow(/不匹配/);
   });
 });

@@ -1,5 +1,7 @@
-import type { AssetPort, ContainerPaths, InstalledSkills, InstanceHandle, JournalPort, LayoutReport, PromptOptions, SessionLogPort, SessionOutcome, SessionRef, SkillPackageRef, WorkspacePort } from "../../../src/components/executor/ports.ts";
-import type { InstanceId, OrphanRecord, TaskRecord, TaskResult, TaskState } from "../../../src/components/executor/types.ts";
+import { join } from "node:path";
+import type { AssetPort, ContainerPaths, InstalledSkills, InstanceHandle, JournalPort, LayoutReport, PromptOptions, RunInputPort, SessionLogPort, SessionOutcome, SessionRef, SkillPackageRef, WorkspaceInputsPort, WorkspacePort } from "../../../src/components/executor/ports.ts";
+import type { ExecutorRunInput, InstanceId, OrphanRecord, TaskRecord, TaskResult, TaskState } from "../../../src/components/executor/types.ts";
+import { WorkspaceError } from "../../../src/components/workspace/errors.ts";
 
 export const container: ContainerPaths = {
   root: "/tmp/afc-v2-container",
@@ -92,8 +94,33 @@ export class FakeRuntime {
   }
 }
 
+export class FakeInputs implements WorkspaceInputsPort {
+  dirs: string[] = [];
+  files = new Map<string, { size: number }>();
+  writes: { name: string; bytes: number }[] = [];
+  symlinkNames = new Set<string>();
+  ensureError: WorkspaceError | null = null;
+  writeError: WorkspaceError | null = null;
+  async ensureDir(taskSpacePath: string): Promise<string> {
+    if (this.ensureError !== null) throw this.ensureError;
+    this.dirs.push(taskSpacePath);
+    return join(taskSpacePath, "inputs");
+  }
+  async stat(_taskSpacePath: string, name: string): Promise<{ size: number } | null> {
+    if (this.symlinkNames.has(name)) throw new WorkspaceError("path_escape", `初始资料路径非法：${name}`);
+    return this.files.get(name) ?? null;
+  }
+  async write(_taskSpacePath: string, name: string, bytes: Uint8Array): Promise<void> {
+    if (this.writeError !== null) throw this.writeError;
+    if (this.symlinkNames.has(name)) throw new WorkspaceError("path_escape", `初始资料路径非法：${name}`);
+    this.files.set(name, { size: bytes.byteLength });
+    this.writes.push({ name, bytes: bytes.byteLength });
+  }
+}
+
 export class FakeWorkspace implements WorkspacePort {
   taskSpaces: string[] = [];
+  readonly inputs = new FakeInputs();
   async ensureContainer(): Promise<ContainerPaths> {
     return container;
   }
@@ -113,6 +140,26 @@ export class FakeWorkspace implements WorkspacePort {
   async packTaskSpace(taskSpacePath: string, targetPath: string): Promise<{ path: string; bytes: number }> {
     this.taskSpaces.push(taskSpacePath);
     return { path: targetPath, bytes: 0 };
+  }
+}
+
+/** 执行面初始资料拉取替身：按 inputId 发字节，可注入列表/下载失败。 */
+export class FakeRunInputs implements RunInputPort {
+  refs: ExecutorRunInput[] = [];
+  bytes = new Map<string, Uint8Array>();
+  listCalls: string[] = [];
+  downloadCalls: string[] = [];
+  listError: Error | null = null;
+  downloadError: Error | null = null;
+  async listRunInputs(runId: string): Promise<ExecutorRunInput[]> {
+    this.listCalls.push(runId);
+    if (this.listError !== null) throw this.listError;
+    return this.refs;
+  }
+  async downloadRunInput(ref: ExecutorRunInput): Promise<Uint8Array> {
+    this.downloadCalls.push(ref.inputId);
+    if (this.downloadError !== null) throw this.downloadError;
+    return this.bytes.get(ref.inputId) ?? new Uint8Array();
   }
 }
 

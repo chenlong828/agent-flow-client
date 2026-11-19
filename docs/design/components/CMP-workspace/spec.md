@@ -21,6 +21,7 @@ updated: 2026-11-18
   - 维护 `.dsh` 安装点与暂存目录；
   - 路径解析与容器内约束（拒绝越界、拒绝跟随越界符号链接）；
   - task-space（`taskSpacePath` 指定，当前为 `<workspace>/task-spaces/<日期-时间>`）校验/创建（只建目录）与 tar.gz 打包（v3）；
+  - `<task-space>/inputs/` 的受控写入（`WorkspaceInputsPort`：建目录、state、原子写只读文件）；
   - 清理与保留策略；
   - 工作区诊断（`doctor`）。
 - **不负责 Y**：
@@ -109,6 +110,15 @@ updated: 2026-11-18
 - 磁盘可用空间（报告，不设硬阈值）；
 - 清理残留（`.staging`、旧 `.skills.previous`）。
 
+### 2.7 初始资料写入（`inputs` 子能力）
+
+`FileWorkspace.inputs`（`TaskSpaceInputs`）负责 `<task-space>/inputs/<name>`，供 `CMP-executor` 在种子阶段调用：
+
+- `ensureDir(taskSpacePath)`：task-space 必须已存在；`inputs/` 必须是普通目录（符号链接/文件 → `path_escape`），创建为 `0700`；删除上次中断残留的 `.<name>.<uuid>.part`。
+- `stat(taskSpacePath, name)`：不存在返回 `null`；普通文件返回 `{ size }`；符号链接/目录/非法名 → `path_escape`。
+- `write(taskSpacePath, name, bytes)`：先写同目录 `.<name>.<uuid>.part`（`0600`）→ `rename` → `chmod 0400`；失败清理临时文件；Windows 先删目标再改名。
+- 名称二次校验：非空、非 `.`/`..`、不以点开头、无 `/`、`\`、NUL/控制字符、非绝对路径、`basename(name) === name`、≤255 字符。
+
 ## 3. 契约
 
 ### 3.1 实现 `WorkspacePort`
@@ -121,6 +131,7 @@ updated: 2026-11-18
 | `validate` | 纯检查；不修改文件系统 | `layout_invalid`、`path_escape` |
 | `resolve` | 容器内路径解析 | `path_escape` |
 | `cleanup` | 按策略清理；幂等 | 记录并返回 |
+| `inputs` | `WorkspaceInputsPort`：`ensureDir`/`stat`/`write`；task-space 内受控写入，原子、只读 | `path_escape`、`not_prepared`、`permission_denied`、`disk_full` |
 
 ### 3.2 前置/后置/不变量
 
@@ -132,6 +143,7 @@ updated: 2026-11-18
   3. 所有路径限制在容器内；符号链接不得逃逸。
   4. `cleanup` 幂等；不删预置仓库。
   5. 不 clone、不检出、不建仓库、不执行任何 git 命令。
+  6. `inputs/` 内的文件只由 client 写入；已存在的同名符号链接/目录一律拒绝，不跟随。
 
 ### 3.3 错误模式
 

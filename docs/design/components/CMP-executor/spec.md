@@ -23,6 +23,7 @@ updated: 2026-11-19
 
 1. `journal.append(received)`。
 2. `workspace.ensureContainer` → `workspace.ensureTaskSpace(task, container)`（校验绝对路径且在 `workspacePath` 之下；不存在则建目录；**只建目录、不写内容**）。
+2a. 带 `runId` 且注入了 `RunInputPort` 时：`seedRunInputs`——`listRunInputs` → 逐张下载 → 校验 `sizeBytes`+`sha256` → `workspace.inputs.write` 原子落 `<task-space>/inputs/<name>`；已存在且大小相同跳过。列表 404（旧服务端）或无 `runId` 视为无资料；下载/校验/路径错误在 `ensureInstance` 之前抛出，结果 `failed`（`input_fetch_failed`/`input_checksum_mismatch`/`input_path_invalid`，均 `asset`）；磁盘/权限错误原样抛出归 `workspace`。
 3. `runtime.ensureInstance` → `recordOrphan`。
 4. 若任务带 `resultSignal` 或 `confirmation`：`signal.prepare`（建目录/config/`--check`，一次 attempt 一个 server、每个契约一个工具）→ 得到 `mcpServers`；`resultSignal` 不支持时记 `signal.disabled` 继续（整个 attempt 不挂 MCP），`confirmation` 不支持时只跳过它并记 `signal.partial`，`confirmation.kind` 非 `confirmation_request` 时按 `signal_prepare_failed` 失败。
 5. `runtime.newSession(cwd=容器根, {mcpServers})` → `journal.mark(running, {sessionId})`；挂载失败且 `error.data.details` 命中 `mcp-client(agentflow)` 时用**相同** `mcpServers` 重建一次，仍失败报 `failed(protocol, signal_mount_failed)`。
@@ -43,13 +44,14 @@ updated: 2026-11-19
 | 端口 | 方法 | 说明 |
 |---|---|---|
 | `RuntimePort` | `ensureInstance` / `newSession` / `prompt` / `cancel` / `closeSession` / `shutdownInstance` / `activeSessions` | 一实例一进程；同实例多 session |
-| `WorkspacePort` | `ensureContainer` / `validate` / `resolve` | 容器预置、路径约束 |
+| `WorkspacePort` | `ensureContainer` / `validate` / `resolve` / `ensureTaskSpace` / `packTaskSpace` / `inputs` | 容器预置、路径约束、task-space 与初始资料写入 |
+| `RunInputPort` | `listRunInputs` / `downloadRunInput` | 初始资料拉取（`EXE-06/07`）；未注入时不拉取 |
 | `AssetPort` | `install` / `verify` / `currentDigest` | 替换不叠加、digest 幂等 |
 | `JournalPort` | `append` / `mark` / `settled` / `recordOrphan` / `listOrphans` / `clearOrphan` | 结果先落盘；孤儿记录 |
 | `SchedulerPort` | `poll` / `reportResult` / `downloadPackage` | 由 gateway 实现；executor 不直接依赖 |
 | `SignalPort` | `prepare`（契约集合）/ `collect` / `cleanup` | 信号目录/preflight/采集；契约不支持时返回 unsupported，不判失败 |
 
-值类型：`TaskRequest`、`TaskResult`、`TaskRecord`、`PollRequest`、`PollResponse`、`ResultAck`、`SessionOutcome`、`ContainerPaths`、`InstalledSkills`、`OrphanRecord`。字段以契约 v2 §5 为准，组件不扩展。
+值类型：`TaskRequest`、`TaskResult`、`TaskRecord`、`PollRequest`、`PollResponse`、`ResultAck`、`SessionOutcome`、`ContainerPaths`、`InstalledSkills`、`OrphanRecord`、`ExecutorRunInput`。字段以契约 v3 §5 为准，组件不扩展。
 
 ## 4. 不变量
 
@@ -58,6 +60,7 @@ updated: 2026-11-19
 3. 结果先落 journal（`settled`）再交给 CLI 上报。
 3a. 信号只在 `status=succeeded` 且采集到合法记录时进入 `TaskResult.signals`；采集异常不改变任务状态。`signals[]` 可同时含 `review_verdict` 与 `confirmation_request`，顺序按 `seq`。
 3b. 续跑（`resumeSessionId`）不预期再交确认点（`signal.not_expected`）；review 续跑仍预期交付 verdict，缺了记 `signal.missing`。
+3c. 初始资料写入在 `ensureInstance` 之前完成；失败不拉起 DSH、不建 session。已存在且大小相同的文件不重复下载（同一 run 的重派/续跑幂等）。
 4. 同 `taskId` 至多一个在跑实例；重复调用返回同一结果 Promise。
 5. 取消/超时不等待 prompt 自然结算；结果 `cancelled`/`timeout`。
 6. 不自动重跑；重派是新 `attempt`。

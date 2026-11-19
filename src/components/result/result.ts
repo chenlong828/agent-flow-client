@@ -28,7 +28,7 @@ type MappingRule = { codes: readonly string[]; class: ErrorClass };
 
 const MAPPING: readonly MappingRule[] = [
   { codes: ["not_prepared", "layout_invalid", "path_escape", "permission_denied", "disk_full"], class: "workspace" },
-  { codes: ["download_failed", "checksum_mismatch", "unpack_failed", "invalid_skill_format", "io_error", "package_not_found"], class: "asset" },
+  { codes: ["download_failed", "checksum_mismatch", "unpack_failed", "invalid_skill_format", "io_error", "package_not_found", "input_fetch_failed", "input_checksum_mismatch", "input_path_invalid"], class: "asset" },
   { codes: ["spawn_failed", "process_exited", "prompt_failed", "session_log_too_large"], class: "runtime" },
   { codes: ["protocol_error", "signal_prepare_failed", "signal_mount_failed"], class: "protocol" },
   { codes: ["cancelled"], class: "cancelled" },

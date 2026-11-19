@@ -13,6 +13,9 @@ const outcome = (overrides: Partial<SessionOutcome> = {}): SessionOutcome => ({
 describe("错误分类", () => {
   test("映射表覆盖资产/运行时/调度器/超时", () => {
     expect(classify({ code: "download_failed", message: "" })).toEqual({ class: "asset", code: "download_failed" });
+    for (const code of ["input_fetch_failed", "input_checksum_mismatch", "input_path_invalid"]) {
+      expect(classify({ code, message: "" })).toEqual({ class: "asset", code });
+    }
     expect(classify({ code: "prompt_failed", message: "" })).toEqual({ class: "runtime", code: "prompt_failed" });
     expect(classify({ code: "task_not_found", message: "" })).toEqual({ class: "scheduler", code: "task_not_found" });
     expect(classify({ code: "idle_timeout", message: "" })).toEqual({ class: "timeout", code: "idle_timeout" });

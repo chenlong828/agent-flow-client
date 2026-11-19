@@ -1,8 +1,8 @@
-import type { InstanceId, OrphanRecord, SkillSet, TaskId, TaskRecord, TaskResult, TaskState } from "./types.ts";
+import type { ExecutorRunInput, InstanceId, OrphanRecord, SkillSet, TaskId, TaskRecord, TaskResult, TaskState } from "./types.ts";
 import type { McpServerSpec, SignalContractSpec, TaskSignal } from "../signal/contract.ts";
 import type { SignalPlan } from "../signal/plan.ts";
 
-export type { InstanceId, OrphanRecord, SkillSet, TaskId, TaskRecord, TaskState } from "./types.ts";
+export type { ExecutorRunInput, InstanceId, OrphanRecord, SkillSet, TaskId, TaskRecord, TaskState } from "./types.ts";
 import type {
   ChecksumResult,
   ContainerPaths,
@@ -93,6 +93,26 @@ export interface WorkspacePort {
   ensureTaskSpace(workspaceRoot: string, taskSpacePath: string): Promise<string>;
   /** `P-05`：把 task-space 打成 tar.gz（条目相对根），返回临时文件路径与字节数。 */
   packTaskSpace(taskSpacePath: string, targetPath: string): Promise<{ path: string; bytes: number }>;
+  /** 初始资料写入能力（`EXE-06/07`）；task-space 必须先由 `ensureTaskSpace` 创建。 */
+  readonly inputs: WorkspaceInputsPort;
+}
+
+/** `<task-space>/inputs` 的受控写入（CMP-workspace 的 `inputs` 子能力）。 */
+export interface WorkspaceInputsPort {
+  /** `EXE-06`：创建 `inputs/`（0700），返回真实路径，并清理中断残留的临时文件。 */
+  ensureDir(taskSpacePath: string): Promise<string>;
+  /** 已存在且是普通文件时返回 size；不存在返回 null；符号链接/目录/非法名报 `path_escape`。 */
+  stat(taskSpacePath: string, name: string): Promise<{ size: number } | null>;
+  /** 原子写入 `inputs/<name>`：同目录临时文件 → rename；只读 0400；拒绝路径穿越/符号链接。 */
+  write(taskSpacePath: string, name: string, bytes: Uint8Array): Promise<void>;
+}
+
+/** 执行面初始资料拉取（`EXE-06/07`，CMP-gateway 实现）。 */
+export interface RunInputPort {
+  /** `EXE-06`：列出本 run 的图片；旧服务端无端点时返回空列表。 */
+  listRunInputs(runId: string): Promise<ExecutorRunInput[]>;
+  /** `EXE-07`：下载单张图片字节；校验由调用方完成。 */
+  downloadRunInput(ref: ExecutorRunInput): Promise<Uint8Array>;
 }
 
 /** `P-04` 会话日志的本地持久化（CMP-store 实现）：按 `taskId+attempt` 存原始 JSONL 行。 */

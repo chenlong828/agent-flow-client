@@ -12,6 +12,7 @@ import type {
   SignalPort,
   WorkspacePort,
   ObservationPort,
+  RunInputPort,
   RunRegistryPort,
 } from "./ports.ts";
 import { SignalRunner, type SignalContext } from "./signal-runner.ts";
@@ -21,6 +22,7 @@ import type { TaskRequest, TaskResult } from "./types.ts";
 import type { TaskSignal } from "../signal/contract.ts";
 import { assemble, classify } from "../result/result.ts";
 import { cancelledOutcome, codeOf } from "./executor-helpers.ts";
+import { seedRunInputs } from "./run-inputs.ts";
 
 export type ExecutionContext = {
   signal: AbortSignal;
@@ -50,6 +52,8 @@ export type NodeExecutorOptions = {
   /** 结构化事件出口（signal.*）；不参与执行语义。 */
   log?: (event: string, detail?: Record<string, unknown>) => void;
   observation?: ObservationPort;
+  /** `EXE-06/07`：初始资料拉取；未注入时不拉取（手工任务/旧部署）。 */
+  runInputs?: RunInputPort;
   runs?: RunRegistryPort;
   now?: () => Date;
   host?: string;
@@ -209,6 +213,15 @@ export class NodeExecutor {
     });
     const container = await this.#options.workspace.ensureContainer({ instanceId: task.instanceId, pid: 0 }, task.workspacePath);
     await this.#options.workspace.ensureTaskSpace(task.workspacePath, task.taskSpacePath);
+    if (task.runId !== undefined && this.#options.runInputs !== undefined) {
+      await seedRunInputs({
+        runId: task.runId,
+        taskSpacePath: task.taskSpacePath,
+        port: this.#options.runInputs,
+        inputs: this.#options.workspace.inputs,
+        ...(this.#options.log === undefined ? {} : { log: this.#options.log }),
+      });
+    }
     const handle = await this.#options.runtime.ensureInstance({
       instanceId: task.instanceId,
       dshHome: this.#options.dshHome,

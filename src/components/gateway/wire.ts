@@ -14,24 +14,24 @@ import { GatewayError } from "./errors.ts";
 
 export type WireRecord = Record<string, unknown>;
 
-function asRecord(value: unknown, label: string): WireRecord {
+export function asRecord(value: unknown, label: string): WireRecord {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new GatewayError("protocol_error", `调度器响应字段非法：${label}`);
   }
   return value as WireRecord;
 }
 
-function asString(value: unknown, label: string): string {
+export function asString(value: unknown, label: string): string {
   if (typeof value !== "string" || value === "") throw new GatewayError("protocol_error", `调度器响应字段非法：${label}`);
   return value;
 }
 
-function asNumber(value: unknown, label: string): number {
+export function asNumber(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) throw new GatewayError("protocol_error", `调度器响应字段非法：${label}`);
   return value;
 }
 
-function asArray(value: unknown, label: string): unknown[] {
+export function asArray(value: unknown, label: string): unknown[] {
   if (!Array.isArray(value)) throw new GatewayError("protocol_error", `调度器响应字段非法：${label}`);
   return value;
 }

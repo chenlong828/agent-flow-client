@@ -87,6 +87,17 @@ export type TaskRequest = {
   resumeSessionId?: SessionId;
 };
 
+/** 执行面初始资料（`EXE-06/07`）：只含图片，`downloadPath` 相对 executor base。 */
+export type ExecutorRunInput = {
+  inputId: string;
+  /** 服务端清洗/去重后的 task-space 文件名；client 仍做二次校验。 */
+  name: string;
+  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+  sizeBytes: number;
+  sha256: string;
+  downloadPath: string;
+};
+
 export type TaskRecord = {
   v: 2;
   ts: string;

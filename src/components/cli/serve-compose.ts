@@ -13,7 +13,7 @@ import { S0_MODEL } from "../runtime/profile.ts";
 import { FileRunRegistry } from "../store/runs.ts";
 import { FileSignal } from "../signal/signal.ts";
 import { setupObserver, type ObserverSetup } from "./observer-setup.ts";
-import type { ObservationPort } from "../executor/ports.ts";
+import type { ObservationPort, RunInputPort } from "../executor/ports.ts";
 import type { AppConfig } from "./config.ts";
 import type { CliIo } from "./main.ts";
 
@@ -71,6 +71,7 @@ function createExecutor(input: {
   runs: FileRunRegistry;
   signals: FileSignal;
   logger: JsonLogger;
+  runInputs: RunInputPort;
   observation?: ObservationPort;
 }): NodeExecutor {
   const { config, logger } = input;
@@ -84,6 +85,7 @@ function createExecutor(input: {
     ...(input.observation === undefined ? {} : { observation: input.observation }),
     runs: input.runs,
     signals: input.signals,
+    runInputs: input.runInputs,
     sessionNewTimeoutMs: config.acp.sessionNewTimeoutMs,
     log: (event, detail) =>
       logger.log({
@@ -158,6 +160,7 @@ export async function composeForServe(
     runs,
     signals,
     logger,
+    runInputs: gateway,
     ...(setup.record ? { observation: setup.recorder } : {}),
   });
   return {

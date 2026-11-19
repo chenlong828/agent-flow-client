@@ -37,7 +37,11 @@ function setup() {
   const stub = new StubScheduler({ token: "t" });
   const transport = new HttpTransport({ baseUrl: stub.url, token: "t" });
   const audits: string[] = [];
-  const gateway = new HttpScheduler({ transport, audit: (event) => audits.push(event) });
+  const gateway = new HttpScheduler({
+    transport,
+    audit: (event) => audits.push(event),
+    retry: { baseMs: 1, sleep: async () => undefined },
+  });
   return { stub, gateway, audits };
 }
 
@@ -50,6 +54,7 @@ describe("poll", () => {
       finished: [{ taskId: "t-fin", attempt: 1, finishedAt: "2026-11-10T00:01:00Z" }],
     });
     const body = stub.requests[0]?.body;
+    expect(stub.requests[0]?.headers["x-executor-capabilities"]).toBe("run-inputs");
     expect(body?.capacity).toEqual({ free: 2 });
     expect((body?.running as unknown[])[0]).toMatchObject({ taskId: "t-run", instanceId: "i-1" });
     expect((body?.finished as unknown[])[0]).toEqual({ taskId: "t-fin", attempt: 1, finishedAt: "2026-11-10T00:01:00Z" });
@@ -147,6 +152,72 @@ describe("skill package", () => {
     const { stub, gateway } = setup();
     const error = await gateway.downloadPackage({ packageId: "missing", name: "a", version: "1", digest: "sha256:x", sizeBytes: 0, downloadUrl: "/x" }).catch((caught: unknown) => caught);
     expect((error as GatewayError).code).toBe("package_not_found");
+    await stub.close();
+  });
+});
+
+
+describe("EXE-06/07 初始资料", () => {
+  const runId = "run-1";
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  test("列表：返回服务端顺序与元数据", async () => {
+    const { stub, gateway } = setup();
+    stub.setRunInputs(runId, [{ inputId: "in-1", name: "01-界面截图.png", bytes: png }]);
+    const refs = await gateway.listRunInputs(runId);
+    expect(refs).toHaveLength(1);
+    expect(refs[0]).toMatchObject({ inputId: "in-1", name: "01-界面截图.png", mediaType: "image/png", sizeBytes: png.byteLength });
+    expect(refs[0]?.sha256).toMatch(/^[0-9a-f]{64}$/);
+    await stub.close();
+  });
+
+  test("旧服务端 404（无该端点）：按无初始资料继续，并记审计", async () => {
+    const { stub, gateway, audits } = setup();
+    stub.failNext("GET /api/v1/executor/runs/run-old/inputs", { status: 404, code: "not_found" });
+    expect(await gateway.listRunInputs("run-old")).toEqual([]);
+    expect(audits).toContain("run_inputs.unavailable");
+    await stub.close();
+  });
+
+  test("run 不存在：不当作兼容路径，原样失败", async () => {
+    const { stub, gateway } = setup();
+    await expect(gateway.listRunInputs("run-missing")).rejects.toMatchObject({ code: "run_not_found" });
+    await stub.close();
+  });
+
+  test("下载：返回原始字节", async () => {
+    const { stub, gateway } = setup();
+    stub.setRunInputs(runId, [{ inputId: "in-1", name: "a.png", bytes: png }]);
+    const ref = stub.runInputsOf(runId)[0]!;
+    expect(await gateway.downloadRunInput(ref)).toEqual(png);
+    await stub.close();
+  });
+
+  test("下载路径与 inputId 不匹配：protocol_error，不发请求", async () => {
+    const { stub, gateway } = setup();
+    const ref = {
+      inputId: "in-1",
+      name: "a.png",
+      mediaType: "image/png" as const,
+      sizeBytes: png.byteLength,
+      sha256: "a".repeat(64),
+      downloadPath: "/runs/run-1/inputs/in-9",
+    };
+    await expect(gateway.downloadRunInput(ref)).rejects.toMatchObject({ code: "protocol_error" });
+    expect(stub.requests).toHaveLength(0);
+    await stub.close();
+  });
+
+  test("下载 5xx 重试后成功；401 不重试", async () => {
+    const { stub, gateway } = setup();
+    stub.setRunInputs(runId, [{ inputId: "in-1", name: "a.png", bytes: png }]);
+    const ref = stub.runInputsOf(runId)[0]!;
+    stub.failNext("GET /api/v1/executor/runs/run-1/inputs/in-1", { status: 503, code: "service_unavailable" });
+    expect(await gateway.downloadRunInput(ref)).toEqual(png);
+    expect(stub.requests.filter((request) => request.path.endsWith("/inputs/in-1"))).toHaveLength(2);
+
+    stub.failNext("GET /api/v1/executor/runs/run-1/inputs/in-1", { status: 401, code: "unauthorized" });
+    await expect(gateway.downloadRunInput(ref)).rejects.toMatchObject({ code: "unauthorized" });
     await stub.close();
   });
 });

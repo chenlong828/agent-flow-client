@@ -166,7 +166,7 @@ config → observability → store → workspace → assets → runtime → gate
       → executor（注入 result + 5 端口）→ CLI 命令
 ```
 
-- 只有组合根 import L0 具体实现；`serve` 注入 gateway；`run` 注入 `LocalSchedulerAdapter`。
+- 只有组合根 import L0 具体实现；`serve` 注入 gateway（同时作为 `SchedulerPort` 与 `RunInputPort`）；`run` 注入 `LocalSchedulerAdapter`，不注入 `RunInputPort`（手工任务没有执行面，跳过初始资料种子）。
 - 模块内部禁止用环境变量挑选实现；配置在组合根读取、校验、类型化后传入。
 - 测试通过测试组合根或桩端口注入。
 

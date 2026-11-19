@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { NodeExecutor } from "../../../src/components/executor/executor.ts";
-import type { TaskRequest } from "../../../src/components/executor/types.ts";
-import { FakeAssets, FakeRuntime, FakeSessionLogs, FakeWorkspace, MemoryJournal } from "./fakes.ts";
+import type { ExecutorRunInput, TaskRequest } from "../../../src/components/executor/types.ts";
+import { WorkspaceError } from "../../../src/components/workspace/errors.ts";
+import { FakeAssets, FakeRunInputs, FakeRuntime, FakeSessionLogs, FakeWorkspace, MemoryJournal } from "./fakes.ts";
 
 function task(overrides: Partial<TaskRequest> = {}): TaskRequest {
   return {
@@ -18,7 +20,7 @@ function task(overrides: Partial<TaskRequest> = {}): TaskRequest {
   };
 }
 
-function setup() {
+function setup(options: { runInputs?: FakeRunInputs } = {}) {
   const journal = new MemoryJournal();
   const runtime = new FakeRuntime();
   const workspace = new FakeWorkspace();
@@ -33,8 +35,9 @@ function setup() {
     dshHome: "/tmp/afc-home",
     maxResultBytes: 1024,
     now: () => new Date("2026-11-10T00:00:00.000Z"),
+    ...(options.runInputs === undefined ? {} : { runInputs: options.runInputs }),
   });
-  return { journal, runtime, assets, workspace, sessionLogs, executor };
+  return { journal, runtime, assets, workspace, sessionLogs, runInputs: options.runInputs, executor };
 }
 
 const signal = () => new AbortController().signal;
@@ -108,5 +111,122 @@ describe("v2 任务执行", () => {
     expect(result.truncated).toBe(true);
     expect(Buffer.byteLength(result.message, "utf8")).toBeLessThanOrEqual(1024);
     expect(result.message.endsWith("…[truncated]")).toBe(true);
+  });
+});
+
+
+describe("初始资料（EXE-06/07）", () => {
+  const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
+  const ref = (inputId: string, name: string, bytes: Uint8Array): ExecutorRunInput => ({
+    inputId,
+    name,
+    mediaType: "image/png",
+    sizeBytes: bytes.byteLength,
+    sha256: sha256(bytes),
+    downloadPath: `/runs/run-1/inputs/${inputId}`,
+  });
+  const runInputsWith = (items: { ref: ExecutorRunInput; bytes: Uint8Array }[]): FakeRunInputs => {
+    const port = new FakeRunInputs();
+    port.refs = items.map((item) => item.ref);
+    for (const item of items) port.bytes.set(item.ref.inputId, item.bytes);
+    return port;
+  };
+  const withRun = (overrides: Partial<TaskRequest> = {}): TaskRequest => task({ runId: "run-1", ...overrides });
+
+  test("无 runId：不拉取、不建 inputs", async () => {
+    const port = runInputsWith([{ ref: ref("in-1", "a.png", new Uint8Array([1])), bytes: new Uint8Array([1]) }]);
+    const { workspace, executor } = setup({ runInputs: port });
+    const result = await executor.executeTask(task(), { signal: signal() });
+    expect(result.status).toBe("succeeded");
+    expect(port.listCalls).toEqual([]);
+    expect(workspace.inputs.dirs).toEqual([]);
+  });
+
+  test("空列表：不建 inputs、照常执行", async () => {
+    const port = runInputsWith([]);
+    const { workspace, runtime, executor } = setup({ runInputs: port });
+    const result = await executor.executeTask(withRun(), { signal: signal() });
+    expect(result.status).toBe("succeeded");
+    expect(port.listCalls).toEqual(["run-1"]);
+    expect(workspace.inputs.dirs).toEqual([]);
+    expect(runtime.prompts).toEqual(["HELLO"]);
+  });
+
+  test("有资料：建 inputs、逐张写入并校验摘要", async () => {
+    const one = new Uint8Array([1, 2, 3]);
+    const two = new Uint8Array([4, 5]);
+    const port = runInputsWith([
+      { ref: ref("in-1", "01-界面截图.png", one), bytes: one },
+      { ref: ref("in-2", "02.png", two), bytes: two },
+    ]);
+    const { workspace, runtime, executor } = setup({ runInputs: port });
+    const result = await executor.executeTask(withRun(), { signal: signal() });
+    expect(result.status).toBe("succeeded");
+    expect(workspace.inputs.dirs).toEqual(["/tmp/afc-v2-container/.agent-flow/task/task-1"]);
+    expect(workspace.inputs.writes).toEqual([
+      { name: "01-界面截图.png", bytes: 3 },
+      { name: "02.png", bytes: 2 },
+    ]);
+    expect(port.downloadCalls).toEqual(["in-1", "in-2"]);
+    expect(runtime.prompts).toHaveLength(1);
+  });
+
+  test("已存在且大小相同：跳过下载", async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const port = runInputsWith([{ ref: ref("in-1", "a.png", bytes), bytes }]);
+    const { workspace, executor } = setup({ runInputs: port });
+    workspace.inputs.files.set("a.png", { size: 3 });
+    const result = await executor.executeTask(withRun(), { signal: signal() });
+    expect(result.status).toBe("succeeded");
+    expect(port.downloadCalls).toEqual([]);
+    expect(workspace.inputs.writes).toEqual([]);
+  });
+
+  test("摘要不符：failed(asset) input_checksum_mismatch，不写文件", async () => {
+    const expected = new Uint8Array([1, 2, 3]);
+    const port = runInputsWith([{ ref: ref("in-1", "a.png", expected), bytes: new Uint8Array([9, 9, 9]) }]);
+    const { workspace, runtime, executor } = setup({ runInputs: port });
+    const result = await executor.executeTask(withRun(), { signal: signal() });
+    expect(result.status).toBe("failed");
+    expect(result.error).toMatchObject({ code: "input_checksum_mismatch", class: "asset" });
+    expect(workspace.inputs.writes).toEqual([]);
+    expect(runtime.prompts).toEqual([]);
+  });
+
+  test("下载失败：failed(asset) input_fetch_failed，不建 session", async () => {
+    const bytes = new Uint8Array([1]);
+    const port = runInputsWith([{ ref: ref("in-1", "a.png", bytes), bytes }]);
+    port.downloadError = new Error("boom");
+    const { runtime, executor } = setup({ runInputs: port });
+    const result = await executor.executeTask(withRun(), { signal: signal() });
+    expect(result.status).toBe("failed");
+    expect(result.error).toMatchObject({ code: "input_fetch_failed", class: "asset" });
+    expect(runtime.prompts).toEqual([]);
+  });
+
+  test("列表失败：failed(asset) input_fetch_failed", async () => {
+    const port = runInputsWith([]);
+    port.listError = new Error("503");
+    const { executor } = setup({ runInputs: port });
+    const result = await executor.executeTask(withRun(), { signal: signal() });
+    expect(result.error).toMatchObject({ code: "input_fetch_failed", class: "asset" });
+  });
+
+  test("文件名越界（符号链接/异常名）：failed(asset) input_path_invalid", async () => {
+    const bytes = new Uint8Array([1]);
+    const port = runInputsWith([{ ref: ref("in-1", "evil.png", bytes), bytes }]);
+    const { workspace, executor } = setup({ runInputs: port });
+    workspace.inputs.symlinkNames.add("evil.png");
+    const result = await executor.executeTask(withRun(), { signal: signal() });
+    expect(result.error).toMatchObject({ code: "input_path_invalid", class: "asset" });
+  });
+
+  test("磁盘/权限错误原样抛出：归 workspace，不伪装成下载失败", async () => {
+    const bytes = new Uint8Array([1]);
+    const port = runInputsWith([{ ref: ref("in-1", "a.png", bytes), bytes }]);
+    const { workspace, executor } = setup({ runInputs: port });
+    workspace.inputs.writeError = new WorkspaceError("permission_denied", "只读");
+    const result = await executor.executeTask(withRun(), { signal: signal() });
+    expect(result.error).toMatchObject({ code: "permission_denied", class: "workspace" });
   });
 });

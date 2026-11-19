@@ -7,6 +7,7 @@ AgentFlow 执行面客户端：在本机准备实例工作区、技能与 DSH �
 已按执行面契约 **v3**（五端点、task-space、会话日志、运行归档、协议 3）实现；联调待调度器侧（见 `docs/works/2026-11-12-contract-v3-handoff/`）。当前可用能力：
 
 - `serve`：常驻 `poll` 循环，取任务、执行、先传会话日志再报结果，收 `stop`/`cancelInstances`/`archiveRequests`；
+- run 初始资料：poll 声明 `X-Executor-Capabilities: run-inputs`，按 `runId` 拉取图片、校验 SHA-256 并写入 `<task-space>/inputs/`（旧服务端无该端点时按无资料继续）；
 - `run --request`：本地单任务，stdout 输出 `TaskResult` JSON；
 - `doctor`：配置、DSH、凭据、容器与残留检查；
 - `version`：client 版本与 ACP/DSH 基线。
@@ -29,7 +30,7 @@ Bun 已安装在 `~/.bun/bin` 并加入 `PATH`；项目不携带本地 Bun。
 
 ## 与调度器联调
 
-`serve` 按 executor contract v3 对接五个端点：`POST /api/v1/executor/poll`、`POST /api/v1/executor/tasks/{taskId}/result`、`GET /api/v1/executor/skill-packages/{packageId}`、`POST /api/v1/executor/tasks/{taskId}/session-log`、`POST /api/v1/executor/runs/{runId}/archive`。
+`serve` 按 executor contract v3 对接五个端点：`POST /api/v1/executor/poll`、`POST /api/v1/executor/tasks/{taskId}/result`、`GET /api/v1/executor/skill-packages/{packageId}`、`POST /api/v1/executor/tasks/{taskId}/session-log`、`POST /api/v1/executor/runs/{runId}/archive`；另有加法端点 `GET /api/v1/executor/runs/{runId}/inputs` 与 `GET /api/v1/executor/runs/{runId}/inputs/{inputId}`（初始资料，2026-11-19）。
 
 开发期自报身份（调度器 `EXECUTOR_AUTH=off`，默认）：`.config` 里给一个稳定的 `[scheduler] client_id`（或用 `AF_CLIENT_ID` 覆盖），client 会在五个端点统一带 `X-Client-Id`；调度器首次见到该值就自动登记节点，不需要先建 Harness 资产、不需要 `API-41`、不需要 token。`client_id` 必须跨重启稳定，缺省取本机 `hostname()`；非 loopback 且无 token 时还需 `allow_unauthenticated = true`：
 

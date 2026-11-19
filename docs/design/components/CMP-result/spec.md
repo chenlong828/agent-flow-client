@@ -37,6 +37,12 @@ updated: 2026-11-12
 
 闭集：`workspace` / `asset` / `runtime` / `protocol` / `cancelled` / `timeout` / `scheduler` / `internal`。约定 code：`prompt_timeout`（总超时）、`idle_timeout`（无进度）。
 
+| 新 code | class | 触发 |
+|---|---|---|
+| `input_fetch_failed` | `asset` | 初始资料列表/下载失败（网络、5xx、超时重试后） |
+| `input_checksum_mismatch` | `asset` | 初始资料长度或 SHA-256 不符 |
+| `input_path_invalid` | `asset` | 初始资料名/路径穿越、符号链接或目录越界 |
+
 ## 5. 验证
 
 `tests/components/result/result.test.ts`。

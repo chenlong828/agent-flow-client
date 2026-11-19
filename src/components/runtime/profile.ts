@@ -1,11 +1,15 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+export type ModelInput = "text" | "image";
+
 export type ProfileModel = {
   provider: string;
   model: string;
   baseUrl: string;
   apiKeyEnv: string;
+  /** 该路由声明的输入模态；缺省按 text+image。 */
+  input?: ModelInput[];
 };
 
 export const S0_MODEL: ProfileModel = {
@@ -13,6 +17,7 @@ export const S0_MODEL: ProfileModel = {
   model: "hs-deepseek-flash-latest",
   baseUrl: "http://47.93.127.129:10088/v1",
   apiKeyEnv: "HUNDSUN_PUBLIC_API_KEY",
+  input: ["text", "image"],
 };
 
 /**
@@ -44,7 +49,7 @@ export async function writeProfilePatch(homeDir: string, model: ProfileModel = S
             apiKeyEnv: model.apiKeyEnv,
             api: "openai-completions",
             baseURL: model.baseUrl,
-            models: [{ id: model.model, name: model.model }],
+            models: [{ id: model.model, name: model.model, input: model.input ?? ["text", "image"] }],
           },
         },
       },

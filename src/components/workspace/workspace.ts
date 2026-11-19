@@ -12,6 +12,7 @@ import type {
 import { findProjectRoot } from "./project-root.ts";
 import { WorkspaceError } from "./errors.ts";
 import { inside, pathKind } from "./fs-path.ts";
+import { TaskSpaceInputs } from "./inputs.ts";
 import { readLayout, submoduleWarnings } from "./superproject.ts";
 
 const CLEAN_TARGETS = [".dsh/skills", ".dsh/.staging", ".dsh/.skills.previous", ".dsh/.skills-digest", ".dsh/.skills-layout", ".dsh/.install.lock"];
@@ -21,6 +22,7 @@ const CLEAN_TARGETS = [".dsh/skills", ".dsh/.staging", ".dsh/.skills.previous", 
  * client 只写 `.dsh` 下自己生成的内容（不 clone、不检出、不建仓库、不执行任何 git 命令）。
  */
 export class FileWorkspace implements WorkspacePort {
+  readonly inputs = new TaskSpaceInputs();
   readonly #containers = new Map<InstanceId, ContainerPaths>();
 
   async ensureContainer(instance: InstanceHandle, path: string): Promise<ContainerPaths> {

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type {
   ArchiveAck,
   ArchiveRequest,
+  ExecutorRunInput,
   PollRequest,
   PollResponse,
   ResultAck,
@@ -40,6 +41,7 @@ export class StubScheduler {
   #nonTerminalRuns = new Set<string>();
   #failures = new Map<string, StubFailure>();
   #package: { bytes: Uint8Array; etag: string; sha256: string } | null = null;
+  #runInputs = new Map<string, { ref: ExecutorRunInput; bytes: Uint8Array }[]>();
   #nextPollAfterMs = 10;
 
   constructor(options: { token?: string | null; pollHoldMs?: number } = {}) {
@@ -88,6 +90,31 @@ export class StubScheduler {
   setRunTerminal(runId: string, terminal: boolean): void {
     if (terminal) this.#nonTerminalRuns.delete(runId);
     else this.#nonTerminalRuns.add(runId);
+  }
+
+  /** `EXE-06/07`：为某 run 预置图片；`downloadPath` 默认指向标准端点。 */
+  setRunInputs(
+    runId: string,
+    inputs: { inputId: string; name: string; mediaType?: ExecutorRunInput["mediaType"]; bytes: Uint8Array; downloadPath?: string }[],
+  ): void {
+    this.#runInputs.set(
+      runId,
+      inputs.map((input) => ({
+        ref: {
+          inputId: input.inputId,
+          name: input.name,
+          mediaType: input.mediaType ?? "image/png",
+          sizeBytes: input.bytes.byteLength,
+          sha256: createHash("sha256").update(input.bytes).digest("hex"),
+          downloadPath: input.downloadPath ?? `/runs/${runId}/inputs/${input.inputId}`,
+        },
+        bytes: input.bytes,
+      })),
+    );
+  }
+
+  runInputsOf(runId: string): ExecutorRunInput[] {
+    return (this.#runInputs.get(runId) ?? []).map((item) => item.ref);
   }
 
   setPiece(value: Uint8Array, etag: string, sha256: string): void {
@@ -164,7 +191,26 @@ export class StubScheduler {
     }
     const pkg = /^\/api\/v1\/executor\/skill-packages\/([^/]+)$/.exec(url.pathname);
     if (request.method === "GET" && pkg !== null) return this.#packageResponse(request);
+    const inputs = /^\/api\/v1\/executor\/runs\/([^/]+)\/inputs$/.exec(url.pathname);
+    if (request.method === "GET" && inputs !== null) return this.#listRunInputs(decodeURIComponent(inputs[1] as string));
+    const input = /^\/api\/v1\/executor\/runs\/([^/]+)\/inputs\/([^/]+)$/.exec(url.pathname);
+    if (request.method === "GET" && input !== null) {
+      return this.#downloadRunInput(decodeURIComponent(input[1] as string), decodeURIComponent(input[2] as string));
+    }
     return this.#error(404, "not_found");
+  }
+
+  #listRunInputs(runId: string): Response {
+    if (!this.#runInputs.has(runId)) return this.#error(404, "run_not_found");
+    return Response.json({ items: this.runInputsOf(runId) });
+  }
+
+  #downloadRunInput(runId: string, inputId: string): Response {
+    const item = (this.#runInputs.get(runId) ?? []).find((entry) => entry.ref.inputId === inputId);
+    if (item === undefined) return this.#error(404, "input_not_found");
+    return new Response(new Blob([new Uint8Array(item.bytes)]), {
+      headers: { "Content-Type": item.ref.mediaType, "X-Checksum-Sha256": item.ref.sha256 },
+    });
   }
 
   async #poll(body: Record<string, unknown>): Promise<Response> {
