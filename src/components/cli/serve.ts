@@ -4,6 +4,7 @@ import type { CliIo } from "./main.ts";
 import { composeForServe, type ServeDeps } from "./serve-compose.ts";
 import { createContext, stop, type ServeContext } from "./serve-context.ts";
 import { pollLoop } from "./serve-loops.ts";
+import { SIGNAL_SUPPORTED_KINDS } from "../signal/contract.ts";
 
 /** `serve` 主循环（v2）：一条 poll 长轮询兼领取与判活。 */
 export class ServeRunner {
@@ -33,7 +34,7 @@ export class ServeRunner {
   }
 
   async #bootstrap(): Promise<void> {
-    const { store, runtime, logger, config } = this.#ctx.deps;
+    const { store, runtime, logger, config, signals } = this.#ctx.deps;
     for (const orphan of await store.listOrphans()) {
       await runtime.reapOrphan(orphan).catch(() => false);
       await store.clearOrphan(orphan.pid);
@@ -42,10 +43,20 @@ export class ServeRunner {
       if (record.result === undefined) continue;
       this.#ctx.finished.set(record.taskId, { result: record.result, finishedAt: record.ts });
     }
+    const removed = await signals.cleanup(config.signal.retentionDays).catch(() => 0);
+    if (removed > 0) logger.log({ level: "info", event: "signal.cleanup", msg: `removed=${removed}` });
     logger.log({
       level: "info",
       event: "serve.started",
-      msg: `maxConcurrent=${config.capacity.maxConcurrent} settled=${this.#ctx.finished.size}`,
+      msg: JSON.stringify({
+        maxConcurrent: config.capacity.maxConcurrent,
+        settled: this.#ctx.finished.size,
+        schedulerUrl: config.scheduler.url,
+        clientId: config.scheduler.clientId,
+        stateRoot: config.state.root,
+        dshHome: config.acp.dshHome,
+        signalKinds: [...SIGNAL_SUPPORTED_KINDS],
+      }),
     });
   }
 }

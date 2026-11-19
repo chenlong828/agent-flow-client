@@ -8,6 +8,9 @@ import { render, collect, exitCode } from "../observability/doctor.ts";
 import { loadLocalRequest, RequestError } from "./request.ts";
 import { runOnce } from "./run.ts";
 import { serveCommand } from "./serve.ts";
+import { signalsCommand } from "./signals.ts";
+import { runSignalServer } from "../../mcp/signal-server.ts";
+import { SIGNAL_CLI_SUBCOMMAND } from "../signal/mcp.ts";
 
 export type CliIo = {
   out(message: string): void;
@@ -31,6 +34,7 @@ const HELP = `agent-flow-client ${VERSION}
   serve      常驻模式：长轮询领取任务、执行并回传结果（契约 v3）
   run        单次模式：执行一个本地任务（--request <file>）
   doctor     本地环境自检（不依赖调度器）
+  signals    查看某任务的信号：--task <taskId> [--attempt n] [--json]
   version    打印版本
   help       打印帮助
 
@@ -82,6 +86,17 @@ async function doctorCommand(args: ParsedArgs, config: AppConfig, deps: CliDeps)
   return exitCode(report);
 }
 
+async function signalsCommandFor(args: ParsedArgs, config: AppConfig, io: CliIo): Promise<number> {
+  const taskId = flagString(args, "--task");
+  if (taskId === undefined) throw new UsageError("signals 需要 --task <taskId>");
+  const attemptRaw = flagString(args, "--attempt");
+  const attempt = attemptRaw === undefined ? undefined : Number(attemptRaw);
+  if (attempt !== undefined && (!Number.isInteger(attempt) || attempt < 1)) {
+    throw new UsageError("--attempt 必须是正整数");
+  }
+  return await signalsCommand(config, io, { taskId, ...(attempt === undefined ? {} : { attempt }), json: args.flags["--json"] === true });
+}
+
 async function runCommand(args: ParsedArgs, config: AppConfig, deps: CliDeps): Promise<number> {
   const requestPath = flagString(args, "--request");
   if (requestPath === undefined) throw new UsageError("run 需要 --request <file>");
@@ -91,6 +106,8 @@ async function runCommand(args: ParsedArgs, config: AppConfig, deps: CliDeps): P
 
 /** 进程入口：解析命令、加载配置、分派；返回退出码（CMP-cli §3.1）。 */
 export async function main(argv: readonly string[], deps: CliDeps): Promise<number> {
+  // 编译为单二进制时，signal server 复用本进程入口（不依赖旁路脚本）。
+  if (argv[0] === SIGNAL_CLI_SUBCOMMAND) return await runSignalServer(argv.slice(1));
   const { io, env, homeDir } = deps;
   try {
     const args = parseArgs(argv);
@@ -120,6 +137,7 @@ export async function main(argv: readonly string[], deps: CliDeps): Promise<numb
       return await serveCommand(config, env, io);
     }
     if (args.command === "run") return await runCommand(args, config, deps);
+    if (args.command === "signals") return await signalsCommandFor(args, config, io);
 
     io.err(`未知命令：${args.command}\n\n${HELP}`);
     return ExitCode.usage;

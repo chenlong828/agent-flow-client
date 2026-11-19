@@ -1,4 +1,7 @@
 import { statSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join } from "node:path";
@@ -12,6 +15,9 @@ import { WorkspaceAdmin } from "../workspace/admin.ts";
 import { FileStore } from "../store/store.ts";
 import { StoreAdmin } from "../store/admin.ts";
 import { RuntimeAdmin } from "../runtime/admin.ts";
+import { defaultSignalServerEntry } from "../signal/signal.ts";
+import { SIGNAL_SUPPORTED_KINDS } from "../signal/contract.ts";
+import { signalRoot } from "../signal/directory.ts";
 
 export type DoctorOptions = {
   config: AppConfig;
@@ -186,6 +192,98 @@ function authChecks(hasCredentials: boolean): CheckResult[] {
   ];
 }
 
+/** signal.* 检查：目录、server 入口、`--check`、支持的 kind（只读 + 临时目录）。 */
+async function signalChecks(config: AppConfig): Promise<CheckResult[]> {
+  const root = signalRoot(config.state.root);
+  const rootExists = await isDirectory(root);
+  const dirOk = rootExists ? await writable(root) : await writable(config.state.root);
+  const entry = defaultSignalServerEntry();
+  const entryExists = fileExists(entry);
+  const checks: CheckResult[] = [
+    {
+      id: "signal.dir",
+      title: "信号目录",
+      status: dirOk ? "pass" : "fail",
+      detail: rootExists ? root : `${root}（尚未创建，首个带信号的任務时建）`,
+      ...(dirOk ? {} : { remediation: "state.root 不可写；检查目录权限或换 --state-root" }),
+    },
+    {
+      id: "signal.server",
+      title: "signal server",
+      status: entryExists ? "pass" : "fail",
+      detail: entry,
+      ...(entryExists ? {} : { remediation: "安装不完整：src/mcp/signal-server.ts 不存在" }),
+    },
+    {
+      id: "signal.kinds",
+      title: "支持的信号 kind",
+      status: "pass",
+      detail: SIGNAL_SUPPORTED_KINDS.join(", "),
+    },
+  ];
+  if (entryExists) checks.push(await signalCheckCheck(entry));
+  return checks;
+}
+
+async function signalCheckCheck(entry: string): Promise<CheckResult> {
+  const dir = await mkdtemp(join(tmpdir(), "afc-doctor-signal-"));
+  const configPath = join(dir, "config.json");
+  try {
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        kind: "review_verdict",
+        taskId: "doctor",
+        attempt: 1,
+        output: join(dir, "signals.jsonl"),
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["verdict", "reason"],
+          properties: { verdict: { type: "string", enum: ["pass", "fail", "needs_human"] }, reason: { type: "string" } },
+        },
+        limits: { maxSignals: 8, maxBytes: 16384 },
+      }),
+    );
+    const result = await runServerCheck(entry, configPath);
+    return {
+      id: "signal.check",
+      title: "signal server --check",
+      status: result.ok ? "pass" : "fail",
+      detail: result.ok ? "预检通过" : result.detail,
+      ...(result.ok ? {} : { remediation: "运行 `AF_SIGNAL_CONFIG=<config> <bun> src/mcp/signal-server.ts --check` 看完整错误" }),
+    };
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+function runServerCheck(entry: string, configPath: string): Promise<{ ok: boolean; detail: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [entry, "--check"], {
+      env: { ...process.env, AF_SIGNAL_CONFIG: configPath },
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      resolve({ ok: false, detail: "预检超时（5s）" });
+    }, 5000);
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      resolve({ ok: false, detail: error.message });
+    });
+    child.on("exit", (code) => {
+      clearTimeout(timer);
+      resolve(code === 0 ? { ok: true, detail: "" } : { ok: false, detail: `退出码 ${String(code)}${stderr.trim() === "" ? "" : `：${stderr.trim()}`}` });
+    });
+  });
+}
+
 async function storeChecks(config: AppConfig): Promise<CheckResult[]> {
   const store = new FileStore({ stateRoot: config.state.root });
   return await new StoreAdmin({ stateRoot: config.state.root, store }).diagnose();
@@ -201,6 +299,7 @@ export async function collectDoctorChecks(options: DoctorOptions): Promise<Check
     ...configChecks(config, homeDir),
     ...(await pathChecks(config)),
     ...authChecks(hasCredentials),
+    ...(await signalChecks(config)),
     ...(await dshChecks(env)),
     ...(await storeChecks(config)),
     ...(await new RuntimeAdmin().diagnose(config.acp.dshHome)),

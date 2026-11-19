@@ -11,7 +11,9 @@ import { HttpTransport } from "../gateway/transport.ts";
 import { JsonLogger } from "../observability/logger.ts";
 import { S0_MODEL } from "../runtime/profile.ts";
 import { FileRunRegistry } from "../store/runs.ts";
+import { FileSignal } from "../signal/signal.ts";
 import { setupObserver, type ObserverSetup } from "./observer-setup.ts";
+import type { ObservationPort } from "../executor/ports.ts";
 import type { AppConfig } from "./config.ts";
 import type { CliIo } from "./main.ts";
 
@@ -27,6 +29,7 @@ export type ServeDeps = {
   gateway: HttpScheduler;
   logger: JsonLogger;
   runs: FileRunRegistry;
+  signals: FileSignal;
   observer?: NonNullable<ObserverSetup["observer"]>;
 };
 
@@ -54,6 +57,42 @@ function createRuntime(
     credentialsSource: env.DSH_CREDENTIALS_SOURCE,
     onStderr: (line) => logger.log({ level: "debug", event: "dsh.stderr", msg: line }),
     onPermission,
+  });
+}
+
+/** `serve` 的执行内核装配（组合根内的一段，避免 `composeForServe` 过长）。 */
+function createExecutor(input: {
+  config: AppConfig;
+  runtime: AcpRuntime;
+  workspace: FileWorkspace;
+  assets: LocalAssets;
+  sessionLogs: FileSessionLogStore;
+  store: FileStore;
+  runs: FileRunRegistry;
+  signals: FileSignal;
+  logger: JsonLogger;
+  observation?: ObservationPort;
+}): NodeExecutor {
+  const { config, logger } = input;
+  return new NodeExecutor({
+    runtime: input.runtime,
+    workspace: input.workspace,
+    assets: input.assets,
+    sessionLogs: input.sessionLogs,
+    journal: input.store,
+    dshHome: config.acp.dshHome,
+    ...(input.observation === undefined ? {} : { observation: input.observation }),
+    runs: input.runs,
+    signals: input.signals,
+    sessionNewTimeoutMs: config.acp.sessionNewTimeoutMs,
+    log: (event, detail) =>
+      logger.log({
+        level: "info",
+        event,
+        ...(detail === undefined ? {} : { msg: JSON.stringify(detail) }),
+      }),
+    maxResultBytes: 262144,
+    ...(config.executor.idleTimeoutMs > 0 ? { idleTimeoutMs: config.executor.idleTimeoutMs } : {}),
   });
 }
 
@@ -105,20 +144,21 @@ export async function composeForServe(
       return downloaded;
     },
   });
+  const signals = new FileSignal({ stateRoot, env });
   const runtime = createRuntime(config, env, logger, (sessionId, params, decision) => {
     void setup.recorder.permission(sessionId, params, decision).catch(() => undefined);
   });
-  const executor = new NodeExecutor({
+  const executor = createExecutor({
+    config,
     runtime,
     workspace,
     assets,
     sessionLogs,
-    journal: store,
-    dshHome: config.acp.dshHome,
-    ...(setup.record ? { observation: setup.recorder } : {}),
+    store,
     runs,
-    maxResultBytes: 262144,
-    ...(config.executor.idleTimeoutMs > 0 ? { idleTimeoutMs: config.executor.idleTimeoutMs } : {}),
+    signals,
+    logger,
+    ...(setup.record ? { observation: setup.recorder } : {}),
   });
   return {
     config,
@@ -132,6 +172,7 @@ export async function composeForServe(
     gateway,
     logger,
     runs,
+    signals,
     ...(setup.observer === undefined ? {} : { observer: setup.observer }),
   };
 }

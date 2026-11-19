@@ -129,8 +129,13 @@ export class FileAttemptStore implements AttemptStorePort {
 
   async findBySession(sessionId: string): Promise<AttemptSummary | null> {
     const all = await readAllAttempts(this.#base);
-    const found = all.find((item) => item.sessionId === sessionId);
-    return found === undefined ? null : strip(found);
+    // 续跑会让同一个 sessionId 出现在多个 attempt 上：实时视图要取最新的一条，
+    // 否则会命中最早（通常是旧超时）的 attempt。按 startedAt 降序，同一时刻按 attemptId（UUIDv7）降序。
+    const matches = all
+      .filter((item) => item.sessionId === sessionId && item.goneAt === undefined)
+      .sort((left, right) => right.startedAt.localeCompare(left.startedAt) || right.attemptId.localeCompare(left.attemptId));
+    const latest = matches[0];
+    return latest === undefined ? null : strip(latest);
   }
 
   async eventsBySession(sessionId: string, query: EventQuery): Promise<{ items: ObservationEvent[]; truncatedBefore?: number }> {

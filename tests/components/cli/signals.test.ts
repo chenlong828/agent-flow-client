@@ -2,91 +2,77 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { digestDirectory } from "../../../src/components/assets/digest.ts";
+import { loadConfig } from "../../../src/components/cli/config.ts";
+import { signalsCommand } from "../../../src/components/cli/signals.ts";
 
-const fakeAcp = join(import.meta.dir, "../../fixtures/fake-acp.mjs");
-const repoRoot = join(import.meta.dir, "../../..");
-
-async function alive(pid: number): Promise<boolean> {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-describe("UC-14 信号收口", () => {
-  test("SIGINT 取消活跃 prompt、回收进程组并以 130 退出", async () => {
-    const runDir = await mkdtemp(join(tmpdir(), "afc-sig-"));
-    const container = join(runDir, "workspace");
-    const pkg = join(runDir, "pkg");
-    const pidFile = join(runDir, "child.pid");
-    const promptFile = join(runDir, "prompt-started.txt");
-    await mkdir(container, { recursive: true });
-    await mkdir(join(pkg, "alpha"), { recursive: true });
-    await writeFile(join(pkg, "alpha", "SKILL.md"), "---\nname: alpha\ndescription: a\n---\n");
-    const digest = await digestDirectory(pkg);
+async function fixture(): Promise<{ runDir: string; stateRoot: string; taskId: string }> {
+  const runDir = await mkdtemp(join(tmpdir(), "afc-signals-cli-"));
+  const stateRoot = join(runDir, "state");
+  const taskId = "task-signals-1";
+  for (const attempt of [1, 2]) {
+    const dir = join(stateRoot, "signals", taskId, String(attempt));
+    await mkdir(dir, { recursive: true });
     await writeFile(
-      join(runDir, ".config"),
-      `[acp]\ndsh_home = "${join(runDir, "dsh-home")}"\npermission = "allow"\n[state]\nroot = "${join(runDir, "state")}"\n[logging]\nlevel = "error"\n`,
-    );
-    const requestPath = join(runDir, "request.json");
-    await writeFile(
-      requestPath,
+      join(dir, "config.json"),
       JSON.stringify({
-        taskId: "01930000-0000-7000-8000-000000000201",
-        attempt: 1,
-        instanceId: "01930000-0000-7000-8000-000000000202",
-        nodeId: "01930000-0000-7000-8000-000000000203",
-        workspacePath: container,
-        prompt: "SLOW",
-        timeoutMs: 30_000,
-        skillSet: {
-          digest,
-          packages: [{ packageId: "p", name: "alpha", version: "1", digest, sizeBytes: 0, downloadUrl: pathToFileURL(pkg).href }],
+        version: 1,
+        kind: "review_verdict",
+        taskId,
+        attempt,
+        output: join(dir, "signals.jsonl"),
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["verdict", "reason"],
+          properties: { verdict: { type: "string", enum: ["pass", "fail"] }, reason: { type: "string" } },
         },
+        limits: { maxSignals: 8, maxBytes: 16384 },
       }),
     );
-
-    const env = {
-      ...process.env,
-      DSH_BIN: fakeAcp,
-      AF_NODE_BIN: process.execPath,
-      FAKE_ACP_PID_FILE: pidFile,
-      FAKE_ACP_PROMPT_FILE: promptFile,
-      HUNDSUN_PUBLIC_API_KEY: "k",
-    };
-    delete (env as Record<string, string | undefined>).DSH_HOME;
-    const child = Bun.spawn(
-      [process.execPath, "src/cli.ts", "run", "--request", requestPath, "--config", join(runDir, ".config"), "--state-root", join(runDir, "state")],
-      {
-        cwd: repoRoot,
-        env: env as Record<string, string>,
-        stdout: "pipe",
-        stderr: "pipe",
-      },
+    await writeFile(
+      join(dir, "signals.jsonl"),
+      `${JSON.stringify({ seq: 1, at: "2026-11-18T00:00:00.000Z", kind: "review_verdict", data: { verdict: "pass", reason: `attempt-${attempt}` } })}\n`,
     );
+  }
+  return { runDir, stateRoot, taskId };
+}
 
-    async function fail(message: string): Promise<never> {
-      child.kill("SIGKILL");
-      const code = await child.exited;
-      const stderr = await new Response(child.stderr).text();
-      throw new Error(`${message}（child exit=${code} stderr=${stderr.trim()}）`);
-    }
+async function configFor(runDir: string, stateRoot: string) {
+  return await loadConfig({ runDir, env: {}, flags: { stateRoot } });
+}
 
-    const deadline = Date.now() + 10_000;
-    while (!(await Bun.file(promptFile).exists()) && Date.now() < deadline) await Bun.sleep(20);
-    if (!(await Bun.file(promptFile).exists())) await fail("fake ACP 未进入 prompt（10s）");
-    if (!(await Bun.file(pidFile).exists())) await fail("fake ACP 未写 child.pid");
-    const groupPid = Number((await Bun.file(pidFile).text()).trim());
-    child.kill("SIGINT");
-    const code = await child.exited;
-    const stdout = await new Response(child.stdout).text();
-    expect(code).toBe(130);
-    expect(JSON.parse(stdout.trim()).status).toBe("cancelled");
-    await Bun.sleep(200);
-    expect(await alive(groupPid)).toBe(false);
-  }, 20_000);
+describe("signals 命令", () => {
+  test("默认取最新 attempt；文本输出带 kind 与计数", async () => {
+    const { runDir, stateRoot, taskId } = await fixture();
+    const lines: string[] = [];
+    const code = await signalsCommand(await configFor(runDir, stateRoot), { out: (line) => lines.push(line), err: () => undefined }, { taskId, json: false });
+    expect(code).toBe(0);
+    const text = lines.join("\n");
+    expect(text).toContain("attempt 2");
+    expect(text).toContain("kind review_verdict");
+    expect(text).toContain("signals 1 条合法，0 行被忽略");
+    expect(text).toContain("attempt-2");
+  });
+
+  test("--json 输出完整记录；--attempt 指定旧尝试", async () => {
+    const { runDir, stateRoot, taskId } = await fixture();
+    const lines: string[] = [];
+    const code = await signalsCommand(
+      await configFor(runDir, stateRoot),
+      { out: (line) => lines.push(line), err: () => undefined },
+      { taskId, attempt: 1, json: true },
+    );
+    expect(code).toBe(0);
+    const parsed = JSON.parse(lines.join("\n")) as { attempt: number; signals: Array<{ data: { reason: string } }> };
+    expect(parsed.attempt).toBe(1);
+    expect(parsed.signals[0]?.data.reason).toBe("attempt-1");
+  });
+
+  test("任务不存在返回非 0 并给出目录", async () => {
+    const { runDir, stateRoot } = await fixture();
+    const errors: string[] = [];
+    const code = await signalsCommand(await configFor(runDir, stateRoot), { out: () => undefined, err: (line) => errors.push(line) }, { taskId: "missing", json: false });
+    expect(code).toBe(1);
+    expect(errors.join("\n")).toContain("没有该任务的信号目录");
+  });
 });

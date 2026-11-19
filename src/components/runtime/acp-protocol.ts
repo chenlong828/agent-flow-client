@@ -70,8 +70,8 @@ export class AcpProtocol {
       clearTimeout(entry.timer);
       this.#pending.delete(message.id as number);
       if (message.error !== undefined) {
-        const error = message.error as { code?: number; message?: string };
-        entry.reject(new RuntimeError("prompt_failed", `${String(error.code)}: ${String(error.message)}`));
+        const error = message.error as { code?: number; message?: string; data?: unknown };
+        entry.reject(new RuntimeError("prompt_failed", `${String(error.code)}: ${String(error.message)}`, error.data));
       } else entry.resolve(message.result);
       return;
     }

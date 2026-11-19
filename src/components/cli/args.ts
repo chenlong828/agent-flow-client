@@ -18,6 +18,8 @@ const VALUE_FLAGS = new Set([
   "--permission",
   "--request",
   "--workspace",
+  "--task",
+  "--attempt",
 ]);
 
 const BOOLEAN_FLAGS = new Set(["--help", "-h", "--version", "-v", "--json"]);

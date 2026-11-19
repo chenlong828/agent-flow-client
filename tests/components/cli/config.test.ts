@@ -26,6 +26,10 @@ describe("TC-CONFIG-001 默认配置", () => {
     expect(config.logging.level).toBe("info");
     expect(config.capacity.maxConcurrent).toBe(4);
     expect(config.executor.idleTimeoutMs).toBe(0);
+    expect(config.acp.sessionNewTimeoutMs).toBe(10000);
+    expect(config.acp.sessionNewTimeoutSource).toBe("default");
+    expect(config.signal.retentionDays).toBe(7);
+    expect(config.signal.source).toBe("default");
     expect(Object.isFrozen(config)).toBe(true);
   });
 });
@@ -105,6 +109,22 @@ dsh_home = "first"
   });
 });
 
+describe("TC-CONFIG-005 信号相关配置", () => {
+  test("session_new_timeout_ms 与 retention_days 来自配置并标注来源", async () => {
+    const { runDir, homeDir } = await fixture(`
+[acp]
+session_new_timeout_ms = 20000
+[signal]
+retention_days = 3
+`);
+    const config = await loadConfig({ runDir, env: {}, homeDir });
+    expect(config.acp.sessionNewTimeoutMs).toBe(20000);
+    expect(config.acp.sessionNewTimeoutSource).toBe("config");
+    expect(config.signal.retentionDays).toBe(3);
+    expect(config.signal.source).toBe("config");
+  });
+});
+
 describe("TC-CONFIG-004 非法配置不回退", () => {
   const cases: Array<[string, string, number]> = [
     ["TOML 语法错误", "[acp\n", 2],
@@ -113,6 +133,8 @@ describe("TC-CONFIG-004 非法配置不回退", () => {
     ["permission 非法", `[acp]\npermission = "maybe"\n`, 2],
     ["logging.level 非法", `[logging]\nlevel = "trace"\n`, 2],
     ["max_concurrent 越界", `[capacity]\nmax_concurrent = 0\n`, 2],
+    ["session_new_timeout_ms 越界", `[acp]\nsession_new_timeout_ms = 100\n`, 2],
+    ["retention_days 越界", `[signal]\nretention_days = 0\n`, 2],
   ];
 
   test("TC-CONFIG-004 非法 TOML、空值、类型与越界值一律 config_invalid/2", async () => {
@@ -354,5 +376,17 @@ rich_stream_enabled = false
     expect(config.observability.token).toBe("secret");
     expect(config.observability.rawEnabled).toBe(false);
     expect(config.observability.richStreamEnabled).toBe(false);
+  });
+});
+
+describe("TC-CONFIG-006 AF_SCHEDULER_URL 覆盖", () => {
+  test("env 优先于配置文件，且仍走同样的校验", async () => {
+    const { runDir, homeDir } = await fixture(`[scheduler]\nurl = "http://127.0.0.1:1111"\n`);
+    const config = await loadConfig({ runDir, env: { AF_SCHEDULER_URL: "http://127.0.0.1:2222" }, homeDir });
+    expect(config.scheduler.url).toBe("http://127.0.0.1:2222");
+    const bad = await loadConfig({ runDir, env: { AF_SCHEDULER_URL: "https://example.com" }, homeDir })
+      .then(() => null)
+      .catch((error: unknown) => error as ConfigError);
+    expect(bad?.code).toBe("scheduler_token_missing");
   });
 });

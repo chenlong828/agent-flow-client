@@ -1,10 +1,16 @@
 import type { RuntimeFailure, SessionOutcome } from "../executor/ports.ts";
 import type { ErrorClass, ResultStatus, TaskError, TaskResult } from "../executor/types.ts";
+import { SIGNAL_LIMITS, type TaskSignal } from "../signal/contract.ts";
+
+/** 结果体里除 message 与 signals 之外字段的 JSON 开销余量（A-04）。 */
+const RESULT_JSON_GUARD_BYTES = 1024;
 
 export type ResultContext = {
   taskId: string;
   attempt: number;
   maxResultBytes: number;
+  /** `CMP-signal.collect` 采集到的信号；只在 succeeded 时写入结果（A-04/A-05）。 */
+  signals?: TaskSignal[];
   startedAt?: string;
   finishedAt?: string;
 };
@@ -24,7 +30,7 @@ const MAPPING: readonly MappingRule[] = [
   { codes: ["not_prepared", "layout_invalid", "path_escape", "permission_denied", "disk_full"], class: "workspace" },
   { codes: ["download_failed", "checksum_mismatch", "unpack_failed", "invalid_skill_format", "io_error", "package_not_found"], class: "asset" },
   { codes: ["spawn_failed", "process_exited", "prompt_failed", "session_log_too_large"], class: "runtime" },
-  { codes: ["protocol_error"], class: "protocol" },
+  { codes: ["protocol_error", "signal_prepare_failed", "signal_mount_failed"], class: "protocol" },
   { codes: ["cancelled"], class: "cancelled" },
   { codes: ["timeout", "prompt_timeout", "idle_timeout"], class: "timeout" },
   { codes: ["unsupported_protocol", "unauthorized", "task_not_found", "payload_too_large"], class: "scheduler" },
@@ -66,7 +72,12 @@ export function mapStopReason(raw: string | null): { value: string | null; unkno
 /** 从 SessionOutcome 组装 TaskResult；纯函数，不抛业务异常。 */
 export function assemble(outcome: SessionOutcome, ctx: ResultContext): TaskResult {
   const status = statusOf(outcome);
-  const truncated = truncate(outcome.finalText, ctx.maxResultBytes);
+  const signals = status === "succeeded" ? attachSignals(ctx.signals) : undefined;
+  const signalsBytes = signals === undefined ? 0 : Buffer.byteLength(JSON.stringify(signals), "utf8");
+  const budget = signals === undefined
+    ? ctx.maxResultBytes
+    : Math.max(0, ctx.maxResultBytes - signalsBytes - RESULT_JSON_GUARD_BYTES);
+  const truncated = truncate(outcome.finalText, budget);
   const error = outcome.error === undefined ? null : toTaskError(outcome.error);
   return {
     taskId: ctx.taskId,
@@ -78,9 +89,18 @@ export function assemble(outcome: SessionOutcome, ctx: ResultContext): TaskResul
     stopReason: status === "succeeded" ? mapStopReason(outcome.stopReason).value : null,
     usage: outcome.usage ?? null,
     error,
+    ...(signals === undefined ? {} : { signals }),
     ...(ctx.startedAt === undefined ? {} : { startedAt: ctx.startedAt }),
     ...(ctx.finishedAt === undefined ? {} : { finishedAt: ctx.finishedAt }),
   };
+}
+
+/** 只保留最后窗口内的信号；整段超 16 KiB 时丢弃（不截断 reason）。 */
+function attachSignals(signals: TaskSignal[] | undefined): TaskSignal[] | undefined {
+  if (signals === undefined || signals.length === 0) return undefined;
+  const window = signals.slice(-SIGNAL_LIMITS.maxCount);
+  if (Buffer.byteLength(JSON.stringify(window), "utf8") > SIGNAL_LIMITS.maxBytes) return undefined;
+  return window;
 }
 
 function statusOf(outcome: SessionOutcome): ResultStatus {

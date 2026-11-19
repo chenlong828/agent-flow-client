@@ -50,6 +50,19 @@ describe("ACP 会话", () => {
     await runtime.shutdownInstance(handle, "graceful");
   });
 
+  test("resumeSession：close 之后续跑同一 session（§5.5 前置）", async () => {
+    const { runtime, handle, cwd } = await fixture();
+    const session = await runtime.newSession(handle, cwd);
+    await runtime.prompt(session, "A", { signal: new AbortController().signal, timeoutMs: 5000 });
+    await runtime.closeSession(session);
+    const resumed = await runtime.resumeSession(handle, session.sessionId, cwd);
+    expect(resumed.sessionId).toBe(session.sessionId);
+    const outcome = await runtime.prompt(resumed, "B", { signal: new AbortController().signal, timeoutMs: 5000 });
+    expect(outcome.finalText).toContain("OK-B");
+    expect(outcome.error).toBeUndefined();
+    await runtime.shutdownInstance(handle, "graceful");
+  });
+
   test("closeSession 幂等（第二次忽略 unknown session）", async () => {
     const { runtime, handle, cwd } = await fixture();
     const session = await runtime.newSession(handle, cwd);
@@ -109,5 +122,19 @@ describe("权限策略", () => {
       expect(outcome.finalText).toContain(expected);
       await runtime.shutdownInstance(handle, "force");
     }
+  });
+});
+
+describe("resume 失败诊断", () => {
+  test("message 带 sessionId / cwd / mcpServers，错误码仍是 protocol_error", async () => {
+    const { runtime, handle, cwd } = await fixture();
+    const error = (await runtime.resumeSession(handle, "s-missing", cwd, {
+      mcpServers: [{ name: "agentflow", command: "/bin/bun", args: ["/srv/x.ts"], env: [] }],
+    }).catch((caught: unknown) => caught)) as { code?: string; message?: string };
+    expect(error.code).toBe("protocol_error");
+    expect(error.message).toContain("sessionId=s-missing");
+    expect(error.message).toContain(`cwd=${cwd}`);
+    expect(error.message).toContain("mcpServers=1");
+    await runtime.shutdownInstance(handle, "graceful");
   });
 });

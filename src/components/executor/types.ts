@@ -1,4 +1,5 @@
 import type { SkillSet } from "./contract-types.ts";
+import type { ResultSignalContract, TaskSignal } from "../signal/contract.ts";
 
 /**
  * CMP-executor 值类型（executor-http-v2 §5）。
@@ -60,6 +61,8 @@ export type TaskResult = {
   stopReason: string | null;
   usage: Usage | null;
   error: TaskError | null;
+  /** v3 加法（`C-14`）：结构化信号；只在 succeeded 且采集到合法信号时出现。 */
+  signals?: TaskSignal[];
   startedAt?: string;
   finishedAt?: string;
 };
@@ -76,6 +79,10 @@ export type TaskRequest = {
   taskSpacePath: string;
   timeoutMs: number;
   skillSet: SkillSet;
+  /** v3 加法（`C-13`）：编排侧下发的信号契约；存在即表示本节点必须走 MCP 信号。 */
+  resultSignal?: ResultSignalContract;
+  /** 第二场景预留（§5.5，`T-RVM-09`）：续跑已有 session；缺省表示新建。 */
+  resumeSessionId?: SessionId;
 };
 
 export type TaskRecord = {

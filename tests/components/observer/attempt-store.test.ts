@@ -43,6 +43,25 @@ describe("attempt 观测存储", () => {
     expect(list.items.map((item) => item.attemptId)).toEqual([attempt.attemptId]);
   });
 
+  test("同一 sessionId 多个 attempt（续跑）取最新，忽略已清理 attempt", async () => {
+    const { store, tick } = await setup();
+    const first = await store.create({ taskId: "task-1", attemptNo: 1, instanceId: "i", nodeId: "n" });
+    await store.update(first.attemptId, { sessionId: "session-resume", status: "timeout", finishedAt: "2026-11-17T10:00:01Z" });
+    tick(60_000);
+    const second = await store.create({ taskId: "task-2", attemptNo: 1, instanceId: "i", nodeId: "n" });
+    await store.update(second.attemptId, { sessionId: "session-resume", status: "running" });
+
+    const latest = await store.findBySession("session-resume");
+    expect(latest?.attemptId).toBe(second.attemptId);
+    expect(latest?.taskId).toBe("task-2");
+
+    // 已清理（goneAt）的 attempt 不参与查找。
+    tick(60_000);
+    const third = await store.create({ taskId: "task-3", attemptNo: 1, instanceId: "i", nodeId: "n" });
+    await store.update(third.attemptId, { sessionId: "session-gone", goneAt: "2026-11-17T10:05:00Z" });
+    expect(await store.findBySession("session-gone")).toBeNull();
+  });
+
   test("更新结束时间计算 duration", async () => {
     const { store, tick } = await setup();
     const attempt = await store.create({ taskId: "task", attemptNo: 1, instanceId: "i", nodeId: "n" });

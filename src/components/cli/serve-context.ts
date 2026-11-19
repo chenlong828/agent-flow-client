@@ -5,7 +5,7 @@ export const POLL_FLOOR_MS = 10;
 export const MAX_UNREACHABLE = 10;
 
 export type RunningEntry = { task: TaskRequest; startedAt: string };
-export type FinishedEntry = { result: TaskResult; finishedAt: string };
+export type FinishedEntry = { result: TaskResult; finishedAt: string; resumeSessionId?: string };
 export type { ArchiveRequest };
 
 export type ServeContext = {

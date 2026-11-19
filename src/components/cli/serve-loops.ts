@@ -74,7 +74,11 @@ function launchTask(ctx: ServeContext, task: TaskRequest): void {
   const taskPromise = runTask(ctx, task)
     .then((result) => {
       ctx.running.delete(task.taskId);
-      ctx.finished.set(task.taskId, { result, finishedAt: new Date().toISOString() });
+      ctx.finished.set(task.taskId, {
+        result,
+        finishedAt: new Date().toISOString(),
+        ...(task.resumeSessionId === undefined ? {} : { resumeSessionId: task.resumeSessionId }),
+      });
       return reportOne(ctx, task.taskId);
     })
     .catch((error: unknown) => {
@@ -202,6 +206,22 @@ export async function flushFinished(ctx: ServeContext): Promise<void> {
   for (const taskId of [...ctx.finished.keys()]) await reportOne(ctx, taskId);
 }
 
+/** `task.reported` 的可读摘要：状态之外带信号数量/kind 与续跑标记（不含 reason/凭据）。 */
+function reportedDetail(entry: { result: TaskResult; resumeSessionId?: string }): string {
+  const signals = entry.result.signals;
+  return JSON.stringify({
+    status: entry.result.status,
+    attempt: entry.result.attempt,
+    ...(entry.result.sessionId === undefined ? {} : { sessionId: entry.result.sessionId }),
+    ...(signals === undefined
+      ? {}
+      : { signals: { count: signals.length, kinds: [...new Set(signals.map((signal) => signal.kind))] } }),
+    ...(entry.resumeSessionId === undefined
+      ? {}
+      : { resumeSessionId: entry.resumeSessionId, continuation: true }),
+  });
+}
+
 async function reportOne(ctx: ServeContext, taskId: string): Promise<void> {
   if (ctx.reporting.has(taskId)) return;
   const entry = ctx.finished.get(taskId);
@@ -216,7 +236,7 @@ async function reportOne(ctx: ServeContext, taskId: string): Promise<void> {
       ctx.finished.delete(taskId);
       await ctx.deps.sessionLogs.clear(taskId, entry.result.attempt).catch(ignore);
       ctx.logReady.delete(`${taskId}#${entry.result.attempt}`);
-      ctx.deps.logger.log({ level: "info", event: "task.reported", attemptId: taskId, msg: `status=${entry.result.status}` });
+      ctx.deps.logger.log({ level: "info", event: "task.reported", attemptId: taskId, msg: reportedDetail(entry) });
       return;
     }
     await ctx.deps.store.mark(taskId, "reported");

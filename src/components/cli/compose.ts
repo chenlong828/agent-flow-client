@@ -8,6 +8,7 @@ import { S0_MODEL, type ProfileModel } from "../runtime/profile.ts";
 import { resolveDshCommand } from "../runtime/dsh.ts";
 import { NodeExecutor } from "../executor/executor.ts";
 import { LocalScheduler } from "./local-scheduler.ts";
+import { FileSignal } from "../signal/signal.ts";
 import type { AppConfig } from "./config.ts";
 import type { LocalRunRequest } from "./request.ts";
 
@@ -20,6 +21,7 @@ export type RunBundle = {
   runtime: AcpRuntime;
   scheduler: LocalScheduler;
   executor: NodeExecutor;
+  signals: FileSignal;
 };
 
 function modelFromEnv(env: Record<string, string | undefined>): ProfileModel {
@@ -53,6 +55,7 @@ export async function composeForRun(
     credentialsSource: env.DSH_CREDENTIALS_SOURCE,
     onStderr: (line) => logger.log({ level: "debug", event: "dsh.stderr", msg: line }),
   });
+  const signals = new FileSignal({ stateRoot: config.state.root, env });
   const executor = new NodeExecutor({
     runtime,
     workspace,
@@ -60,8 +63,16 @@ export async function composeForRun(
     sessionLogs,
     journal: store,
     dshHome: config.acp.dshHome,
+    signals,
+    sessionNewTimeoutMs: config.acp.sessionNewTimeoutMs,
+    log: (event, detail) =>
+      logger.log({
+        level: "info",
+        event,
+        ...(detail === undefined ? {} : { msg: JSON.stringify(detail) }),
+      }),
     maxResultBytes: 262144,
     ...(config.executor.idleTimeoutMs > 0 ? { idleTimeoutMs: config.executor.idleTimeoutMs } : {}),
   });
-  return { logger, store, workspace, sessionLogs, assets, runtime, scheduler, executor };
+  return { logger, store, workspace, sessionLogs, assets, runtime, scheduler, executor, signals };
 }

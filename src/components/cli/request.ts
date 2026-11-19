@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import type { SkillPackage, SkillSet, TaskRequest } from "../executor/types.ts";
+import { parseResultSignal } from "../signal/contract.ts";
 
 export type LocalRunRequest = { task: TaskRequest };
 
@@ -80,6 +81,8 @@ export async function loadLocalRequest(path: string): Promise<LocalRunRequest> {
   const workspacePath = requiredString(root, "workspacePath", "workspacePath");
   if (!isAbsolute(workspacePath)) throw new RequestError("workspacePath 必须是绝对路径");
   // v3：task-space 必填，必须位于工作区之下；本地请求允许省略，默认 <workspace>/.agent-flow/task/<taskId>。
+  const resultSignal = parseResultSignal(root.resultSignal);
+  const resumeSessionId = optionalString(root, "resumeSessionId");
   const rawTaskSpace = typeof root.taskSpacePath === "string" && root.taskSpacePath !== ""
     ? root.taskSpacePath
     : join(workspacePath, ".agent-flow", "task", requiredString(root, "taskId", "taskId"));
@@ -95,6 +98,8 @@ export async function loadLocalRequest(path: string): Promise<LocalRunRequest> {
       taskSpacePath: rawTaskSpace,
       timeoutMs: requiredInt(root, "timeoutMs", "timeoutMs"),
       skillSet: parseSkillSet(root.skillSet),
+      ...(resultSignal === undefined ? {} : { resultSignal }),
+      ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
     },
   };
 }

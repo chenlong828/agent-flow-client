@@ -4,6 +4,8 @@ import { homedir, hostname as osHostname } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { isValidClientId, resolveClientIdentity, type ClientIdSource } from "./client-identity.ts";
 import { resolveObservability } from "./observability-config.ts";
+import { ConfigError } from "./config-error.ts";
+import { resolveScheduler } from "./scheduler.ts";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type PermissionMode = "deny" | "allow";
@@ -18,11 +20,15 @@ export type AppConfig = Readonly<{
     dshHomeSource: Extract<ConfigSource, "env" | "config" | "default">;
     permission: PermissionMode;
     permissionSource: Extract<ConfigSource, "cli" | "config" | "default">;
+    /** `session/new` 超时（A-07）；默认 10000。 */
+    sessionNewTimeoutMs: number;
+    sessionNewTimeoutSource: Extract<ConfigSource, "config" | "default">;
   }>;
   state: Readonly<{ root: string; source: Extract<ConfigSource, "cli" | "config" | "default"> }>;
   logging: Readonly<{ level: LogLevel; source: Extract<ConfigSource, "cli" | "config" | "default"> }>;
   capacity: Readonly<{ maxConcurrent: number; source: "config" | "default" }>;
   executor: Readonly<{ idleTimeoutMs: number; source: "config" | "default" }>;
+  signal: Readonly<{ retentionDays: number; source: "config" | "default" }>;
   observability: Readonly<{
     enabled: boolean;
     required: boolean;
@@ -59,19 +65,9 @@ export type ConfigFlags = {
   permission?: string;
 };
 
-export class ConfigError extends Error {
-  readonly code: string;
-  readonly exitCode: number;
+export { ConfigError } from "./config-error.ts";
 
-  constructor(code: string, message: string, exitCode: number) {
-    super(message);
-    this.name = "ConfigError";
-    this.code = code;
-    this.exitCode = exitCode;
-  }
-}
-
-type RawTable = Record<string, unknown>;
+export type RawTable = Record<string, unknown>;
 
 const LOG_LEVELS: readonly LogLevel[] = ["debug", "info", "warn", "error"];
 const PERMISSIONS: readonly PermissionMode[] = ["deny", "allow"];
@@ -88,7 +84,7 @@ function asTable(value: unknown, label: string): RawTable {
   return value;
 }
 
-function readString(table: RawTable, key: string, label: string): string | undefined {
+export function readString(table: RawTable, key: string, label: string): string | undefined {
   const value = table[key];
   if (value === undefined) return undefined;
   if (typeof value !== "string" || value.trim() === "") {
@@ -163,12 +159,24 @@ function resolveHome(
     : rawPermission !== undefined
       ? "config"
       : "default";
+  const sessionNewTimeout = resolveSessionTimeout(table);
   return {
     dshHome: resolveFrom(runDir, raw),
     dshHomeSource: source,
     permission,
     permissionSource,
+    sessionNewTimeoutMs: sessionNewTimeout.value,
+    sessionNewTimeoutSource: sessionNewTimeout.source,
   };
+}
+
+function resolveSessionTimeout(table: RawTable): { value: number; source: "config" | "default" } {
+  const raw = table.session_new_timeout_ms;
+  if (raw === undefined) return { value: 10_000, source: "default" };
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1000) {
+    throw new ConfigError("config_invalid", "[acp].session_new_timeout_ms 必须是 >=1000 的整数", 2);
+  }
+  return { value: raw, source: "config" };
 }
 
 function resolveState(table: RawTable, flags: ConfigFlags, runDir: string): AppConfig["state"] {
@@ -194,22 +202,36 @@ function resolveLogging(table: RawTable, flags: ConfigFlags): AppConfig["logging
   return { level, source: flags.logLevel !== undefined ? "cli" : configured !== undefined ? "config" : "default" };
 }
 
-function resolveCapacity(table: RawTable): AppConfig["capacity"] {
-  const value = table.max_concurrent;
-  if (value === undefined) return { maxConcurrent: 4, source: "default" };
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 64) {
-    throw new ConfigError("config_invalid", "[capacity].max_concurrent 必须是 1..64 的整数", 2);
+/** 本地并发/超时/保留期三个整型配置；表驱动校验以保持函数数与圈复杂度预算。 */
+function resolveTunables(
+  capacityTable: RawTable,
+  executorTable: RawTable,
+  signalTable: RawTable,
+): { capacity: AppConfig["capacity"]; executor: AppConfig["executor"]; signal: AppConfig["signal"] } {
+  const raws: unknown[] = [capacityTable.max_concurrent, executorTable.idle_timeout_ms, signalTable.retention_days];
+  const limits: Array<[min: number, max: number, fallback: number]> = [
+    [1, 64, 4],
+    [0, Number.MAX_SAFE_INTEGER, 0],
+    [1, 365, 7],
+  ];
+  const labels = ["[capacity].max_concurrent", "[executor].idle_timeout_ms", "[signal].retention_days"];
+  const values: number[] = [];
+  for (let index = 0; index < raws.length; index += 1) {
+    const raw = raws[index];
+    const [min, max, fallback] = limits[index] as [number, number, number];
+    if (
+      raw !== undefined &&
+      (typeof raw !== "number" || !Number.isInteger(raw) || raw < min || raw > max)
+    ) {
+      throw new ConfigError("config_invalid", `${labels[index] as string} 必须是 ${min}..${max} 的整数`, 2);
+    }
+    values.push(raw === undefined ? fallback : (raw as number));
   }
-  return { maxConcurrent: value, source: "config" };
-}
-
-function resolveExecutor(table: RawTable): AppConfig["executor"] {
-  const value = table.idle_timeout_ms;
-  if (value === undefined) return { idleTimeoutMs: 0, source: "default" };
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    throw new ConfigError("config_invalid", "[executor].idle_timeout_ms 必须是非负整数", 2);
-  }
-  return { idleTimeoutMs: value, source: "config" };
+  return {
+    capacity: { maxConcurrent: values[0] as number, source: capacityTable.max_concurrent === undefined ? "default" : "config" },
+    executor: { idleTimeoutMs: values[1] as number, source: executorTable.idle_timeout_ms === undefined ? "default" : "config" },
+    signal: { retentionDays: values[2] as number, source: signalTable.retention_days === undefined ? "default" : "config" },
+  };
 }
 
 function validatePaths(acp: AppConfig["acp"], state: AppConfig["state"], homeDir: string): void {
@@ -223,83 +245,6 @@ function validatePaths(acp: AppConfig["acp"], state: AppConfig["state"], homeDir
   if (isInside(state.root, acp.dshHome) || isInside(acp.dshHome, state.root)) {
     throw new ConfigError("state_root_conflict", "[state].root 与 [acp].dsh_home 不能互相包含", 2);
   }
-}
-
-const PROTOCOL_VERSION = "2026-11-07.1";
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]);
-
-function parseSchedulerUrl(rawUrl: string): { url: URL; loopback: boolean } {
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    throw new ConfigError("config_invalid", `[scheduler].url 不是合法 URL：${rawUrl}`, 2);
-  }
-  const loopback = LOOPBACK_HOSTS.has(parsed.hostname);
-  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) {
-    throw new ConfigError("scheduler_insecure_url", "scheduler.url 必须 HTTPS（http 仅允许 loopback）", 2);
-  }
-  return { url: parsed, loopback };
-}
-
-function resolveScheduler(
-  table: RawTable,
-  env: Record<string, string | undefined>,
-  hostname: string,
-): AppConfig["scheduler"] {
-  const rawUrl = readString(table, "url", "[scheduler].url");
-  const configToken = readString(table, "token", "[scheduler].token");
-  const envToken = env.AF_SCHEDULER_TOKEN !== undefined && env.AF_SCHEDULER_TOKEN.trim() !== "" ? env.AF_SCHEDULER_TOKEN : undefined;
-  const token = envToken ?? configToken ?? null;
-  const tokenSource = envToken !== undefined ? "env" : configToken !== undefined ? "config" : "none";
-
-  const allowRaw = table.allow_unauthenticated;
-  if (allowRaw !== undefined && typeof allowRaw !== "boolean") {
-    throw new ConfigError("config_invalid", "[scheduler].allow_unauthenticated 必须是布尔值", 2);
-  }
-  const allowUnauthenticated = allowRaw === true;
-
-  const identity = resolveClientIdentity({
-    env,
-    configId: readString(table, "client_id", "[scheduler].client_id"),
-    hostname,
-  });
-  if (!isValidClientId(identity.clientId)) {
-    throw new ConfigError(
-      "config_invalid",
-      `[scheduler].client_id（来源 ${identity.clientIdSource}）必须是 1–64 个不含空白/控制字符的字符串：${JSON.stringify(identity.clientId)}`,
-      2,
-    );
-  }
-
-  if (rawUrl === undefined) {
-    if (token !== null) throw new ConfigError("config_invalid", "[scheduler].token 已配置但 [scheduler].url 为空", 2);
-    return {
-      url: null,
-      token: null,
-      tokenSource: "none",
-      ...identity,
-      allowUnauthenticated,
-      protocolVersion: PROTOCOL_VERSION,
-    };
-  }
-
-  const { url: parsed, loopback } = parseSchedulerUrl(rawUrl);
-  if (token === null && !loopback && !allowUnauthenticated) {
-    throw new ConfigError(
-      "scheduler_token_missing",
-      "非 loopback 的 scheduler 必须配置 token（AF_SCHEDULER_TOKEN 或 [scheduler].token），或在开发期设 [scheduler].allow_unauthenticated = true 走 X-Client-Id 自报身份",
-      2,
-    );
-  }
-  return {
-    url: parsed.toString().replace(/\/$/, ""),
-    token,
-    tokenSource,
-    ...identity,
-    allowUnauthenticated,
-    protocolVersion: PROTOCOL_VERSION,
-  };
 }
 
 function resolveFlags(flags: ConfigFlags): { permission?: PermissionMode } {
@@ -334,8 +279,11 @@ export async function loadConfig(options: {
   const acp = resolveHome(asTable(parsed.acp, "[acp]"), env, runDir, flagPermission);
   const state = resolveState(asTable(parsed.state, "[state]"), flags, runDir);
   const logging = resolveLogging(asTable(parsed.logging, "[logging]"), flags);
-  const capacity = resolveCapacity(asTable(parsed.capacity, "[capacity]"));
-  const executor = resolveExecutor(asTable(parsed.executor, "[executor]"));
+  const tunables = resolveTunables(
+    asTable(parsed.capacity, "[capacity]"),
+    asTable(parsed.executor, "[executor]"),
+    asTable(parsed.signal, "[signal]"),
+  );
   const scheduler = resolveScheduler(asTable(parsed.scheduler, "[scheduler]"), env, hostname);
   const observability = resolveObservability(
     asTable(parsed.observability, "[observability]"),
@@ -353,8 +301,9 @@ export async function loadConfig(options: {
     acp: Object.freeze(acp),
     state: Object.freeze(state),
     logging: Object.freeze(logging),
-    capacity: Object.freeze(capacity),
-    executor: Object.freeze(executor),
+    capacity: Object.freeze(tunables.capacity),
+    executor: Object.freeze(tunables.executor),
+    signal: Object.freeze(tunables.signal),
     observability: Object.freeze(observability),
     scheduler: Object.freeze(scheduler),
   });

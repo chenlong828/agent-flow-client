@@ -7,6 +7,7 @@ import type {
   SessionRef,
   ShutdownMode,
 } from "../executor/ports.ts";
+import type { McpServerSpec } from "../signal/contract.ts";
 import { RuntimeError } from "./errors.ts";
 import { RuntimeState, type SessionState } from "./runtime-state.ts";
 import { startPromptTimers } from "./prompt-timers.ts";
@@ -48,12 +49,20 @@ export class AcpRuntime implements RuntimePort {
     return await starting;
   }
 
-  async newSession(instance: InstanceHandle, cwd: string): Promise<SessionRef> {
+  async newSession(
+    instance: InstanceHandle,
+    cwd: string,
+    opts?: { mcpServers?: McpServerSpec[]; timeoutMs?: number },
+  ): Promise<SessionRef> {
     const acp = this.#state.connection(instance.instanceId);
     if (acp === undefined) throw new RuntimeError("spawn_failed", `实例没有活跃 DSH 进程：${instance.instanceId}`);
     let result: { sessionId?: unknown };
     try {
-      result = (await acp.request("session/new", { cwd, mcpServers: [] }, 10_000)) as { sessionId?: unknown };
+      result = (await acp.request(
+        "session/new",
+        { cwd, mcpServers: opts?.mcpServers ?? [] },
+        opts?.timeoutMs ?? 10_000,
+      )) as { sessionId?: unknown };
     } catch (error) {
       throw asRuntimeError(error, "protocol_error", "session/new 失败");
     }
@@ -61,6 +70,33 @@ export class AcpRuntime implements RuntimePort {
       throw new RuntimeError("protocol_error", "session/new 没有返回 sessionId");
     }
     const ref: SessionRef = { sessionId: result.sessionId, instanceId: instance.instanceId };
+    this.#state.addSession(ref);
+    return ref;
+  }
+
+  async resumeSession(
+    instance: InstanceHandle,
+    sessionId: string,
+    cwd: string,
+    opts?: { mcpServers?: McpServerSpec[]; timeoutMs?: number },
+  ): Promise<SessionRef> {
+    const acp = this.#state.connection(instance.instanceId);
+    if (acp === undefined) throw new RuntimeError("spawn_failed", `实例没有活跃 DSH 进程：${instance.instanceId}`);
+    try {
+      await acp.request(
+        "session/resume",
+        { sessionId, cwd, mcpServers: opts?.mcpServers ?? [] },
+        opts?.timeoutMs ?? 10_000,
+      );
+    } catch (error) {
+      const detail = `sessionId=${sessionId} cwd=${cwd} mcpServers=${opts?.mcpServers?.length ?? 0}`;
+      throw new RuntimeError(
+        "protocol_error",
+        `session/resume 失败（${detail}）：${(error as Error).message}`,
+        (error as { data?: unknown }).data,
+      );
+    }
+    const ref: SessionRef = { sessionId, instanceId: instance.instanceId };
     this.#state.addSession(ref);
     return ref;
   }

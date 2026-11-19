@@ -53,6 +53,16 @@ export class FakeRuntime {
     this.#sessions.add(ref.sessionId);
     return ref;
   }
+  async resumeSession(
+    instance: InstanceHandle,
+    sessionId: string,
+    _cwd: string,
+    _opts?: { mcpServers?: unknown[]; timeoutMs?: number },
+  ): Promise<SessionRef> {
+    const ref = { sessionId, instanceId: instance.instanceId };
+    this.#sessions.add(ref.sessionId);
+    return ref;
+  }
   async prompt(session: SessionRef, text: string, opts: PromptOptions): Promise<SessionOutcome> {
     this.prompts.push(text);
     opts.onRawEvent?.({ ts: "2026-11-12T00:00:00.000Z", sessionId: session.sessionId, method: "session/update", params: { sessionId: session.sessionId, update: { sessionUpdate: "agent_message_chunk" } } });

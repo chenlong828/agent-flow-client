@@ -1,4 +1,6 @@
 import type { InstanceId, OrphanRecord, SkillSet, TaskId, TaskRecord, TaskResult, TaskState } from "./types.ts";
+import type { McpServerSpec, ResultSignalContract, TaskSignal } from "../signal/contract.ts";
+import type { SignalPlan } from "../signal/plan.ts";
 
 export type { InstanceId, OrphanRecord, SkillSet, TaskId, TaskRecord, TaskState } from "./types.ts";
 import type {
@@ -37,7 +39,15 @@ export type {
 /** DSH 进程与 ACP 会话（CMP-runtime 实现）。 */
 export interface RuntimePort {
   ensureInstance(instance: InstanceSpec): Promise<InstanceHandle>;
-  newSession(instance: InstanceHandle, cwd: string): Promise<SessionRef>;
+  /** 可选参对象加法（A-03）：`mcpServers` 原样传给 ACP `session/new`。 */
+  newSession(instance: InstanceHandle, cwd: string, opts?: { mcpServers?: McpServerSpec[]; timeoutMs?: number }): Promise<SessionRef>;
+  /** 续跑同一 session（§5.5 / `T-RVM-09`）：`session/resume`，cwd 必须与会话持久化时一致。 */
+  resumeSession(
+    instance: InstanceHandle,
+    sessionId: string,
+    cwd: string,
+    opts?: { mcpServers?: McpServerSpec[]; timeoutMs?: number },
+  ): Promise<SessionRef>;
   prompt(session: SessionRef, text: string, opts: PromptOptions): Promise<SessionOutcome>;
   cancel(session: SessionRef): Promise<void>;
   closeSession(session: SessionRef): Promise<void>;
@@ -107,4 +117,19 @@ export interface JournalPort {
   recordOrphan(record: OrphanRecord): Promise<void>;
   listOrphans(instanceId?: InstanceId): Promise<OrphanRecord[]>;
   clearOrphan(pid: number): Promise<void>;
+}
+
+/** 信号准备结果：不支持的契约按既有兼容矩阵处理（不挂 MCP、继续任务）。 */
+export type SignalPrepareResult = { status: "ok"; plan: SignalPlan } | { status: "unsupported"; reason: string };
+
+/** per-attempt 信号目录与采集（`CMP-signal` 实现；proposal §4.1）。 */
+export interface SignalPort {
+  prepare(input: { taskId: TaskId; attempt: number; contract: ResultSignalContract }): Promise<SignalPrepareResult>;
+  collect(input: {
+    taskId: TaskId;
+    attempt: number;
+    contract: ResultSignalContract;
+    plan: SignalPlan;
+  }): Promise<TaskSignal[] | undefined>;
+  cleanup(retentionDays: number): Promise<number>;
 }

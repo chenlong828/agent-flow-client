@@ -9,13 +9,16 @@ import type {
   RuntimeFailure,
   RuntimePort,
   SessionRef,
+  SignalPort,
   WorkspacePort,
   ObservationPort,
   RunRegistryPort,
 } from "./ports.ts";
+import { SignalRunner, type SignalContext } from "./signal-runner.ts";
 import type { SchedulerPort } from "./scheduler-port.ts";
 import type { SessionOutcome } from "./ports.ts";
 import type { TaskRequest, TaskResult } from "./types.ts";
+import type { TaskSignal } from "../signal/contract.ts";
 import { assemble, classify } from "../result/result.ts";
 import { cancelledOutcome, codeOf } from "./executor-helpers.ts";
 
@@ -40,6 +43,12 @@ export type NodeExecutorOptions = {
   dshHome: string;
   maxResultBytes?: number;
   idleTimeoutMs?: number;
+  /** 信号能力；未注入时即使任务带 `resultSignal` 也不挂 MCP（按不支持处理）。 */
+  signals?: SignalPort;
+  /** `session/new` 超时（A-07）；默认由 runtime 决定。 */
+  sessionNewTimeoutMs?: number;
+  /** 结构化事件出口（signal.*）；不参与执行语义。 */
+  log?: (event: string, detail?: Record<string, unknown>) => void;
   observation?: ObservationPort;
   runs?: RunRegistryPort;
   now?: () => Date;
@@ -66,11 +75,18 @@ export class NodeExecutor {
   readonly #host: string;
   readonly #active = new Map<string, ActiveTask>();
   readonly #instances = new Map<string, InstanceHandle>();
+  readonly #signal: SignalRunner;
 
   constructor(options: NodeExecutorOptions) {
     this.#options = options;
     this.#now = options.now ?? (() => new Date());
     this.#host = options.host ?? hostname();
+    this.#signal = new SignalRunner({
+      runtime: options.runtime,
+      ...(options.signals === undefined ? {} : { signals: options.signals }),
+      ...(options.sessionNewTimeoutMs === undefined ? {} : { sessionNewTimeoutMs: options.sessionNewTimeoutMs }),
+      ...(options.log === undefined ? {} : { log: options.log }),
+    });
   }
 
   async executeTask(task: TaskRequest, ctx: ExecutionContext): Promise<TaskResult> {
@@ -124,10 +140,12 @@ export class NodeExecutor {
     let session: SessionRef | undefined;
     let outcome: SessionOutcome | undefined;
     let attemptId: string | null = null;
+    let signalContext: SignalContext | undefined;
     try {
       const prepared = await this.#prepareTask(task, startedAt);
       session = prepared.session;
       attemptId = prepared.attemptId;
+      signalContext = prepared.signalContext;
       outcome = controller.signal.aborted
         ? cancelledOutcome(session.sessionId)
         : await this.#prompt(session, task, controller, attemptId);
@@ -140,10 +158,12 @@ export class NodeExecutor {
       };
       outcome = { sessionId: session?.sessionId ?? "", finalText: "", stopReason: null, usage: null, error: failure };
     }
+    const signals = await this.#signal.collect(task, signalContext, outcome);
     const result = assemble(outcome, {
       taskId: task.taskId,
       attempt: task.attempt,
       maxResultBytes: this.#options.maxResultBytes ?? MAX_RESULT_BYTES,
+      ...(signals === undefined ? {} : { signals }),
       startedAt,
       finishedAt: this.#now().toISOString(),
     });
@@ -156,7 +176,10 @@ export class NodeExecutor {
     return result;
   }
 
-  async #prepareTask(task: TaskRequest, startedAt: string): Promise<{ attemptId: string | null; session: SessionRef }> {
+  async #prepareTask(
+    task: TaskRequest,
+    startedAt: string,
+  ): Promise<{ attemptId: string | null; session: SessionRef; signalContext?: SignalContext }> {
     const attemptId = await this.#options.observation?.startAttempt({
       taskId: task.taskId,
       attemptNo: task.attempt,
@@ -200,14 +223,21 @@ export class NodeExecutor {
       createdAt: this.#now().toISOString(),
       host: this.#host,
     });
-    const session = await this.#options.runtime.newSession(handle, container.root);
+    const signalContext = await this.#signal.prepare(task);
+    const session = await this.#signal.openSession({
+      handle,
+      cwd: container.root,
+      ...(signalContext === undefined ? {} : { context: signalContext }),
+      ...(task.resumeSessionId === undefined ? {} : { resumeSessionId: task.resumeSessionId }),
+      taskId: task.taskId,
+    });
     const active = this.#active.get(task.taskId);
     if (active !== undefined) active.session = session;
     if (attemptId !== null) await this.#options.observation?.session(attemptId, session.sessionId, container.root).catch(ignore);
     await this.#options.journal.mark(task.taskId, "running", { sessionId: session.sessionId });
     await this.#options.assets.install(task.skillSet, container);
     await this.#options.sessionLogs.clear(task.taskId, task.attempt);
-    return { attemptId, session };
+    return { attemptId, session, ...(signalContext === undefined ? {} : { signalContext }) };
   }
 
   async #prompt(session: SessionRef, task: TaskRequest, controller: AbortController, attemptId: string | null): Promise<SessionOutcome> {
