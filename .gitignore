@@ -25,3 +25,6 @@ pnpm-debug.log*
 # 运行期目录（REQ-0001 默认 home 与 CMP-store stateRoot）
 AF_DSH_HOME/
 .agent-flow-client/
+
+# 临时草稿（一次性补丁脚本、打包试验产物、探针残留）
+.tmp/
