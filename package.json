@@ -1,6 +1,6 @@
 {
   "name": "agent-flow-client",
-  "version": "0.6.2",
+  "version": "0.6.4",
   "private": true,
   "type": "module",
   "description": "AgentFlow 执行面客户端：在本地工作区执行工作流节点。",
